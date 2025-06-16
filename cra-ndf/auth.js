@@ -13,7 +13,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     callbacks: {
         async jwt({ token, account, profile }) {
             if (account && profile) {
-                // Try multiple claim locations for roles
                 token.roles =
                     profile.roles ||
                     profile._json.roles ||
