@@ -11,6 +11,7 @@ export default function Dashboard() {
         <div className="flex flex-col items-center justify-center min-h-screen gap-4">
             <p className="text-xl font-semibold">Dashboard Page</p>
             <p>User email: {session?.user?.email}</p>
+            <p>User roles: {session?.user?.roles?.join(", ") || "No roles found"}</p>
 
             <div className="flex gap-4 mt-4">
                 <Link

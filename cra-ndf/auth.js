@@ -1,5 +1,5 @@
 import NextAuth from "next-auth";
-import MicrosoftEntraID from "next-auth/providers/azure-ad"; // Azure Entra ID (anciennement Microsoft)
+import MicrosoftEntraID from "next-auth/providers/azure-ad";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     providers: [
@@ -9,4 +9,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             issuer: `https://login.microsoftonline.com/${process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/v2.0`,
         }),
     ],
+
+    callbacks: {
+        async jwt({ token, account, profile }) {
+            if (account && profile) {
+                // Try multiple claim locations for roles
+                token.roles =
+                    profile.roles ||
+                    profile._json.roles ||
+                    profile._json["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] ||
+                    [];
+            }
+            return token;
+        },
+        async session({ session, token }) {
+            session.user.roles = token.roles || [];
+            return session;
+        },
+    },
 });
