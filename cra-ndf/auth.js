@@ -13,6 +13,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     callbacks: {
         async jwt({ token, account, profile }) {
             if (account && profile) {
+                console.log("PROFILE:", profile);
+                // Exemple : récupérer l'ID Azure (oid ou sub)
+                token.userId = profile.sub || profile.oid || profile.id;
                 token.roles =
                     profile.roles ||
                     profile._json.roles ||
@@ -23,6 +26,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         },
         async session({ session, token }) {
             session.user.roles = token.roles || [];
+            session.user.id = token.userId || null;
             return session;
         },
     },
