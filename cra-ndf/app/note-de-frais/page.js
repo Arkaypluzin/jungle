@@ -1,21 +1,28 @@
-import { auth } from "@/auth";
-import { getAllNdf } from "@/app/api/ndf/model";
+'use client';
+import { useEffect, useState } from "react";
+import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
 
-export default async function NoteDeFraisPage() {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-        return <p>Vous devez être connecté.</p>;
+export default function NoteDeFraisPage() {
+    const [ndfList, setNdfList] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    async function fetchNdfs() {
+        setLoading(true);
+        const res = await fetch("/api/ndf", { cache: "no-store" });
+        const data = await res.json();
+        setNdfList(Array.isArray(data) ? data : []);
+        setLoading(false);
     }
 
-    // Va directement lire les ndf de l'utilisateur connecté
-    const ndfList = await getAllNdf(userId);
+    useEffect(() => { fetchNdfs(); }, []);
 
     return (
         <div className="max-w-2xl mx-auto mt-10">
             <h1 className="text-xl font-bold mb-4">Mes notes de frais</h1>
-            {ndfList.length === 0 && <p>Aucune note de frais créée.</p>}
+            <CreateNdfModal onNdfCreated={fetchNdfs} />
+            {loading && <p>Chargement…</p>}
+            {!loading && ndfList.length === 0 && <p>Aucune note de frais créée.</p>}
             <ul>
                 {ndfList.map(ndf => (
                     <li key={ndf.uuid} className="mb-4 p-4 border rounded flex items-center justify-between">
@@ -29,7 +36,7 @@ export default async function NoteDeFraisPage() {
                     </li>
                 ))}
             </ul>
-            <BtnRetour />
+            <BtnRetour fallback="/dashboard"/>
         </div>
     );
 }

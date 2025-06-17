@@ -29,7 +29,7 @@ async function Profile() {
                     <p>{session?.user?.email}</p>
                 </div>
                 <LogoutButton />
-                <BtnRetour fallback="/dashboard/user" />
+                <BtnRetour fallback="/dashboard" />
             </div>
         </div>
     );
