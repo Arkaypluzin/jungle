@@ -1,27 +1,14 @@
-"use client";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 
-import { useSession } from "next-auth/react";
-import Link from "next/link";
-import LogoutButton from "@/components/LogoutButton";
+export default async function DashboardRedirect() {
+    const session = await auth();
 
-export default function Dashboard() {
-    const { data: session } = useSession();
+    const roles = session?.user?.roles || [];
 
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-            <p className="text-xl font-semibold">Dashboard Page</p>
-            <p>User email: {session?.user?.email}</p>
-            <p>User roles: {session?.user?.roles?.join(", ") || "No roles found"}</p>
+    if (roles.includes("Admin")) {
+        return redirect("/dashboard/admin");
+    }
 
-            <div className="flex gap-4 mt-4">
-                <Link
-                    href="/profile"
-                    className="bg-green-700 text-white px-4 py-2 rounded-md hover:opacity-80"
-                >
-                    Go to Profile
-                </Link>
-                <LogoutButton />
-            </div>
-        </div>
-    );
+    return redirect("/dashboard/user");
 }
