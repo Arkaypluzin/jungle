@@ -1,4 +1,4 @@
-// app/components/UnifiedManager.js
+/*// app/components/UnifiedManager.js
 // Note: "use client" n'est pas pertinent en JS pur pour le navigateur.
 
 // Les styles Tailwind CSS restent inchangés et seront utilisés directement
@@ -568,4 +568,4 @@ function UnifiedManager({
       onCancel: () => setShowConfirm(false),
     })
   );
-}
+}*/
