@@ -1,0 +1,93 @@
+// app/api/ndf_details/controller.js
+import { v4 as uuidv4 } from "uuid";
+import { getAllDetailsByNdf, getDetailById, createDetail, updateDetail, deleteDetail } from "./model";
+import { getNdfById } from "@/app/api/ndf/model";
+import { auth } from "@/auth";
+
+export async function handleGetAll(req) {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const ndfId = searchParams.get("ndf");
+    if (!ndfId) return Response.json({ error: "Missing NDF ID" }, { status: 400 });
+
+    const ndf = await getNdfById(ndfId);
+    if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
+    if (ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    const data = await getAllDetailsByNdf(ndfId);
+    return Response.json(data);
+}
+
+export async function handleGetById(req, { params }) {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    const detail = await getDetailById(params.id);
+    if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
+
+    const ndf = await getNdfById(detail.id_ndf);
+    if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    return Response.json(detail);
+}
+
+export async function handlePost(req) {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { id_ndf, date_str, nature, description, tva, montant, img_url } = await req.json();
+
+    const ndf = await getNdfById(id_ndf);
+    if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
+    if (ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    const newDetail = {
+        uuid: uuidv4(),
+        id_ndf,
+        date_str,
+        nature,
+        description,
+        tva,
+        montant,
+        img_url: img_url || null
+    };
+    await createDetail(newDetail);
+
+    return Response.json(newDetail, { status: 201 });
+}
+
+export async function handlePut(req, { params }) {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    const detail = await getDetailById(params.id);
+    if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
+
+    const ndf = await getNdfById(detail.id_ndf);
+    if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    const { date_str, nature, description, tva, montant, img_url } = await req.json();
+    const updated = await updateDetail(params.id, { date_str, nature, description, tva, montant, img_url: img_url || null });
+    return Response.json(updated);
+}
+
+export async function handleDelete(req, { params }) {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    const detail = await getDetailById(params.id);
+    if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
+
+    const ndf = await getNdfById(detail.id_ndf);
+    if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    const deleted = await deleteDetail(params.id);
+    return Response.json(deleted);
+}

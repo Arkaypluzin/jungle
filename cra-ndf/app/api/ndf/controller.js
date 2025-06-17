@@ -1,12 +1,5 @@
-// app/api/ndf/controller.js
 import { v4 as uuidv4 } from "uuid";
-import {
-    getAllNdf,
-    getNdfById,
-    createNdf,
-    updateNdf,
-    deleteNdf,
-} from "./model";
+import { getAllNdf, getNdfById, createNdf, updateNdf, deleteNdf } from "./model";
 import { auth } from "@/auth";
 
 export async function handleGetAll(req) {
@@ -26,7 +19,6 @@ export async function handleGetById(req, { params }) {
     const data = await getNdfById(params.id);
     if (!data) return Response.json({ error: "Not found" }, { status: 404 });
 
-    // Optionnel : contrôle que ce NDF appartient au user connecté
     if (data.user_id !== userId) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -80,7 +72,6 @@ export async function handleDelete(req, { params }) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Récupère le NDF à supprimer
     const ndf = await getNdfById(params.id);
     if (!ndf) {
         return Response.json({ error: "Not found" }, { status: 404 });
@@ -89,7 +80,6 @@ export async function handleDelete(req, { params }) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Supprime le NDF
     const deleted = await deleteNdf(params.id);
     return Response.json(deleted);
 }
