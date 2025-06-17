@@ -23,6 +23,12 @@ export default async function AdminDashboard() {
                     Profile
                 </Link>
                 <LogoutButton />
+                <Link
+                    href="/note-de-frais"
+                    className="bg-blue-700 text-white px-4 py-2 rounded-md hover:opacity-80"
+                >
+                    Mes notes de frais
+                </Link>
             </div>
         </div>
     );

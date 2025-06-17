@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import LogoutButton from "@/components/LogoutButton";
+import BtnRetour from "@/components/BtnRetour";
 import Image from "next/image";
 
 // import { getServerSession } from "next-auth/next"
@@ -28,6 +29,7 @@ async function Profile() {
                     <p>{session?.user?.email}</p>
                 </div>
                 <LogoutButton />
+                <BtnRetour fallback="/dashboard/user" />
             </div>
         </div>
     );
