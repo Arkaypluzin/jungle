@@ -61,7 +61,11 @@ export async function handlePut(req, { params }) {
     }
 
     const { month, year, statut } = await req.json();
-    const updated = await updateNdf(params.id, { month, year, statut });
+    const updated = await updateNdf(params.id, {
+        month: month ?? ndf.month,
+        year: year ?? ndf.year,
+        statut: statut ?? ndf.statut,
+    });
     return Response.json(updated);
 }
 

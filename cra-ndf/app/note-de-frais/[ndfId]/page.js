@@ -4,6 +4,7 @@ import { getNdfById } from "@/app/api/ndf/model";
 import BtnRetour from "@/components/BtnRetour";
 import AddNdfDetailModal from "@/components/AddNdfDetailModal";
 import NdfDetailTable from "@/components/NdfDetailTable";
+import DeclareNdfButton from "@/components/DeclareNdfButton";
 
 export default async function NdfDetailsPage({ params }) {
     const { ndfId } = await params;
@@ -24,6 +25,8 @@ export default async function NdfDetailsPage({ params }) {
     return (
         <div className="max-w-4xl mx-auto mt-10">
             <h1 className="text-xl font-bold mb-4">Détails de la note de frais</h1>
+
+            <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
             <AddNdfDetailModal ndfId={ndfId} />
             <NdfDetailTable details={details} ndfStatut={ndf.statut} />
             <BtnRetour />
