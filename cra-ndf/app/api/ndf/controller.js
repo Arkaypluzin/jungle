@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { getAllNdf, getNdfById, createNdf, updateNdf, deleteNdf } from "./model";
+import { getAllNdf, getNdfById, createNdf, updateNdf, deleteNdf, getNdfByMonthYearUser } from "./model";
 import { getAllDetailsByNdf, deleteDetail } from "@/app/api/ndf_details/model"; 
 import { auth } from "@/auth";
 import { promises as fs } from "fs";
@@ -29,13 +29,20 @@ export async function handleGetById(req, { params }) {
     return Response.json(data);
 }
 
-
 export async function handlePost(req) {
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     const { month, year } = await req.json();
+
+    const existing = await getNdfByMonthYearUser(month, year, userId);
+    if (existing) {
+        return Response.json(
+            { error: "Une note de frais pour ce mois et cette année existe déjà." },
+            { status: 409 }
+        );
+    }
 
     const newNdf = await createNdf({
         uuid: uuidv4(),

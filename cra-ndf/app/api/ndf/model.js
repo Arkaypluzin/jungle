@@ -32,3 +32,11 @@ export async function deleteNdf(uuid) {
     await db.execute("DELETE FROM ndf WHERE uuid = ?", [uuid]);
     return { deleted: true };
 }
+
+export async function getNdfByMonthYearUser(month, year, user_id) {
+    const [rows] = await db.execute(
+        "SELECT * FROM ndf WHERE month = ? AND year = ? AND user_id = ?",
+        [month, year, user_id]
+    );
+    return rows[0];
+}
