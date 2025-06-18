@@ -25,7 +25,7 @@ export default async function NdfDetailsPage({ params }) {
         <div className="max-w-4xl mx-auto mt-10">
             <h1 className="text-xl font-bold mb-4">Détails de la note de frais</h1>
             <AddNdfDetailModal ndfId={ndfId} />
-            <NdfDetailTable details={details} />
+            <NdfDetailTable details={details} ndfStatut={ndf.statut} />
             <BtnRetour />
         </div>
     );
