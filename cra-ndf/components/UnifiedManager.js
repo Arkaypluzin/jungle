@@ -1,7 +1,7 @@
-/*// app/components/UnifiedManager.js
-// Note: "use client" n'est pas pertinent en JS pur pour le navigateur.
+"use client";
+import React from "react";
 
-// Les styles Tailwind CSS restent inchangés et seront utilisés directement
+// Styles pour le gestionnaire
 const managerStyles = {
   container:
     "font-sans mx-auto w-full max-w-5xl lg:max-w-6xl p-4 sm:p-8 bg-gray-50 shadow-xl rounded-xl border border-gray-100 mt-8",
@@ -41,7 +41,7 @@ const ACTIVITY_TYPES_OPTIONS = [
   { value: "absence", label: "Absence" },
 ];
 
-// Fonction pour la modale de confirmation personnalisée
+// Composant de modale de confirmation personnalisée
 const ConfirmModal = ({ show, message, onConfirm, onCancel }) => {
   if (!show) return null;
 
@@ -88,7 +88,7 @@ const ConfirmModal = ({ show, message, onConfirm, onCancel }) => {
   );
 };
 
-// Le composant fonctionnel UnifiedManager en JavaScript pur
+// Le composant fonctionnel UnifiedManager
 function UnifiedManager({
   activityTypes: propActivityTypes, // Renommé pour éviter la collision avec l'état local
   onActivityTypesChange,
@@ -568,4 +568,6 @@ function UnifiedManager({
       onCancel: () => setShowConfirm(false),
     })
   );
-}*/
+}
+
+export default UnifiedManager;
