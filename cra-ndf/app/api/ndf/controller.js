@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAllNdf, getNdfById, createNdf, updateNdf, deleteNdf } from "./model";
+import { getAllDetailsByNdf, deleteDetail } from "@/app/api/ndf_details/model"; 
 import { auth } from "@/auth";
+import { promises as fs } from "fs";
+import path from "path";
 
 export async function handleGetAll(req) {
     const session = await auth();
@@ -82,6 +85,20 @@ export async function handleDelete(req, { params }) {
     }
     if (ndf.user_id !== userId) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const details = await getAllDetailsByNdf(params.id);
+
+    for (const detail of details) {
+        if (detail.img_url) {
+            const imgPath = path.join(process.cwd(), "public", detail.img_url);
+            try {
+                await fs.unlink(imgPath);
+            } catch (e) {
+                console.error(`Erreur lors de la suppression de l'image ${detail.img_url}:`, e);
+            }
+        }
+        await deleteDetail(detail.uuid);
     }
 
     const deleted = await deleteNdf(params.id);

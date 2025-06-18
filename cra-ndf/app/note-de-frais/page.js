@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
+import EditNdfModal from "@/components/EditNdfModal";
+import DeleteNdfButton from "@/components/DeleteNdfButton";
 
 export default function NoteDeFraisPage() {
     const [ndfList, setNdfList] = useState([]);
@@ -26,17 +28,23 @@ export default function NoteDeFraisPage() {
             <ul>
                 {ndfList.map(ndf => (
                     <li key={ndf.uuid} className="mb-4 p-4 border rounded flex items-center justify-between">
-                        <span>{ndf.month} {ndf.year} — <span className="italic">{ndf.statut}</span></span>
-                        <a
-                            href={`/note-de-frais/${ndf.uuid}`}
-                            className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700"
-                        >
-                            Détails
-                        </a>
+                        <span>
+                            {ndf.month} {ndf.year} — <span className="italic">{ndf.statut}</span>
+                        </span>
+                        <div className="flex gap-2">
+                            <a
+                                href={`/note-de-frais/${ndf.uuid}`}
+                                className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700"
+                            >
+                                Détails
+                            </a>
+                            <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
+                            <DeleteNdfButton ndfId={ndf.uuid} onDeleted={fetchNdfs} />
+                        </div>
                     </li>
                 ))}
             </ul>
-            <BtnRetour fallback="/dashboard"/>
+            <BtnRetour fallback="/dashboard" />
         </div>
     );
 }
