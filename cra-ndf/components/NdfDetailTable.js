@@ -11,14 +11,13 @@ export default function NdfDetailTable({ details: initialDetails }) {
     const [details, setDetails] = useState(initialDetails);
     const [search, setSearch] = useState("");
 
-    // FILTRES
     const [filterModal, setFilterModal] = useState(false);
-    const [sortBy, setSortBy] = useState(""); // "date", "tva", "montant"
+    const [sortBy, setSortBy] = useState("");
     const [sortDir, setSortDir] = useState("asc");
-    const [nature, setNature] = useState(""); // nature unique
-    const [tvaType, setTvaType] = useState(""); // tva unique (ex: "10%", "autre taux" etc)
-    const [tvaOtherValue, setTvaOtherValue] = useState(""); // valeur autre taux
-    const [tvaMultiValue, setTvaMultiValue] = useState(""); // valeur multi taux (ex: "5/10")
+    const [nature, setNature] = useState("");
+    const [tvaType, setTvaType] = useState("");
+    const [tvaOtherValue, setTvaOtherValue] = useState("");
+    const [tvaMultiValue, setTvaMultiValue] = useState("");
     const [reset, setReset] = useState(0);
 
     const refresh = async () => window.location.reload();
@@ -32,12 +31,10 @@ export default function NdfDetailTable({ details: initialDetails }) {
             .filter(x => !isNaN(x));
         if (tauxList.length === 0) return parseFloat(montant);
         const base = parseFloat(montant);
-        // Multi-taux : ajouter chaque taux sur base HT
         const totalTva = tauxList.reduce((sum, taux) => sum + (base * taux) / 100, 0);
         return base + totalTva;
     }
 
-    // ----------- RECHERCHE -----------
     let filteredDetails = details.filter(detail => {
         const lower = search.toLowerCase();
         return (
@@ -49,12 +46,10 @@ export default function NdfDetailTable({ details: initialDetails }) {
         );
     });
 
-    // ----------- FILTRES -----------
-    // Nature
     if (nature) {
         filteredDetails = filteredDetails.filter(d => d.nature === nature);
     }
-    // TVA
+
     if (tvaType) {
         if (tvaType === "autre taux" && tvaOtherValue) {
             filteredDetails = filteredDetails.filter(d => d.tva.replace(/\s/g, "").includes(tvaOtherValue.replace(/\s/g, "")));
@@ -64,7 +59,7 @@ export default function NdfDetailTable({ details: initialDetails }) {
             filteredDetails = filteredDetails.filter(d => d.tva.split(" ")[0] === tvaType);
         }
     }
-    // Sort
+    
     if (sortBy) {
         filteredDetails = [...filteredDetails].sort((a, b) => {
             let valA, valB;
@@ -89,7 +84,6 @@ export default function NdfDetailTable({ details: initialDetails }) {
     const totalHT = filteredDetails.reduce((acc, d) => acc + parseFloat(d.montant || 0), 0);
     const totalTTC = filteredDetails.reduce((acc, d) => acc + getTTC(d.montant, d.tva), 0);
 
-    // RESET filters
     function resetFilters() {
         setNature("");
         setTvaType("");
@@ -97,7 +91,7 @@ export default function NdfDetailTable({ details: initialDetails }) {
         setTvaMultiValue("");
         setSortBy("");
         setSortDir("asc");
-        setReset(prev => prev + 1); // just to rerender modal fields if needed
+        setReset(prev => prev + 1);
         setFilterModal(false);
     }
 
@@ -133,7 +127,6 @@ export default function NdfDetailTable({ details: initialDetails }) {
                                 <X size={22} />
                             </button>
                         </div>
-                        {/* Tri */}
                         <div className="mb-4">
                             <div className="font-semibold">Trier par :</div>
                             <div className="flex gap-2 mt-2">
@@ -178,7 +171,6 @@ export default function NdfDetailTable({ details: initialDetails }) {
                                 </div>
                             )}
                         </div>
-                        {/* Nature */}
                         <div className="mb-4">
                             <div className="font-semibold mb-1">Nature :</div>
                             <select
@@ -192,7 +184,6 @@ export default function NdfDetailTable({ details: initialDetails }) {
                                 ))}
                             </select>
                         </div>
-                        {/* TVA */}
                         <div className="mb-4">
                             <div className="font-semibold mb-1">Filtrer par TVA :</div>
                             <select

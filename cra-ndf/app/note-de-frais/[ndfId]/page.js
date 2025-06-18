@@ -3,7 +3,7 @@ import { getAllDetailsByNdf } from "@/app/api/ndf_details/model";
 import { getNdfById } from "@/app/api/ndf/model";
 import BtnRetour from "@/components/BtnRetour";
 import AddNdfDetailModal from "@/components/AddNdfDetailModal";
-import NdfDetailTable from "@/components/NdfDetailTable"; // 👉 ce sera un composant client
+import NdfDetailTable from "@/components/NdfDetailTable";
 
 export default async function NdfDetailsPage({ params }) {
     const { ndfId } = await params;
