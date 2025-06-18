@@ -23,7 +23,7 @@ export default function CreateNdfModal({ onNdfCreated }) {
             const res = await fetch("/api/ndf", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ month, year, statut }),
+                body: JSON.stringify({ month, year }),
             });
             if (!res.ok) {
                 const data = await res.json();
@@ -78,19 +78,6 @@ export default function CreateNdfModal({ onNdfCreated }) {
                                     required
                                     onChange={e => setYear(e.target.value)}
                                 />
-                            </label>
-                            <label>
-                                Statut :
-                                <select
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={statut}
-                                    required
-                                    onChange={e => setStatut(e.target.value)}
-                                >
-                                    {STATUS.map(s => (
-                                        <option key={s} value={s}>{s}</option>
-                                    ))}
-                                </select>
                             </label>
                             {error && <div className="text-red-600">{error}</div>}
                             <div className="flex gap-2 mt-2">

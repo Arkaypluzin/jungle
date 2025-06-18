@@ -32,14 +32,14 @@ export async function handlePost(req) {
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { month, year, statut } = await req.json();
+    const { month, year } = await req.json();
 
     const newNdf = await createNdf({
         uuid: uuidv4(),
         month,
         year,
         user_id: userId,
-        statut,
+        statut: "Provisoire",
     });
 
     return Response.json(newNdf, { status: 201 });

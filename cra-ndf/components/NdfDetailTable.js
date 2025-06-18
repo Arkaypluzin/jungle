@@ -3,11 +3,13 @@ import EditNdfDetailModal from "@/components/EditNdfDetailModal";
 import DeleteNdfDetailButton from "@/components/DeleteNdfDetailButton";
 import { useState } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
-export default function NdfDetailTable({ details: initialDetails }) {
+export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
     const [details, setDetails] = useState(initialDetails);
     const [search, setSearch] = useState("");
 
@@ -21,6 +23,57 @@ export default function NdfDetailTable({ details: initialDetails }) {
     const [reset, setReset] = useState(0);
 
     const refresh = async () => window.location.reload();
+
+    const exportToPDF = () => {
+        const doc = new jsPDF();
+
+        const head = [[
+            "Date",
+            "Nature",
+            "Description",
+            "TVA",
+            "Montant HT",
+            "Montant TTC",
+            "Justificatif"
+        ]];
+
+        const rows = filteredDetails.map(detail => [
+            detail.date_str,
+            detail.nature,
+            detail.description,
+            detail.tva,
+            `${detail.montant}€`,
+            `${getTTC(detail.montant, detail.tva).toFixed(2)}€`,
+            detail.img_url ? "Oui" : "Non"
+        ]);
+
+        autoTable(doc, {
+            head,
+            body: rows,
+            margin: { top: 20 },
+            styles: { fontSize: 10 },
+            headStyles: { fillColor: [254, 202, 87] },
+        });
+
+        autoTable(doc, {
+            body: [
+                [
+                    { content: "Total HT", colSpan: 5, styles: { halign: "right", fontStyle: "bold" } },
+                    { content: `${totalHT.toFixed(2)}€`, styles: { fontStyle: "bold" } },
+                    { content: "" }
+                ],
+                [
+                    { content: "Total TTC", colSpan: 5, styles: { halign: "right", fontStyle: "bold" } },
+                    { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold" } },
+                    { content: "" }
+                ]
+            ],
+            theme: 'plain',
+            margin: { top: doc.lastAutoTable.finalY + 2 }
+        });
+
+        doc.save("note-de-frais.pdf");
+    };
 
     function getTTC(montant, tvaStr) {
         if (!tvaStr) return parseFloat(montant);
@@ -59,7 +112,7 @@ export default function NdfDetailTable({ details: initialDetails }) {
             filteredDetails = filteredDetails.filter(d => d.tva.split(" ")[0] === tvaType);
         }
     }
-    
+
     if (sortBy) {
         filteredDetails = [...filteredDetails].sort((a, b) => {
             let valA, valB;
@@ -276,8 +329,12 @@ export default function NdfDetailTable({ details: initialDetails }) {
                                     )}
                                 </td>
                                 <td className="py-2 px-4 border text-center">
-                                    <EditNdfDetailModal detail={detail} onEdited={refresh} />
-                                    <DeleteNdfDetailButton detailId={detail.uuid} onDeleted={refresh} />
+                                    {ndfStatut !== "Déclaré" && (
+                                        <>
+                                            <EditNdfDetailModal detail={detail} onEdited={refresh} />
+                                            <DeleteNdfDetailButton detailId={detail.uuid} onDeleted={refresh} />
+                                        </>
+                                    )}
                                 </td>
                             </tr>
                         );
@@ -294,6 +351,23 @@ export default function NdfDetailTable({ details: initialDetails }) {
                     </tr>
                 </tfoot>
             </table>
+            <button
+                onClick={exportToPDF}
+                disabled={ndfStatut === "Provisoire"}
+                title={ndfStatut === "Provisoire" ? "Impossible d'exporter un NDF au statut Provisoire" : "Exporter le tableau en PDF"}
+                className={`mt-4 px-6 py-2 rounded font-semibold transition
+                    ${ndfStatut === "Provisoire"
+                        ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                        : "bg-red-700 text-white hover:bg-red-800"
+                    }`}
+            >
+                Exporter le tableau en PDF
+            </button>
+            {ndfStatut === "Provisoire" && (
+                <div className="text-xs text-gray-500 mt-1">
+                    Le statut doit être autre que <b>Provisoire</b> pour permettre l’export PDF.
+                </div>
+            )}
         </div>
     );
 }
