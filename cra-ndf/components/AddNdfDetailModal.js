@@ -35,11 +35,9 @@ export default function AddNdfDetailModal({ ndfId }) {
         setError("");
 
         let img_url = null;
-        // Upload image (optionnel)
         if (imgFile) {
             const formData = new FormData();
             formData.append("file", imgFile);
-            // Simule un upload, adapte l'URL si tu as un endpoint d'upload !
             const res = await fetch("/api/upload", {
                 method: "POST",
                 body: formData
@@ -53,9 +51,7 @@ export default function AddNdfDetailModal({ ndfId }) {
             img_url = data.url;
         }
 
-        // Préparation des taux selon le choix
         let tvaValue = tva;
-        let extra = {};
         if (tva === "autre taux") {
             tvaValue = autreTaux;
         }
@@ -163,7 +159,16 @@ export default function AddNdfDetailModal({ ndfId }) {
                                     className="border px-2 py-1 rounded"
                                     value={autreTaux}
                                     required
-                                    onChange={e => setAutreTaux(e.target.value)}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        if (val.includes("/")) {
+                                            setTva("multi-taux");
+                                            setMultiTaux(val.split("/").map(s => s.trim()));
+                                            setAutreTaux("");
+                                        } else {
+                                            setAutreTaux(val);
+                                        }
+                                    }}
                                 />
                             )}
                             {tva === "multi-taux" && (

@@ -12,23 +12,24 @@ export default function NdfDetailTable({ details: initialDetails }) {
     };
 
     function getTTC(montant, tvaStr) {
-        if (!tvaStr) return montant;
+        if (!tvaStr) return parseFloat(montant);
         const tauxList = tvaStr
             .split("/")
             .map(t => t.replace(/[^\d.,]/g, "").replace(",", ".").trim())
             .map(str => parseFloat(str))
             .filter(x => !isNaN(x));
-        if (tauxList.length === 0) return montant;
-        let total = parseFloat(montant);
-        tauxList.forEach(taux => {
-            total += (total * taux) / 100;
-        });
-        return total;
+        if (tauxList.length === 0) return parseFloat(montant);
+        const base = parseFloat(montant);
+        const totalTva = tauxList.reduce((sum, taux) => sum + (base * taux) / 100, 0);
+        return base + totalTva;
     }
 
     if (!details?.length) {
         return <p>Aucun détail pour cette note de frais.</p>;
     }
+
+    const totalHT = details.reduce((acc, d) => acc + parseFloat(d.montant || 0), 0);
+    const totalTTC = details.reduce((acc, d) => acc + getTTC(d.montant, d.tva), 0);
 
     return (
         <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
@@ -74,6 +75,16 @@ export default function NdfDetailTable({ details: initialDetails }) {
                     );
                 })}
             </tbody>
+            <tfoot>
+                <tr className="bg-gray-200 font-bold text-black">
+                    <td colSpan={6} className="py-2 px-4 border text-right">Total HT</td>
+                    <td colSpan={2} className="py-2 px-4 border">{totalHT.toFixed(2)}€</td>
+                </tr>
+                <tr className="bg-gray-200 font-bold text-black">
+                    <td colSpan={6} className="py-2 px-4 border text-right">Total TTC</td>
+                    <td colSpan={2} className="py-2 px-4 border">{totalTTC.toFixed(2)}€</td>
+                </tr>
+            </tfoot>
         </table>
     );
 }

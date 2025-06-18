@@ -6,19 +6,31 @@ const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
+    // Gestion intelligente des taux à l'ouverture
+    const [tva, setTva] = useState(() => {
+        if (detail.tva && detail.tva.includes("/")) return "multi-taux";
+        if (TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
+        return "autre taux";
+    });
+
+    const [autreTaux, setAutreTaux] = useState(() => {
+        if (!TVAS.includes(detail.tva.split(" ")[0]) && !detail.tva.includes('/')) {
+            return detail.tva;
+        }
+        return "";
+    });
+
+    const [multiTaux, setMultiTaux] = useState(() => {
+        if (detail.tva && detail.tva.includes('/')) {
+            return detail.tva.split("/").map(t => t.trim());
+        }
+        return [""];
+    });
+
     const [open, setOpen] = useState(false);
-    const [dateStr, setDateStr] = useState(detail.date_str);
+    const [dateStr, setDateStr] = useState(detail.date_str); // toujours afficher la vraie date
     const [nature, setNature] = useState(detail.nature);
     const [description, setDescription] = useState(detail.description);
-    const [tva, setTva] = useState(
-        TVAS.includes(detail.tva.split(" ")[0]) ? detail.tva : "autre taux"
-    );
-    const [autreTaux, setAutreTaux] = useState(
-        !TVAS.includes(detail.tva.split(" ")[0]) ? detail.tva : ""
-    );
-    const [multiTaux, setMultiTaux] = useState(
-        detail.tva.includes("/") ? detail.tva.split(" / ").map(t => t.trim()) : [""]
-    );
     const [montant, setMontant] = useState(detail.montant);
     const [imgFile, setImgFile] = useState(null);
     const [error, setError] = useState("");
@@ -30,7 +42,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         setError("");
         let img_url = detail.img_url;
 
-        // Si un nouveau fichier est uploadé, upload l'image
         if (imgFile) {
             const formData = new FormData();
             formData.append("file", imgFile);
@@ -152,7 +163,16 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     className="border px-2 py-1 rounded"
                                     value={autreTaux}
                                     required
-                                    onChange={e => setAutreTaux(e.target.value)}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        if (val.includes("/")) {
+                                            setTva("multi-taux");
+                                            setMultiTaux(val.split("/").map(s => s.trim()));
+                                            setAutreTaux("");
+                                        } else {
+                                            setAutreTaux(val);
+                                        }
+                                    }}
                                 />
                             )}
                             {tva === "multi-taux" && (
