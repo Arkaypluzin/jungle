@@ -1,4 +1,3 @@
-// models/cra.js
 // Modèle pour interagir avec la table 'CRA' dans la base de données.
 
 import { db } from "../lib/db"; // Importe l'instance de la connexion à la DB

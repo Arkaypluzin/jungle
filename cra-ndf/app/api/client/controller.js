@@ -1,155 +1,179 @@
-// controllers/clientController.js
-// Ce contrôleur gère les requêtes HTTP liées aux opérations sur les clients.
+// app/api/client/controller.js
 
-// Correction: Importe toutes les fonctions du modèle client (fichier models/client.js)
-import * as clientModel from "../models/client";
-import { NextResponse } from "next/server"; // Nécessaire pour les réponses Next.js
+// Importe le modèle client pour interagir avec la base de données.
+// Le chemin './model' suppose que model.js est dans le même dossier que ce contrôleur.
+import * as clientModel from "./model";
+// Importe NextResponse de Next.js pour gérer les réponses HTTP.
+import { NextResponse } from "next/server";
 
 /**
  * Récupère tous les clients.
- * GET /api/clients
+ * @returns {NextResponse} Une réponse JSON contenant la liste des clients ou une erreur.
  */
-export async function getClients(req, res) {
+export async function getClients() {
   try {
     const clients = await clientModel.getAllClients();
-    return res.status(200).json(clients);
+    return NextResponse.json(clients, { status: 200 });
   } catch (error) {
     console.error("Erreur dans getClients:", error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération des clients",
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la récupération des clients.",
         error: error.message,
-      });
-  }
-}
-
-/**
- * Récupère un client par son ID.
- * GET /api/clients/:id
- * @param {Object} req - L'objet Request de Next.js
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} id - L'ID du client
- */
-export async function getClientById(req, res, id) {
-  try {
-    const client = await clientModel.getClientById(parseInt(id, 10)); // Convertir l'ID en nombre
-    if (client) {
-      return res.status(200).json(client);
-    } else {
-      return res.status(404).json({ message: "Client non trouvé" });
-    }
-  } catch (error) {
-    console.error(`Erreur dans getClientById pour l'ID ${id}:`, error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération du client",
-        error: error.message,
-      });
+      },
+      { status: 500 }
+    );
   }
 }
 
 /**
  * Crée un nouveau client.
- * POST /api/clients
- * @param {Object} req - L'objet Request de Next.js (contenant req.body)
- * @param {Object} res - L'objet de réponse simulé (mockRes)
+ * @param {Object} clientData Les données du nouveau client.
+ * @returns {NextResponse} Une réponse JSON confirmant la création ou une erreur.
  */
-export async function createClient(req, res) {
-  const clientData = req.body;
-  if (!clientData.nom_client) {
-    return res.status(400).json({ message: "Le nom du client est requis." });
+export async function createClient(clientData) {
+  // Validation améliorée pour s'assurer que les champs sont présents et non vides.
+  if (
+    !clientData ||
+    !clientData.nom_client ||
+    clientData.nom_client.trim() === "" ||
+    !clientData.adresse ||
+    clientData.adresse.trim() === "" ||
+    !clientData.contact_email ||
+    clientData.contact_email.trim() === ""
+  ) {
+    // Ajout de la validation pour contact_email
+    return NextResponse.json(
+      {
+        message:
+          "Les champs 'nom_client', 'adresse' et 'contact_email' sont requis.",
+      },
+      { status: 400 }
+    );
   }
-
   try {
     const newClient = await clientModel.createClient(clientData);
-    return res.status(201).json(newClient);
+    return NextResponse.json(newClient, { status: 201 });
   } catch (error) {
     console.error("Erreur dans createClient:", error);
-    if (error.code === "ER_DUP_ENTRY") {
-      // Pour le cas où contact_email est UNIQUE
-      return res
-        .status(409)
-        .json({
-          message: "Un client avec cet email de contact existe déjà.",
+    if (error.code === "ER_DUP_ENTRY" || error.errno === 1062) {
+      // Gérer les doublons (par ex. pour email)
+      return NextResponse.json(
+        {
+          message: "Un client avec ces informations existe déjà.",
           error: error.message,
-        });
+        },
+        { status: 409 }
+      );
     }
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la création du client",
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la création du client.",
         error: error.message,
-      });
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Récupère un client par son ID.
+ * @param {number} id L'ID du client à récupérer.
+ * @returns {NextResponse} Une réponse JSON contenant le client ou une erreur.
+ */
+export async function getClientById(id) {
+  try {
+    const client = await clientModel.getClientById(id);
+    if (client) {
+      return NextResponse.json(client, { status: 200 });
+    } else {
+      return NextResponse.json(
+        { message: "Client non trouvé." },
+        { status: 404 }
+      );
+    }
+  } catch (error) {
+    console.error(`Erreur dans getClientById pour l'ID ${id}:`, error);
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la récupération du client.",
+        error: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
 
 /**
  * Met à jour un client existant.
- * PUT /api/clients/:id
- * @param {Object} req - L'objet Request de Next.js (contenant req.body)
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} id - L'ID du client
+ * @param {number} id L'ID du client à mettre à jour.
+ * @param {Object} updateData Les données à mettre à jour pour le client.
+ * @returns {NextResponse} Une réponse JSON de confirmation ou une erreur.
  */
-export async function updateClient(req, res, id) {
-  const updateData = req.body;
-
-  if (Object.keys(updateData).length === 0) {
-    return res
-      .status(400)
-      .json({ message: "Aucune donnée fournie pour la mise à jour." });
-  }
-
-  try {
-    const success = await clientModel.updateClient(
-      parseInt(id, 10),
-      updateData
+export async function updateClient(id, updateData) {
+  // Vérification robuste de updateData.
+  if (
+    !updateData ||
+    typeof updateData !== "object" ||
+    Object.keys(updateData).length === 0
+  ) {
+    return NextResponse.json(
+      { message: "Aucune donnée valide fournie pour la mise à jour." },
+      { status: 400 }
     );
+  }
+  try {
+    const success = await clientModel.updateClient(id, updateData);
     if (success) {
-      return res
-        .status(200)
-        .json({ message: "Client mis à jour avec succès." });
+      return NextResponse.json(
+        { message: "Client mis à jour avec succès." },
+        { status: 200 }
+      );
     } else {
-      return res
-        .status(404)
-        .json({
-          message: "Client non trouvé ou aucune modification effectuée.",
-        });
+      return NextResponse.json(
+        { message: "Client non trouvé ou aucune modification effectuée." },
+        { status: 404 }
+      );
     }
   } catch (error) {
     console.error(`Erreur dans updateClient pour l'ID ${id}:`, error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la mise à jour du client",
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la mise à jour du client.",
         error: error.message,
-      });
+      },
+      { status: 500 }
+    );
   }
 }
 
 /**
  * Supprime un client par son ID.
- * DELETE /api/clients/:id
- * @param {Object} req - L'objet Request de Next.js
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} id - L'ID du client
+ * @param {number} id L'ID du client à supprimer.
+ * @returns {NextResponse} Une réponse JSON de confirmation ou une erreur.
  */
-export async function deleteClient(req, res, id) {
+export async function deleteClient(id) {
   try {
-    const success = await clientModel.deleteClient(parseInt(id, 10));
+    const success = await clientModel.deleteClient(id);
     if (success) {
-      return res.status(204).send();
+      return NextResponse.json(
+        { message: "Client supprimé avec succès." },
+        { status: 200 }
+      );
     } else {
-      return res.status(404).json({ message: "Client non trouvé." });
+      return NextResponse.json(
+        { message: "Client non trouvé." },
+        { status: 404 }
+      );
     }
   } catch (error) {
     console.error(`Erreur dans deleteClient pour l'ID ${id}:`, error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la suppression du client",
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la suppression du client.",
         error: error.message,
-      });
+      },
+      { status: 500 }
+    );
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-// Styles pour le gestionnaire
+// Styles pour le gestionnaire (inchangés)
 const managerStyles = {
   container:
     "font-sans mx-auto w-full max-w-5xl lg:max-w-6xl p-4 sm:p-8 bg-gray-50 shadow-xl rounded-xl border border-gray-100 mt-8",
@@ -35,13 +35,13 @@ const managerStyles = {
   deleteButton: "bg-red-500 text-white hover:bg-red-600",
 };
 
-// Options pour le sélecteur de type d'activité/absence
+// Options pour le sélecteur de type d'activité/absence (inchangées)
 const ACTIVITY_TYPES_OPTIONS = [
   { value: "activity", label: "Activité" },
   { value: "absence", label: "Absence" },
 ];
 
-// Composant de modale de confirmation personnalisée
+// Composant de modale de confirmation personnalisée (inchangé)
 const ConfirmModal = ({ show, message, onConfirm, onCancel }) => {
   if (!show) return null;
 
@@ -90,105 +90,128 @@ const ConfirmModal = ({ show, message, onConfirm, onCancel }) => {
 
 // Le composant fonctionnel UnifiedManager
 function UnifiedManager({
-  activityTypes: propActivityTypes, // Renommé pour éviter la collision avec l'état local
-  onActivityTypesChange,
-  clientTypes: propClientTypes, // Renommé pour éviter la collision avec l'état local
-  onClientTypesChange,
+  activityTypes,
+  onAddActivity,
+  onUpdateActivity,
+  onDeleteActivity,
+  clientTypes,
+  onAddClient,
+  onUpdateClient,
+  onDeleteClient,
+  activeTab,
+  setActiveTab,
 }) {
-  const [activeTab, setActiveTab] = React.useState("activities"); // 'activities' ou 'clients', contrôle l'onglet actif
-
-  // États et logiques pour les activités
-  const [activities, setActivities] = React.useState(propActivityTypes || []);
+  // États pour les formulaires d'ajout d'activité
   const [newActivityName, setNewActivityName] = React.useState("");
   const [newActivityType, setNewActivityType] = React.useState("activity");
+
+  // États pour les formulaires d'ajout de client
+  const [newClientName, setNewClientName] = React.useState("");
+  const [newClientAddress, setNewClientAddress] = React.useState("");
+  const [newClientEmail, setNewClientEmail] = React.useState("");
+  const [newClientPhone, setNewClientPhone] = React.useState("");
+  // NOUVEAUX ÉTATS POUR LES MESSAGES D'ERREUR DE VALIDATION
+  const [newClientEmailError, setNewClientEmailError] = React.useState("");
+  const [newClientPhoneError, setNewClientPhoneError] = React.useState("");
+
+  // États pour les formulaires d'édition d'activité
   const [editingActivityId, setEditingActivityId] = React.useState(null);
   const [editingActivityName, setEditingActivityName] = React.useState("");
   const [editingActivityType, setEditingActivityType] = React.useState("");
 
-  // États et logiques pour les clients
-  const [clients, setClients] = React.useState(propClientTypes || []);
-  const [newClientName, setNewClientName] = React.useState("");
+  // États pour les formulaires d'édition de client
   const [editingClientId, setEditingClientId] = React.useState(null);
   const [editingClientName, setEditingClientName] = React.useState("");
+  const [editingClientAddress, setEditingClientAddress] = React.useState("");
+  const [editingClientEmail, setEditingClientEmail] = React.useState("");
+  const [editingClientPhone, setEditingClientPhone] = React.useState("");
+  // NOUVEAUX ÉTATS POUR LES MESSAGES D'ERREUR DE VALIDATION EN ÉDITION
+  const [editingClientEmailError, setEditingClientEmailError] =
+    React.useState("");
+  const [editingClientPhoneError, setEditingClientPhoneError] =
+    React.useState("");
 
   // États pour la modale de confirmation
   const [showConfirm, setShowConfirm] = React.useState(false);
   const [confirmMessage, setConfirmMessage] = React.useState("");
   const [confirmAction, setConfirmAction] = React.useState(null);
 
-  // Synchronise les props 'activityTypes' avec l'état local quand elles changent
-  React.useEffect(() => {
-    if (Array.isArray(propActivityTypes)) {
-      setActivities(propActivityTypes);
-    }
-  }, [propActivityTypes]);
+  // --- Fonctions de validation (ajoutées pour les emails et téléphones) ---
+  const validateEmail = (email) => {
+    // Regex simple pour l'email. Plus robuste nécessaire pour des cas extrêmes.
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email)
+      ? ""
+      : "Format d'email invalide (ex: exemple@domaine.com).";
+  };
 
-  // Synchronise les props 'clientTypes' avec l'état local quand elles changent
-  React.useEffect(() => {
-    if (Array.isArray(propClientTypes)) {
-      setClients(propClientTypes);
-    }
-  }, [propClientTypes]);
+  const validatePhone = (phone) => {
+    // Permet uniquement 10 chiffres numériques.
+    const phoneRegex = /^[0-9]{10}$/;
+    if (phone.trim() === "") return ""; // Permet le champ vide si non requis
+    return phoneRegex.test(phone)
+      ? ""
+      : "Le numéro de téléphone doit contenir exactement 10 chiffres (0-9).";
+  };
 
-  // Génération d'ID unique pour les éléments côté client
-  const generateUniqueId = React.useCallback(() => {
-    return Math.random().toString(36).substring(2, 9);
-  }, []);
-
-  // --- Logique de gestion des Activités (purement côté client) ---
-  const handleAddActivity = React.useCallback(() => {
+  // --- Logique de gestion des Activités (inchangée, car la demande ne les concerne pas) ---
+  const handleAddActivityClick = React.useCallback(async () => {
     if (newActivityName.trim() === "") {
       console.error("Le nom de l'activité ne peut pas être vide.");
       return;
     }
-    const newId = generateUniqueId();
-    const updatedActivities = [
-      ...activities,
-      { id: newId, name: newActivityName.trim(), type: newActivityType },
-    ];
-    setActivities(updatedActivities);
-    onActivityTypesChange(updatedActivities); // Informe le composant parent pour la persistance (localStorage)
-    setNewActivityName("");
-    setNewActivityType("activity");
-  }, [
-    activities,
-    newActivityName,
-    newActivityType,
-    onActivityTypesChange,
-    generateUniqueId,
-  ]);
+
+    const activityData = {
+      description_activite: newActivityName.trim(),
+      type_activite: newActivityType,
+      temps_passe: 1, // Valeur par défaut temporaire pour passer la validation
+      date_activite: new Date().toISOString().split("T")[0], // Date du jour
+      cra_id: 1, // PLACEHOLDER : IMPORTANT! C'est la cause de l'erreur de clé étrangère si CRA 1 n'existe pas.
+    };
+
+    console.log("Données d'activité envoyées à la DB:", activityData);
+
+    const success = await onAddActivity(activityData);
+    if (success) {
+      setNewActivityName("");
+      setNewActivityType("activity");
+    } else {
+      console.error(
+        "Échec de l'ajout de l'activité. Vérifiez les logs côté serveur pour plus de détails."
+      );
+    }
+  }, [newActivityName, newActivityType, onAddActivity]);
 
   const handleEditActivityClick = React.useCallback((activity) => {
     setEditingActivityId(activity.id);
-    setEditingActivityName(activity.name);
-    setEditingActivityType(activity.type);
+    setEditingActivityName(activity.description_activite);
+    setEditingActivityType(activity.type_activite);
   }, []);
 
-  const handleSaveActivityEdit = React.useCallback(() => {
+  const handleSaveActivityEdit = React.useCallback(async () => {
     if (editingActivityName.trim() === "") {
       console.error("Le nom de l'activité ne peut pas être vide.");
       return;
     }
-    const updatedActivities = activities.map((activity) =>
-      activity.id === editingActivityId
-        ? {
-            ...activity,
-            name: editingActivityName.trim(),
-            type: editingActivityType,
-          }
-        : activity
-    );
-    setActivities(updatedActivities);
-    onActivityTypesChange(updatedActivities); // Informe le composant parent
-    setEditingActivityId(null);
-    setEditingActivityName("");
-    setEditingActivityType("");
+    const updatedData = {
+      description_activite: editingActivityName.trim(),
+      type_activite: editingActivityType,
+    };
+    const success = await onUpdateActivity(editingActivityId, updatedData);
+    if (success) {
+      setEditingActivityId(null);
+      setEditingActivityName("");
+      setEditingActivityType("");
+    } else {
+      console.error(
+        "Échec de la mise à jour de l'activité. Vérifiez les logs."
+      );
+    }
   }, [
-    activities,
     editingActivityId,
     editingActivityName,
     editingActivityType,
-    onActivityTypesChange,
+    onUpdateActivity,
   ]);
 
   const handleCancelActivityEdit = React.useCallback(() => {
@@ -197,82 +220,175 @@ function UnifiedManager({
     setEditingActivityType("");
   }, []);
 
-  const handleDeleteActivity = React.useCallback(
+  const handleDeleteActivityClick = React.useCallback(
     (idToDelete) => {
       setConfirmMessage(
-        "Êtes-vous sûr de vouloir supprimer ce type d'activité ? Toutes les données associées seront perdues pour le mois en cours."
+        "Êtes-vous sûr de vouloir supprimer ce type d'activité ? Toutes les données associées seront perdues."
       );
-      setConfirmAction(() => () => {
-        const updatedActivities = activities.filter(
-          (activity) => activity.id !== idToDelete
-        );
-        setActivities(updatedActivities);
-        onActivityTypesChange(updatedActivities); // Informe le composant parent
-        setShowConfirm(false); // Ferme la modale
+      setConfirmAction(() => async () => {
+        const success = await onDeleteActivity(idToDelete);
+        if (success) {
+          setShowConfirm(false);
+        } else {
+          console.error(
+            "Échec de la suppression de l'activité. Vérifiez les logs."
+          );
+        }
       });
-      setShowConfirm(true); // Ouvre la modale
+      setShowConfirm(true);
     },
-    [activities, onActivityTypesChange]
+    [onDeleteActivity]
   );
 
-  // --- Logique de gestion des Clients (purement côté client) ---
-  const handleAddClient = React.useCallback(() => {
-    if (newClientName.trim() === "") {
-      console.error("Le nom du client ne peut pas être vide.");
+  // --- Logique de gestion des Clients (MODIFIÉE pour la validation en temps réel) ---
+  const handleAddClientClick = React.useCallback(async () => {
+    // Exécute la validation avant la soumission
+    const emailError = validateEmail(newClientEmail);
+    const phoneError = validatePhone(newClientPhone);
+
+    if (newClientName.trim() === "" || newClientAddress.trim() === "") {
+      console.error("Le nom et l'adresse du client ne peuvent pas être vides.");
+      setNewClientEmailError(emailError); // Met à jour l'erreur email pour affichage
+      setNewClientPhoneError(phoneError); // Met à jour l'erreur téléphone pour affichage
       return;
     }
-    const newId = generateUniqueId(); // Génération d'ID côté client
-    const updatedClients = [
-      ...clients,
-      { id: newId, name: newClientName.trim() },
-    ];
-    setClients(updatedClients);
-    onClientTypesChange(updatedClients); // Informe le composant parent pour la persistance (localStorage)
-    setNewClientName("");
-  }, [clients, newClientName, onClientTypesChange, generateUniqueId]);
+    if (emailError) {
+      setNewClientEmailError(emailError);
+      setNewClientPhoneError(phoneError); // Met à jour l'erreur téléphone au cas où
+      return;
+    }
+    if (phoneError) {
+      setNewClientPhoneError(phoneError);
+      setNewClientEmailError(emailError); // Met à jour l'erreur email au cas où
+      return;
+    }
+
+    // Réinitialise les erreurs si toutes les validations passent
+    setNewClientEmailError("");
+    setNewClientPhoneError("");
+
+    const clientData = {
+      nom_client: newClientName.trim(),
+      adresse: newClientAddress.trim(),
+      contact_email: newClientEmail.trim(),
+      telephone: newClientPhone.trim(),
+    };
+    console.log("Données client envoyées à la DB:", clientData);
+    const success = await onAddClient(clientData);
+    if (success) {
+      setNewClientName("");
+      setNewClientAddress("");
+      setNewClientEmail("");
+      setNewClientPhone("");
+      setActiveTab("clients");
+    } else {
+      console.error("Échec de l'ajout du client. Vérifiez les logs.");
+    }
+  }, [
+    newClientName,
+    newClientAddress,
+    newClientEmail,
+    newClientPhone,
+    onAddClient,
+    setActiveTab,
+  ]);
 
   const handleEditClientClick = React.useCallback((client) => {
     setEditingClientId(client.id);
-    setEditingClientName(client.name);
+    setEditingClientName(client.nom_client);
+    setEditingClientAddress(client.adresse || "");
+    setEditingClientEmail(client.contact_email || "");
+    setEditingClientPhone(client.telephone || "");
+    // Réinitialiser les erreurs lors de l'ouverture du mode édition
+    setEditingClientEmailError("");
+    setEditingClientPhoneError("");
   }, []);
 
-  const handleSaveClientEdit = React.useCallback(() => {
-    if (editingClientName.trim() === "") {
-      console.error("Le nom du client ne peut pas être vide.");
+  const handleSaveClientEdit = React.useCallback(async () => {
+    // Exécute la validation avant la soumission
+    const emailError = validateEmail(editingClientEmail);
+    const phoneError = validatePhone(editingClientPhone);
+
+    if (editingClientName.trim() === "" || editingClientAddress.trim() === "") {
+      console.error(
+        "Le nom et l'adresse du client ne peuvent pas être vides pour la modification."
+      );
+      setEditingClientEmailError(emailError); // Met à jour l'erreur email pour affichage
+      setEditingClientPhoneError(phoneError); // Met à jour l'erreur téléphone pour affichage
       return;
     }
-    const updatedClients = clients.map((client) =>
-      client.id === editingClientId
-        ? { ...client, name: editingClientName.trim() }
-        : client
-    );
-    setClients(updatedClients);
-    onClientTypesChange(updatedClients); // Informe le composant parent
-    setEditingClientId(null);
-    setEditingClientName("");
-  }, [clients, editingClientId, editingClientName, onClientTypesChange]);
+    if (emailError) {
+      setEditingClientEmailError(emailError);
+      setEditingClientPhoneError(phoneError); // Met à jour l'erreur téléphone au cas où
+      return;
+    }
+    if (phoneError) {
+      setEditingClientPhoneError(phoneError);
+      setEditingClientEmailError(emailError); // Met à jour l'erreur email au cas où
+      return;
+    }
+
+    // Réinitialise les erreurs si toutes les validations passent
+    setEditingClientEmailError("");
+    setEditingClientPhoneError("");
+
+    const updatedData = {
+      nom_client: editingClientName.trim(),
+      adresse: editingClientAddress.trim(),
+      contact_email: editingClientEmail.trim(),
+      telephone: editingClientPhone.trim(),
+    };
+    const success = await onUpdateClient(editingClientId, updatedData);
+    if (success) {
+      setEditingClientId(null);
+      setEditingClientName("");
+      setEditingClientAddress("");
+      setEditingClientEmail("");
+      setEditingClientPhone("");
+      setActiveTab("clients");
+    } else {
+      console.error("Échec de la mise à jour du client. Vérifiez les logs.");
+    }
+  }, [
+    editingClientId,
+    editingClientName,
+    editingClientAddress,
+    editingClientEmail,
+    editingClientPhone,
+    onUpdateClient,
+    setActiveTab,
+  ]);
 
   const handleCancelClientEdit = React.useCallback(() => {
     setEditingClientId(null);
     setEditingClientName("");
+    setEditingClientAddress("");
+    setEditingClientEmail("");
+    setEditingClientPhone("");
+    // Réinitialise les messages d'erreur lors de l'annulation
+    setEditingClientEmailError("");
+    setEditingClientPhoneError("");
   }, []);
 
-  const handleDeleteClient = React.useCallback(
+  const handleDeleteClientClick = React.useCallback(
     (idToDelete) => {
       setConfirmMessage(
         "Êtes-vous sûr de vouloir supprimer ce client ? Cela pourrait affecter les activités qui lui sont liées."
       );
-      setConfirmAction(() => () => {
-        const updatedClients = clients.filter(
-          (client) => client.id !== idToDelete
-        );
-        setClients(updatedClients);
-        onClientTypesChange(updatedClients); // Informe le composant parent
-        setShowConfirm(false); // Ferme la modale
+      setConfirmAction(() => async () => {
+        const success = await onDeleteClient(idToDelete);
+        if (success) {
+          setShowConfirm(false);
+          setActiveTab("clients");
+        } else {
+          console.error(
+            "Échec de la suppression du client. Vérifiez les logs."
+          );
+        }
       });
-      setShowConfirm(true); // Ouvre la modale
+      setShowConfirm(true);
     },
-    [clients, onClientTypesChange]
+    [onDeleteClient, setActiveTab]
   );
 
   // Rendu du composant
@@ -344,7 +460,7 @@ function UnifiedManager({
           React.createElement(
             "button",
             {
-              onClick: handleAddActivity,
+              onClick: handleAddActivityClick,
               className: managerStyles.button,
             },
             "Ajouter Activité"
@@ -355,8 +471,8 @@ function UnifiedManager({
         React.createElement(
           "div",
           { className: managerStyles.list },
-          Array.isArray(activities) && activities.length > 0
-            ? activities.map((activity) =>
+          Array.isArray(activityTypes) && activityTypes.length > 0
+            ? activityTypes.map((activity) =>
                 React.createElement(
                   "div",
                   { key: activity.id, className: managerStyles.listItem },
@@ -416,8 +532,8 @@ function UnifiedManager({
                         React.createElement(
                           "span",
                           { className: managerStyles.itemName },
-                          `${activity.name} (${
-                            activity.type === "activity"
+                          `${activity.description_activite} (${
+                            activity.type_activite === "activity"
                               ? "Activité"
                               : "Absence"
                           })`
@@ -436,7 +552,8 @@ function UnifiedManager({
                           React.createElement(
                             "button",
                             {
-                              onClick: () => handleDeleteActivity(activity.id),
+                              onClick: () =>
+                                handleDeleteActivityClick(activity.id),
                               className: `${managerStyles.actionButton} ${managerStyles.deleteButton}`,
                             },
                             "Supprimer"
@@ -473,9 +590,57 @@ function UnifiedManager({
             onChange: (e) => setNewClientName(e.target.value),
             className: managerStyles.input,
           }),
+          React.createElement("input", {
+            type: "text",
+            placeholder: "Adresse du client",
+            value: newClientAddress,
+            onChange: (e) => setNewClientAddress(e.target.value),
+            className: managerStyles.input,
+          }),
+          // CHAMPS EMAIL AVEC VALIDATION EN TEMPS RÉEL ET AFFICHAGE D'ERREUR
+          React.createElement("input", {
+            type: "email",
+            placeholder: "exemple@domaine.com",
+            value: newClientEmail,
+            onChange: (e) => {
+              setNewClientEmail(e.target.value);
+              setNewClientEmailError(validateEmail(e.target.value));
+            },
+            className: `${managerStyles.input} ${
+              newClientEmailError ? "border-red-500" : ""
+            }`,
+          }),
+          newClientEmailError &&
+            React.createElement(
+              "p",
+              { className: "text-red-500 text-xs w-full sm:w-auto" },
+              newClientEmailError
+            ),
+          // CHAMPS TÉLÉPHONE AVEC VALIDATION EN TEMPS RÉEL ET AFFICHAGE D'ERREUR
+          React.createElement("input", {
+            type: "tel",
+            placeholder: "0123456789",
+            pattern: "[0-9]{10}",
+            title:
+              "Veuillez entrer un numéro de téléphone à 10 chiffres (ex: 0123456789)",
+            value: newClientPhone,
+            onChange: (e) => {
+              setNewClientPhone(e.target.value);
+              setNewClientPhoneError(validatePhone(e.target.value));
+            },
+            className: `${managerStyles.input} ${
+              newClientPhoneError ? "border-red-500" : ""
+            }`,
+          }),
+          newClientPhoneError &&
+            React.createElement(
+              "p",
+              { className: "text-red-500 text-xs w-full sm:w-auto" },
+              newClientPhoneError
+            ),
           React.createElement(
             "button",
-            { onClick: handleAddClient, className: managerStyles.button },
+            { onClick: handleAddClientClick, className: managerStyles.button },
             "Ajouter Client"
           )
         ),
@@ -484,8 +649,8 @@ function UnifiedManager({
         React.createElement(
           "div",
           { className: managerStyles.list },
-          Array.isArray(clients) && clients.length > 0
-            ? clients.map((client) =>
+          Array.isArray(clientTypes) && clientTypes.length > 0
+            ? clientTypes.map((client) =>
                 React.createElement(
                   "div",
                   { key: client.id, className: managerStyles.listItem },
@@ -500,6 +665,64 @@ function UnifiedManager({
                           onChange: (e) => setEditingClientName(e.target.value),
                           className: managerStyles.editInput,
                         }),
+                        React.createElement("input", {
+                          type: "text",
+                          value: editingClientAddress,
+                          onChange: (e) =>
+                            setEditingClientAddress(e.target.value),
+                          className: managerStyles.editInput,
+                        }),
+                        // CHAMPS EMAIL ÉDITION AVEC VALIDATION EN TEMPS RÉEL ET AFFICHAGE D'ERREUR
+                        React.createElement("input", {
+                          type: "email",
+                          placeholder: "exemple@domaine.com",
+                          value: editingClientEmail,
+                          onChange: (e) => {
+                            setEditingClientEmail(e.target.value);
+                            setEditingClientEmailError(
+                              validateEmail(e.target.value)
+                            );
+                          },
+                          className: `${managerStyles.editInput} ${
+                            editingClientEmailError ? "border-red-500" : ""
+                          }`,
+                        }),
+                        editingClientEmailError &&
+                          React.createElement(
+                            "p",
+                            {
+                              className:
+                                "text-red-500 text-xs w-full sm:w-auto",
+                            },
+                            editingClientEmailError
+                          ),
+                        // CHAMPS TÉLÉPHONE ÉDITION AVEC VALIDATION EN TEMPS RÉEL ET AFFICHAGE D'ERREUR
+                        React.createElement("input", {
+                          type: "tel",
+                          placeholder: "0123456789",
+                          pattern: "[0-9]{10}",
+                          title:
+                            "Veuillez entrer un numéro de téléphone à 10 chiffres (ex: 0123456789)",
+                          value: editingClientPhone,
+                          onChange: (e) => {
+                            setEditingClientPhone(e.target.value);
+                            setEditingClientPhoneError(
+                              validatePhone(e.target.value)
+                            );
+                          },
+                          className: `${managerStyles.editInput} ${
+                            editingClientPhoneError ? "border-red-500" : ""
+                          }`,
+                        }),
+                        editingClientPhoneError &&
+                          React.createElement(
+                            "p",
+                            {
+                              className:
+                                "text-red-500 text-xs w-full sm:w-auto",
+                            },
+                            editingClientPhoneError
+                          ),
                         React.createElement(
                           "div",
                           { className: managerStyles.buttonGroup },
@@ -528,7 +751,10 @@ function UnifiedManager({
                         React.createElement(
                           "span",
                           { className: managerStyles.itemName },
-                          client.name
+                          // MISE À JOUR ICI : Ajout du numéro de téléphone
+                          `${client.nom_client} (${client.adresse}, ${
+                            client.contact_email
+                          }, ${client.telephone || "N/A"})`
                         ),
                         React.createElement(
                           "div",
@@ -544,7 +770,7 @@ function UnifiedManager({
                           React.createElement(
                             "button",
                             {
-                              onClick: () => handleDeleteClient(client.id),
+                              onClick: () => handleDeleteClientClick(client.id),
                               className: `${managerStyles.actionButton} ${managerStyles.deleteButton}`,
                             },
                             "Supprimer"

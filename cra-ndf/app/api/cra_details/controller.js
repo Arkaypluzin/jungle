@@ -1,8 +1,7 @@
 // controllers/craDetailController.js
 // Ce contrôleur gère les requêtes HTTP liées aux opérations sur les détails de CRA (notes de frais).
 
-// Correction: Importe toutes les fonctions du modèle cra_detail (fichier models/cra_detail.js)
-import * as craDetailModel from "../models/cra_detail";
+import * as craDetailModel from "../model/cra_detail";
 import { NextResponse } from "next/server"; // Nécessaire pour les réponses Next.js
 
 /**
@@ -15,12 +14,10 @@ export async function getCraDetails(req, res) {
     return res.status(200).json(details);
   } catch (error) {
     console.error("Erreur dans getCraDetails:", error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération des détails de CRA",
-        error: error.message,
-      });
+    return res.status(500).json({
+      message: "Erreur lors de la récupération des détails de CRA",
+      error: error.message,
+    });
   }
 }
 
@@ -41,12 +38,10 @@ export async function getCraDetailById(req, res, id) {
     }
   } catch (error) {
     console.error(`Erreur dans getCraDetailById pour l'ID ${id}:`, error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération du détail de CRA",
-        error: error.message,
-      });
+    return res.status(500).json({
+      message: "Erreur lors de la récupération du détail de CRA",
+      error: error.message,
+    });
   }
 }
 
@@ -63,12 +58,10 @@ export async function getDetailsByCraId(req, res, craId) {
     return res.status(200).json(details);
   } catch (error) {
     console.error(`Erreur dans getDetailsByCraId pour CRA ID ${craId}:`, error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la récupération des détails pour ce CRA",
-        error: error.message,
-      });
+    return res.status(500).json({
+      message: "Erreur lors de la récupération des détails pour ce CRA",
+      error: error.message,
+    });
   }
 }
 
@@ -94,11 +87,9 @@ export async function createCraDetail(req, res) {
     detailData.type_detail === "Dépense" &&
     detailData.montant === undefined
   ) {
-    return res
-      .status(400)
-      .json({
-        message: 'Le montant est requis pour le type de détail "Dépense".',
-      });
+    return res.status(400).json({
+      message: 'Le montant est requis pour le type de détail "Dépense".',
+    });
   }
 
   try {
@@ -106,12 +97,10 @@ export async function createCraDetail(req, res) {
     return res.status(201).json(newDetail);
   } catch (error) {
     console.error("Erreur dans createCraDetail:", error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la création du détail de CRA",
-        error: error.message,
-      });
+    return res.status(500).json({
+      message: "Erreur lors de la création du détail de CRA",
+      error: error.message,
+    });
   }
 }
 
@@ -140,20 +129,16 @@ export async function updateCraDetail(req, res, id) {
         .status(200)
         .json({ message: "Détail de CRA mis à jour avec succès." });
     } else {
-      return res
-        .status(404)
-        .json({
-          message: "Détail de CRA non trouvé ou aucune modification effectuée.",
-        });
+      return res.status(404).json({
+        message: "Détail de CRA non trouvé ou aucune modification effectuée.",
+      });
     }
   } catch (error) {
     console.error(`Erreur dans updateCraDetail pour l'ID ${id}:`, error);
-    return res
-      .status(500)
-      .json({
-        message: "Erreur lors de la mise à jour du détail de CRA",
-        error: error.message,
-      });
+    return res.status(500).json({
+      message: "Erreur lors de la mise à jour du détail de CRA",
+      error: error.message,
+    });
   }
 }
 

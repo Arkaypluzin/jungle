@@ -1,28 +1,86 @@
 // app/api/client/[id]/route.js
-// Gère les requêtes API pour un client spécifique par ID (GET, PUT, DELETE).
 
 import { NextResponse } from "next/server";
-import {
-  getClientById,
-  updateClient,
-  deleteClient,
-} from "../../../../controllers/clientController"; // Assurez-vous que le chemin est correct !
+// CORRECTION ICI : Le contrôleur est dans le dossier parent (client/)
+import * as clientController from "../controller";
 
-// Gère les requêtes GET pour récupérer un client par son ID
+/**
+ * Gère les requêtes GET pour récupérer un client par son ID.
+ * @param {Request} request L'objet de requête.
+ * @param {Object} context L'objet de contexte contenant les paramètres dynamiques.
+ * @param {Object} context.params Les paramètres dynamiques de la route (par exemple, { id: '123' }).
+ * @returns {NextResponse} Une réponse JSON contenant le client ou une erreur.
+ */
 export async function GET(request, { params }) {
-  const { id } = params; // Extrait l'ID du client des paramètres de l'URL
-  return getClientById(id); // Appelle la fonction du contrôleur et retourne sa réponse
+  const { id } = params; // Accès direct à l'ID
+  try {
+    return await clientController.getClientById(parseInt(id, 10));
+  } catch (error) {
+    console.error(
+      `Erreur lors de la récupération du client avec l'ID ${id}:`,
+      error
+    );
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la récupération du client.",
+        error: error.message,
+      },
+      { status: 500 }
+    );
+  }
 }
 
-// Gère les requêtes PUT pour mettre à jour un client par son ID
+/**
+ * Gère les requêtes PUT pour mettre à jour un client par son ID.
+ * @param {Request} request L'objet de requête.
+ * @param {Object} context L'objet de contexte contenant les paramètres dynamiques.
+ * @param {Object} context.params Les paramètres dynamiques de la route.
+ * @param {string} context.params.id L'ID du client.
+ * @returns {NextResponse} Une réponse JSON ou une erreur.
+ */
 export async function PUT(request, { params }) {
-  const { id } = params; // Extrait l'ID du client des paramètres de l'URL
-  const body = await request.json(); // Récupère le corps JSON de la requête (les données à mettre à jour)
-  return updateClient(id, body); // Appelle la fonction du contrôleur avec l'ID et les données, et retourne sa réponse
+  const { id } = params; // Accès direct à l'ID
+  try {
+    const body = await request.json(); // Lire le corps de la requête
+    return await clientController.updateClient(parseInt(id, 10), body);
+  } catch (error) {
+    console.error(
+      `Erreur lors de la mise à jour du client avec l'ID ${id}:`,
+      error
+    );
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la mise à jour du client.",
+        error: error.message,
+      },
+      { status: 500 }
+    );
+  }
 }
 
-// Gère les requêtes DELETE pour supprimer un client par son ID
+/**
+ * Gère les requêtes DELETE pour supprimer un client par son ID.
+ * @param {Request} request L'objet de requête.
+ * @param {Object} context L'objet de contexte contenant les paramètres dynamiques.
+ * @param {Object} context.params Les paramètres dynamiques de la route.
+ * @param {string} context.params.id L'ID du client.
+ * @returns {NextResponse} Une réponse JSON ou une erreur.
+ */
 export async function DELETE(request, { params }) {
-  const { id } = params; // Extrait l'ID du client des paramètres de l'URL
-  return deleteClient(id); // Appelle la fonction du contrôleur et retourne sa réponse
+  const { id } = params; // Accès direct à l'ID
+  try {
+    return await clientController.deleteClient(parseInt(id, 10));
+  } catch (error) {
+    console.error(
+      `Erreur lors de la suppression du client avec l'ID ${id}:`,
+      error
+    );
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la suppression du client.",
+        error: error.message,
+      },
+      { status: 500 }
+    );
+  }
 }

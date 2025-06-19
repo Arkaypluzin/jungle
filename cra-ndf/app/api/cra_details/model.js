@@ -1,4 +1,3 @@
-// models/cra_detail.js
 // Modèle pour interagir avec la table 'cra_details' (notes de frais) dans la base de données.
 
 import { db } from "../lib/db"; // Importe l'instance de la connexion à la DB

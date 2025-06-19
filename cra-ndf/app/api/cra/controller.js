@@ -1,5 +1,5 @@
 // controllers/craController.js
-import * as craModel from "../models/cra"; // Importe toutes les fonctions du modèle cra
+import * as craModel from "../model/cra"; // Importe toutes les fonctions du modèle cra
 import { NextResponse } from "next/server";
 
 // @desc    Get all CRAs
