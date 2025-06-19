@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAllNdf, getNdfById, createNdf, updateNdf, deleteNdf, getNdfByMonthYearUser } from "./model";
-import { getAllDetailsByNdf, deleteDetail } from "@/app/api/ndf_details/model"; 
+import { getAllDetailsByNdf, deleteDetail } from "@/app/api/ndf_details/model";
 import { auth } from "@/auth";
 import { promises as fs } from "fs";
 import path from "path";
@@ -61,15 +61,16 @@ export async function handlePost(req) {
 export async function handlePut(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
-    if (!userId) {
-        return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userRoles = session?.user?.roles || [];
 
     const ndf = await getNdfById(params.id);
     if (!ndf) {
         return Response.json({ error: "Not found" }, { status: 404 });
     }
-    if (ndf.user_id !== userId) {
+
+    const isOwner = ndf.user_id === userId;
+    const isAdmin = userRoles.includes("Admin");
+    if (!isOwner && !isAdmin) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -81,6 +82,7 @@ export async function handlePut(req, { params }) {
     });
     return Response.json(updated);
 }
+
 
 export async function handleDelete(req, { params }) {
     const session = await auth();

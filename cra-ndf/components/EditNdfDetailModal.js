@@ -6,7 +6,6 @@ const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
-    // Gestion intelligente des taux à l'ouverture
     const [tva, setTva] = useState(() => {
         if (detail.tva && detail.tva.includes("/")) return "multi-taux";
         if (TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
@@ -28,7 +27,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     });
 
     const [open, setOpen] = useState(false);
-    const [dateStr, setDateStr] = useState(detail.date_str); // toujours afficher la vraie date
+    const [dateStr, setDateStr] = useState(detail.date_str);
     const [nature, setNature] = useState(detail.nature);
     const [description, setDescription] = useState(detail.description);
     const [montant, setMontant] = useState(detail.montant);

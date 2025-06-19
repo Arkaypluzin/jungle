@@ -4,6 +4,7 @@ import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
 import EditNdfModal from "@/components/EditNdfModal";
 import DeleteNdfButton from "@/components/DeleteNdfButton";
+import ValidateNdfButton from "@/components/ValidateNdfButton";
 
 export default function ClientAdminNdf() {
     const [ndfList, setNdfList] = useState([]);
@@ -81,6 +82,11 @@ export default function ClientAdminNdf() {
                             >
                                 Voir
                             </a>
+                            <ValidateNdfButton
+                                ndfId={ndf.uuid}
+                                ndfStatut={ndf.statut}
+                                onValidated={fetchAllNdfs}
+                            />
                         </div>
                     </li>
                 ))}
