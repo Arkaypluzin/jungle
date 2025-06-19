@@ -73,7 +73,6 @@ export async function handlePut(req, { params }) {
 
     const { month, year, statut } = await req.json();
 
-    // --- Cas ADMIN (PRIORITÉ) ---
     if (isAdmin) {
         if (ndf.statut === "Déclaré" && statut === "Validé") {
             const updated = await updateNdf(params.id, {
@@ -83,10 +82,18 @@ export async function handlePut(req, { params }) {
             });
             return Response.json(updated);
         }
-        return Response.json({ error: "Validation impossible. Statut non autorisé." }, { status: 403 });
+        if (ndf.statut === "Validé" && statut === "Remboursé") {
+            const updated = await updateNdf(params.id, {
+                month: ndf.month,
+                year: ndf.year,
+                statut: "Remboursé"
+            });
+            return Response.json(updated);
+        }
+        
+        return Response.json({ error: "Changement de statut non autorisé." }, { status: 403 });
     }
 
-    // --- Cas UTILISATEUR NORMAL ---
     if (isOwner) {
         if (ndf.statut !== "Provisoire") {
             return Response.json({ error: "Modification impossible. Statut verrouillé." }, { status: 403 });
