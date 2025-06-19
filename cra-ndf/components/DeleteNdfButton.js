@@ -1,4 +1,3 @@
-// DeleteNdfButton.js
 "use client";
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
@@ -30,13 +29,13 @@ export default function DeleteNdfButton({ ndfId, ndfStatut, onDeleted }) {
         <>
             <button
                 className="text-red-600 p-2 rounded hover:bg-red-100 ml-1"
-                title={isDeclared ? "Impossible de supprimer une note de frais déclarée" : "Supprimer"}
+                title="Supprimer"
                 onClick={() => setOpen(true)}
-                disabled={loading || isDeclared}
+                disabled={loading || ndfStatut !== "Provisoire"}
             >
                 <Trash2 size={20} />
             </button>
-            {open && (
+            {open && ndfStatut === "Provisoire" && (
                 <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
                     <div className="bg-white p-6 rounded shadow-lg text-black max-w-sm w-full">
                         {isDeclared ? (
@@ -76,6 +75,21 @@ export default function DeleteNdfButton({ ndfId, ndfStatut, onDeleted }) {
                                 </div>
                             </>
                         )}
+                    </div>
+                </div>
+            )}
+            {open && ndfStatut !== "Provisoire" && (
+                <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+                    <div className="bg-white p-6 rounded shadow-lg text-black max-w-sm w-full">
+                        <div className="text-red-600 font-bold text-center mb-2">
+                            Impossible de supprimer une note de frais non Provisoire.
+                        </div>
+                        <button
+                            className="bg-gray-300 text-gray-800 px-4 py-2 rounded mt-4 w-full"
+                            onClick={() => setOpen(false)}
+                        >
+                            Fermer
+                        </button>
                     </div>
                 </div>
             )}

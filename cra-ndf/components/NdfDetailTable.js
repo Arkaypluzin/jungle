@@ -329,7 +329,7 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
                                     )}
                                 </td>
                                 <td className="py-2 px-4 border text-center">
-                                    {ndfStatut !== "Déclaré" && (
+                                    {ndfStatut === "Provisoire" && (
                                         <>
                                             <EditNdfDetailModal detail={detail} onEdited={refresh} />
                                             <DeleteNdfDetailButton detailId={detail.uuid} onDeleted={refresh} />

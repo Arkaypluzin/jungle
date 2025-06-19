@@ -70,19 +70,37 @@ export async function handlePut(req, { params }) {
 
     const isOwner = ndf.user_id === userId;
     const isAdmin = userRoles.includes("Admin");
-    if (!isOwner && !isAdmin) {
-        return Response.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     const { month, year, statut } = await req.json();
-    const updated = await updateNdf(params.id, {
-        month: month ?? ndf.month,
-        year: year ?? ndf.year,
-        statut: statut ?? ndf.statut,
-    });
-    return Response.json(updated);
-}
 
+    // --- Cas ADMIN (PRIORITÉ) ---
+    if (isAdmin) {
+        if (ndf.statut === "Déclaré" && statut === "Validé") {
+            const updated = await updateNdf(params.id, {
+                month: ndf.month,
+                year: ndf.year,
+                statut: "Validé"
+            });
+            return Response.json(updated);
+        }
+        return Response.json({ error: "Validation impossible. Statut non autorisé." }, { status: 403 });
+    }
+
+    // --- Cas UTILISATEUR NORMAL ---
+    if (isOwner) {
+        if (ndf.statut !== "Provisoire") {
+            return Response.json({ error: "Modification impossible. Statut verrouillé." }, { status: 403 });
+        }
+        const updated = await updateNdf(params.id, {
+            month: month ?? ndf.month,
+            year: year ?? ndf.year,
+            statut: statut ?? ndf.statut,
+        });
+        return Response.json(updated);
+    }
+
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+}
 
 export async function handleDelete(req, { params }) {
     const session = await auth();
@@ -97,6 +115,10 @@ export async function handleDelete(req, { params }) {
     }
     if (ndf.user_id !== userId) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (ndf.statut !== "Provisoire") {
+        return Response.json({ error: "Impossible de supprimer une note de frais non Provisoire" }, { status: 403 });
     }
 
     const details = await getAllDetailsByNdf(params.id);

@@ -52,11 +52,11 @@ export default function ClientAdminNdf() {
                             >
                                 Détails
                             </a>
-                            {ndf.statut !== "Déclaré" && (
-                                <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
-                            )}
-                            {ndf.statut !== "Déclaré" && (
-                                <DeleteNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onDeleted={fetchNdfs} />
+                            {ndf.statut === "Provisoire" && (
+                                <>
+                                    <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
+                                    <DeleteNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onDeleted={fetchNdfs} />
+                                </>
                             )}
                         </div>
                     </li>

@@ -47,6 +47,10 @@ export async function handlePost(req) {
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
     if (ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
 
+    if (ndf.statut !== "Provisoire") {
+        return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
+    }
+
     const newDetail = {
         uuid: uuidv4(),
         id_ndf,
@@ -72,6 +76,10 @@ export async function handlePut(req, { params }) {
 
     const ndf = await getNdfById(detail.id_ndf);
     if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    if (ndf.statut !== "Provisoire") {
+        return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
+    }
 
     const { date_str, nature, description, tva, montant, img_url } = await req.json();
 
@@ -106,6 +114,10 @@ export async function handleDelete(req, { params }) {
 
     const ndf = await getNdfById(detail.id_ndf);
     if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    if (ndf.statut !== "Provisoire") {
+        return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
+    }
 
     if (detail.img_url) {
         const imgPath = path.join(process.cwd(), "public", detail.img_url);

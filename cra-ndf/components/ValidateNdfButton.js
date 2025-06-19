@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useState } from "react";
 
 export default function ValidateNdfButton({ ndfId, ndfStatut, onValidated }) {
@@ -16,10 +16,14 @@ export default function ValidateNdfButton({ ndfId, ndfStatut, onValidated }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ statut: "Validé" }),
             });
-            if (!res.ok) throw new Error("Erreur lors de la validation");
-            onValidated?.();
+            if (!res.ok) {
+                const data = await res.json();
+                setError(data.error || "Erreur lors de la validation");
+            } else {
+                onValidated?.();
+            }
         } catch (e) {
-            setError(e.message);
+            setError("Erreur réseau");
         }
         setLoading(false);
     }
@@ -27,11 +31,11 @@ export default function ValidateNdfButton({ ndfId, ndfStatut, onValidated }) {
     return (
         <button
             onClick={handleValidate}
+            className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-sm"
             disabled={loading}
-            className="bg-green-700 text-white px-3 py-1 rounded hover:bg-green-800 text-sm ml-2"
-            title="Valider la note de frais"
         >
-            {loading ? "Validation..." : "Valider"}
+            {loading ? "Validation…" : "Valider"}
+            {error && <span className="text-red-500 ml-2">{error}</span>}
         </button>
     );
 }
