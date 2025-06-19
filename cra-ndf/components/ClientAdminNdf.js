@@ -5,9 +5,11 @@ import BtnRetour from "@/components/BtnRetour";
 import EditNdfModal from "@/components/EditNdfModal";
 import DeleteNdfButton from "@/components/DeleteNdfButton";
 
-export default function ClientUserNdf() {
+export default function ClientAdminNdf() {
     const [ndfList, setNdfList] = useState([]);
+    const [allNdfs, setAllNdfs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadingAll, setLoadingAll] = useState(true);
 
     async function fetchNdfs() {
         setLoading(true);
@@ -17,10 +19,21 @@ export default function ClientUserNdf() {
         setLoading(false);
     }
 
-    useEffect(() => { fetchNdfs(); }, []);
+    async function fetchAllNdfs() {
+        setLoadingAll(true);
+        const res = await fetch("/api/ndf/all", { cache: "no-store" });
+        const data = await res.json();
+        setAllNdfs(Array.isArray(data) ? data : []);
+        setLoadingAll(false);
+    }
+
+    useEffect(() => {
+        fetchNdfs();
+        fetchAllNdfs();
+    }, []);
 
     return (
-        <div className="max-w-2xl mx-auto mt-10">
+        <div className="max-w-3xl mx-auto mt-10">
             <h1 className="text-xl font-bold mb-4">Mes notes de frais</h1>
             <CreateNdfModal onNdfCreated={fetchNdfs} />
             {loading && <p>Chargement…</p>}
@@ -44,6 +57,30 @@ export default function ClientUserNdf() {
                             {ndf.statut !== "Déclaré" && (
                                 <DeleteNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onDeleted={fetchNdfs} />
                             )}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+
+            <h2 className="text-lg font-bold mb-2 mt-12">Toutes les notes de frais</h2>
+            {loadingAll && <p>Chargement…</p>}
+            {!loadingAll && allNdfs.length === 0 && (
+                <p>Aucune note de frais Déclarée, Validée ou Remboursée.</p>
+            )}
+            <ul>
+                {allNdfs.map(ndf => (
+                    <li key={ndf.uuid} className="mb-3 p-4 border rounded flex flex-col md:flex-row md:items-center md:justify-between">
+                        <span>
+                            <b>{ndf.month} {ndf.year}</b> — <span className="italic">{ndf.statut}</span>
+                            <span className="ml-2 text-gray-700">[user_id: {ndf.user_id}]</span>
+                        </span>
+                        <div className="flex gap-2 mt-2 md:mt-0">
+                            <a
+                                href={`/note-de-frais/${ndf.uuid}`}
+                                className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm"
+                            >
+                                Voir
+                            </a>
                         </div>
                     </li>
                 ))}

@@ -40,3 +40,12 @@ export async function getNdfByMonthYearUser(month, year, user_id) {
     );
     return rows[0];
 }
+
+export async function getAllNdfsAdmin() {
+    const [rows] = await db.execute(`
+        SELECT * FROM ndf
+        WHERE statut != 'Provisoire'
+        ORDER BY year DESC, month DESC
+    `);
+    return rows;
+}
