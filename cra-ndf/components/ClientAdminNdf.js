@@ -143,7 +143,7 @@ export default function ClientAdminNdf() {
                         </span>
                         <div className="flex gap-2">
                             <a href={`/note-de-frais/${ndf.uuid}`}
-                               className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">Détails</a>
+                                className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">Détails</a>
                             {ndf.statut === "Provisoire" && (
                                 <>
                                     <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
@@ -213,9 +213,17 @@ export default function ClientAdminNdf() {
                             <span className="ml-2 text-white">par <b>{ndf.name || ndf.user_id}</b></span>
                         </span>
                         <div className="flex gap-2 mt-2 md:mt-0">
-                            <a href={`/note-de-frais/${ndf.uuid}`}
-                               className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm">Voir</a>
-                            <ValidateNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onValidated={fetchAllNdfs} />
+                            <a
+                                href={`/note-de-frais/${ndf.uuid}`}
+                                className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm"
+                            >
+                                Voir
+                            </a>
+                            <ValidateNdfButton
+                                ndfId={ndf.uuid}
+                                ndfStatut={ndf.statut}
+                                onValidated={fetchAllNdfs}
+                            />
                         </div>
                     </li>
                 ))}

@@ -70,34 +70,14 @@ export async function handlePut(req, { params }) {
 
     const isOwner = ndf.user_id === userId;
     const isAdmin = userRoles.includes("Admin");
+    const body = await req.json();
+    const { month, year, statut } = body;
 
-    const { month, year, statut } = await req.json();
-
-    if (isAdmin) {
-        if (ndf.statut === "Déclaré" && statut === "Validé") {
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut: "Validé"
-            });
-            return Response.json(updated);
-        }
-        if (ndf.statut === "Validé" && statut === "Remboursé") {
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut: "Remboursé"
-            });
-            return Response.json(updated);
-        }
-        
-        return Response.json({ error: "Changement de statut non autorisé." }, { status: 403 });
+    if (!isOwner && !isAdmin) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (isOwner) {
-        if (ndf.statut !== "Provisoire") {
-            return Response.json({ error: "Modification impossible. Statut verrouillé." }, { status: 403 });
-        }
+    if (ndf.statut === "Provisoire" && isOwner) {
         const updated = await updateNdf(params.id, {
             month: month ?? ndf.month,
             year: year ?? ndf.year,
@@ -106,7 +86,23 @@ export async function handlePut(req, { params }) {
         return Response.json(updated);
     }
 
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    if (isAdmin) {
+        if (
+            ndf.statut === "Déclaré" && statut === "Validé" ||
+            ndf.statut === "Validé" && statut === "Remboursé"
+        ) {
+            const updated = await updateNdf(params.id, {
+                month: ndf.month,
+                year: ndf.year,
+                statut,
+            });
+            return Response.json(updated);
+        }
+
+        return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
+    }
+
+    return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
 }
 
 export async function handleDelete(req, { params }) {
