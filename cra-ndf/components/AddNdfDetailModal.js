@@ -4,7 +4,7 @@ import { useState } from "react";
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
-export default function AddNdfDetailModal({ ndfId }) {
+export default function AddNdfDetailModal({ ndfId, ndfStatut }) {
     const [open, setOpen] = useState(false);
     const [dateStr, setDateStr] = useState("");
     const [nature, setNature] = useState(NATURES[0]);
@@ -33,6 +33,11 @@ export default function AddNdfDetailModal({ ndfId }) {
         e.preventDefault();
         setLoading(true);
         setError("");
+
+        if (ndfStatut === "Déclaré") {
+            setError("Impossible d’ajouter une dépense sur un NDF déclaré.");
+            return;
+        }
 
         let img_url = null;
         if (imgFile) {
@@ -102,12 +107,14 @@ export default function AddNdfDetailModal({ ndfId }) {
 
     return (
         <>
-            <button
-                className="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-800 my-6"
-                onClick={() => setOpen(true)}
-            >
-                + Ajouter une dépense
-            </button>
+            {ndfStatut !== "Déclaré" && (
+                <button
+                    className="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-800 my-6"
+                    onClick={() => setOpen(true)}
+                >
+                    + Ajouter une dépense
+                </button>
+            )}
             {open && (
                 <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
                     <div className="bg-white rounded-lg shadow p-6 w-full max-w-md text-black">

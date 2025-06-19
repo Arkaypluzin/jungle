@@ -19,7 +19,7 @@ export default function EditNdfModal({ ndf, onEdited }) {
         setLoading(true);
         setError("");
 
-        const body = { month, year, statut: ndf.statut }; // On renvoie le statut actuel, sans possibilité de le modifier
+        const body = { month, year, statut: ndf.statut };
 
         const res = await fetch(`/api/ndf/${ndf.uuid}`, {
             method: "PUT",
@@ -42,6 +42,7 @@ export default function EditNdfModal({ ndf, onEdited }) {
                 className="text-blue-600 p-2 rounded hover:bg-blue-100"
                 title="Modifier"
                 onClick={() => setOpen(true)}
+                disabled={ndf.statut === "Déclaré"}
             >
                 <Pencil size={20} />
             </button>
@@ -49,60 +50,75 @@ export default function EditNdfModal({ ndf, onEdited }) {
                 <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
                     <div className="bg-white rounded-lg shadow p-6 w-full max-w-md text-black">
                         <h2 className="text-lg font-semibold mb-3">Modifier la note de frais</h2>
-                        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-                            <label>
-                                Mois :
-                                <select
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={month}
-                                    required
-                                    onChange={e => setMonth(e.target.value)}
-                                >
-                                    {MONTHS.map(m => (
-                                        <option key={m} value={m}>{m}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <label>
-                                Année :
-                                <input
-                                    type="number"
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={year}
-                                    min={2000}
-                                    required
-                                    onChange={e => setYear(e.target.value)}
-                                />
-                            </label>
-                            <label>
-                                Statut :
-                                <input
-                                    type="text"
-                                    className="ml-2 border px-2 py-1 rounded bg-gray-100 text-gray-700"
-                                    value={ndf.statut}
-                                    disabled
-                                    readOnly
-                                />
-                            </label>
-                            {error && <div className="text-red-600">{error}</div>}
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                                >
-                                    {loading ? "Modification..." : "Modifier"}
-                                </button>
-                                <button
-                                    type="button"
-                                    className="bg-gray-300 text-gray-800 px-4 py-2 rounded"
-                                    onClick={() => setOpen(false)}
-                                    disabled={loading}
-                                >
-                                    Annuler
-                                </button>
+                        {ndf.statut === "Déclaré" ? (
+                            <div className="text-red-600 font-bold my-8 text-center">
+                                Impossible de modifier une note de frais déclarée.
                             </div>
-                        </form>
+                        ) : (
+                            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                                <label>
+                                    Mois :
+                                    <select
+                                        className="ml-2 border px-2 py-1 rounded"
+                                        value={month}
+                                        required
+                                        onChange={e => setMonth(e.target.value)}
+                                    >
+                                        {MONTHS.map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label>
+                                    Année :
+                                    <input
+                                        type="number"
+                                        className="ml-2 border px-2 py-1 rounded"
+                                        value={year}
+                                        min={2000}
+                                        required
+                                        onChange={e => setYear(e.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    Statut :
+                                    <input
+                                        type="text"
+                                        className="ml-2 border px-2 py-1 rounded bg-gray-100 text-gray-700"
+                                        value={ndf.statut}
+                                        disabled
+                                        readOnly
+                                    />
+                                </label>
+                                {error && <div className="text-red-600">{error}</div>}
+                                <div className="flex gap-2 mt-2">
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                                    >
+                                        {loading ? "Modification..." : "Modifier"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="bg-gray-300 text-gray-800 px-4 py-2 rounded"
+                                        onClick={() => setOpen(false)}
+                                        disabled={loading}
+                                    >
+                                        Annuler
+                                    </button>
+                                </div>
+                            </form>
+                        )}
+                        <div className="flex gap-2 mt-2">
+                            <button
+                                type="button"
+                                className="bg-gray-300 text-gray-800 px-4 py-2 rounded"
+                                onClick={() => setOpen(false)}
+                            >
+                                Fermer
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

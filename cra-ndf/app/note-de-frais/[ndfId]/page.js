@@ -27,7 +27,7 @@ export default async function NdfDetailsPage({ params }) {
             <h1 className="text-xl font-bold mb-4">Détails de la note de frais</h1>
 
             <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
-            <AddNdfDetailModal ndfId={ndfId} />
+            <AddNdfDetailModal ndfId={ndfId} ndfStatut={ndf.statut} />
             <NdfDetailTable details={details} ndfStatut={ndf.statut} />
             <BtnRetour />
         </div>

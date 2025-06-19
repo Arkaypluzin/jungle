@@ -38,8 +38,13 @@ export default function NoteDeFraisPage() {
                             >
                                 Détails
                             </a>
-                            <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
-                            <DeleteNdfButton ndfId={ndf.uuid} onDeleted={fetchNdfs} />
+                            {ndf.statut !== "Déclaré" && (
+                                <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
+                            )}
+                            {ndf.statut !== "Déclaré" && (
+                                <DeleteNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onDeleted={fetchNdfs} />
+                            )}
+                            {/* <DeleteNdfButton ndfId={ndf.uuid} onDeleted={fetchNdfs} /> */}
                         </div>
                     </li>
                 ))}
