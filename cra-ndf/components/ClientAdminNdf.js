@@ -72,7 +72,7 @@ export default function ClientAdminNdf() {
                     <li key={ndf.uuid} className="mb-3 p-4 border rounded flex flex-col md:flex-row md:items-center md:justify-between">
                         <span>
                             <b>{ndf.month} {ndf.year}</b> — <span className="italic">{ndf.statut}</span>
-                            <span className="ml-2 text-gray-700">[user_id: {ndf.user_id}]</span>
+                            <span className="ml-2 text-white">par <b>{ndf.name || ndf.user_id}</b></span>
                         </span>
                         <div className="flex gap-2 mt-2 md:mt-0">
                             <a

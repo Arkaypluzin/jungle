@@ -32,6 +32,8 @@ export async function handleGetById(req, { params }) {
 export async function handlePost(req) {
     const session = await auth();
     const userId = session?.user?.id;
+    const userName = session?.user?.name;
+
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     const { month, year } = await req.json();
@@ -49,6 +51,7 @@ export async function handlePost(req) {
         month,
         year,
         user_id: userId,
+        name: userName,
         statut: "Provisoire",
     });
 
