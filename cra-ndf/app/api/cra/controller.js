@@ -1,96 +1,117 @@
-// controllers/craController.js
-import * as craModel from "../model/cra"; // Importe toutes les fonctions du modèle cra
+// app/api/cra/controller.js
+import * as craModel from "./model";
 import { NextResponse } from "next/server";
 
-// @desc    Get all CRAs
-// @route   GET /api/cras
-// @access  Public
-export async function getCRAs(req, res) {
+export async function getAllCRAsController() {
   try {
     const cras = await craModel.getAllCRAs();
-    return res.status(200).json(cras);
+    return NextResponse.json(cras);
   } catch (error) {
-    console.error("Error fetching CRAs:", error);
-    return res.status(500).json({ message: "Server Error" });
+    console.error("Erreur dans getAllCRAsController:", error);
+    return NextResponse.json(
+      {
+        message: "Erreur lors de la récupération des CRAs.",
+        error: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
 
-// @desc    Get single CRA
-// @route   GET /api/cras/:id
-// @access  Public
-export async function getCRAById(req, res, id) {
+export async function getCRAByIdController(id) {
   try {
-    const cra = await craModel.getCRAById(parseInt(id, 10));
-    if (!cra) {
-      return res.status(404).json({ message: "CRA Not Found" });
+    const cra = await craModel.getCRAById(id);
+    if (cra) {
+      return NextResponse.json(cra);
+    } else {
+      return NextResponse.json({ message: "CRA non trouvé." }, { status: 404 });
     }
-    return res.status(200).json(cra);
   } catch (error) {
-    console.error(`Error fetching CRA with ID ${id}:`, error);
-    return res.status(500).json({ message: "Server Error" });
+    console.error(`Erreur dans getCRAByIdController pour l'ID ${id}:`, error);
+    return NextResponse.json(
+      { message: "Erreur serveur.", error: error.message },
+      { status: 500 }
+    );
   }
 }
 
-// @desc    Create a CRA
-// @route   POST /api/cras
-// @access  Public
-export async function createCRA(req, res) {
+export async function createCRAController(craData) {
+  if (!craData.user_id || !craData.client_id || !craData.date_cra) {
+    return NextResponse.json(
+      {
+        message:
+          "user_id, client_id et date_cra sont requis pour créer un CRA.",
+      },
+      { status: 400 }
+    );
+  }
   try {
-    const craData = req.body;
-    // Validation des champs
-    if (!craData.user_id || !craData.client_id || !craData.date_cra) {
-      return res
-        .status(400)
-        .json({ message: "user_id, client_id et date_cra sont requis." });
-    }
-
     const newCRA = await craModel.createCRA(craData);
-    return res.status(201).json(newCRA);
+    return NextResponse.json(newCRA, { status: 201 });
   } catch (error) {
-    console.error("Error creating CRA:", error);
-    return res.status(500).json({ message: "Server Error" });
+    console.error("Erreur dans createCRAController:", error);
+    let errorMessage = "Erreur lors de la création du CRA.";
+    // Vérification des codes d'erreur MySQL pour les clés étrangères
+    if (error.code === "ER_NO_REFERENCED_ROW_2" || error.errno === 1452) {
+      errorMessage =
+        "Clé étrangère invalide: user_id ou client_id n'existe pas.";
+    } else if (error.message && error.message.includes("undefined")) {
+      errorMessage = "Valeur manquante (undefined) pour un paramètre requis.";
+    }
+    return NextResponse.json(
+      { message: errorMessage, error: error.message },
+      { status: 400 }
+    ); // Retourne 400 pour les erreurs client-side (données invalides)
   }
 }
 
-// @desc    Update a CRA
-// @route   PUT /api/cras/:id
-// @access  Public
-export async function updateCRA(req, res, id) {
+export async function updateCRAController(id, updateData) {
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json(
+      { message: "Aucune donnée fournie pour la mise à jour." },
+      { status: 400 }
+    );
+  }
   try {
-    const updateData = req.body;
-    if (Object.keys(updateData).length === 0) {
-      return res
-        .status(400)
-        .json({ message: "Aucune donnée fournie pour la mise à jour." });
-    }
-
-    const success = await craModel.updateCRA(parseInt(id, 10), updateData);
+    const success = await craModel.updateCRA(id, updateData);
     if (success) {
-      return res.status(200).json({ message: "CRA mis à jour avec succès." });
+      return NextResponse.json(
+        { message: "CRA mis à jour avec succès." },
+        { status: 200 }
+      );
     } else {
-      return res
-        .status(404)
-        .json({ message: "CRA non trouvé ou aucune modification effectuée." });
+      return NextResponse.json(
+        { message: "CRA non trouvé ou aucune modification effectuée." },
+        { status: 404 }
+      );
     }
   } catch (error) {
-    console.error(`Error updating CRA with ID ${id}:`, error);
-    return res.status(500).json({ message: "Server Error" });
+    console.error(`Erreur dans updateCRAController pour l'ID ${id}:`, error);
+    let errorMessage = "Erreur lors de la mise à jour du CRA.";
+    if (error.code === "ER_NO_REFERENCED_ROW_2" || error.errno === 1452) {
+      errorMessage =
+        "Clé étrangère invalide: user_id ou client_id n'existe pas.";
+    }
+    return NextResponse.json(
+      { message: errorMessage, error: error.message },
+      { status: 400 }
+    ); // Retourne 400
   }
 }
 
-// @desc    Delete a CRA
-// @route   DELETE /api/cras/:id
-// @access  Public
-export async function deleteCRA(req, res, id) {
+export async function deleteCRAController(id) {
   try {
-    const success = await craModel.deleteCRA(parseInt(id, 10));
+    const success = await craModel.deleteCRA(id);
     if (success) {
-      return res.status(204).send();
+      return new NextResponse(null, { status: 204 }); // 204 No Content
     } else {
-      return res.status(404).json({ message: "CRA non trouvé." });
+      return NextResponse.json({ message: "CRA non trouvé." }, { status: 404 });
     }
   } catch (error) {
-    console.error(`Error deleting CRA with ID ${id}:`, error);
-    return res.status(500).json({ message: "Server Error" });
+    console.error(`Erreur dans deleteCRAController pour l'ID ${id}:`, error);
+    return NextResponse.json(
+      { message: "Erreur serveur.", error: error.message },
+      { status: 500 }
+    );
   }
 }

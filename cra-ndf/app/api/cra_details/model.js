@@ -1,6 +1,7 @@
+// app/api/cra_details/model.js
 // Modèle pour interagir avec la table 'cra_details' (notes de frais) dans la base de données.
 
-import { db } from "../lib/db"; // Importe l'instance de la connexion à la DB
+import { db } from "../../../lib/db"; // Importe l'instance de la connexion à la DB
 
 /**
  * Récupère tous les détails de CRA (notes de frais).
@@ -8,16 +9,17 @@ import { db } from "../lib/db"; // Importe l'instance de la connexion à la DB
  */
 export async function getAllCraDetails() {
   try {
+    // Correction: Suppression de 'montant' et 'statut_depense' des colonnes sélectionnées
     const [rows] = await db.execute(
-      "SELECT id, cra_id, type_detail, montant, description, date_detail, statut_depense FROM cra_details"
+      "SELECT id, cra_id, type_detail, description, date_detail FROM cra_details"
     );
     return rows;
   } catch (error) {
     console.error(
-      "Erreur lors de la récupération de tous les détails de CRA:",
+      "Erreur lors de la récupération de tous les détails de CRA (modèle):",
       error
     );
-    throw error;
+    throw error; // Propager l'erreur pour que le contrôleur la gère avec un 500
   }
 }
 
@@ -28,14 +30,15 @@ export async function getAllCraDetails() {
  */
 export async function getCraDetailById(id) {
   try {
+    // Correction: Suppression de 'montant' et 'statut_depense' des colonnes sélectionnées
     const [rows] = await db.execute(
-      "SELECT id, cra_id, type_detail, montant, description, date_detail, statut_depense FROM cra_details WHERE id = ?",
+      "SELECT id, cra_id, type_detail, description, date_detail FROM cra_details WHERE id = ?",
       [id]
     );
     return rows[0] || null;
   } catch (error) {
     console.error(
-      `Erreur lors de la récupération du détail de CRA avec l'ID ${id}:`,
+      `Erreur lors de la récupération du détail de CRA avec l'ID ${id} (modèle):`,
       error
     );
     throw error;
@@ -49,14 +52,15 @@ export async function getCraDetailById(id) {
  */
 export async function getDetailsByCraId(craId) {
   try {
+    // Correction: Suppression de 'montant' et 'statut_depense' des colonnes sélectionnées
     const [rows] = await db.execute(
-      "SELECT id, cra_id, type_detail, montant, description, date_detail, statut_depense FROM cra_details WHERE cra_id = ?",
+      "SELECT id, cra_id, type_detail, description, date_detail FROM cra_details WHERE cra_id = ?",
       [craId]
     );
     return rows;
   } catch (error) {
     console.error(
-      `Erreur lors de la récupération des détails pour le CRA ID ${craId}:`,
+      `Erreur lors de la récupération des détails pour le CRA ID ${craId} (modèle):`,
       error
     );
     throw error;
@@ -65,33 +69,24 @@ export async function getDetailsByCraId(craId) {
 
 /**
  * Crée un nouveau détail de CRA (note de frais).
- * @param {Object} detailData Les données du détail à créer (cra_id, type_detail, montant, description, date_detail, statut_depense).
+ * @param {Object} detailData Les données du détail à créer (cra_id, type_detail, description, date_detail).
  * @returns {Promise<Object>} Une promesse qui résout en le détail créé.
  */
 export async function createCraDetail(detailData) {
-  const {
-    cra_id,
-    type_detail,
-    montant,
-    description,
-    date_detail,
-    statut_depense,
-  } = detailData;
+  // Correction: Suppression de 'montant' et 'statut_depense' de la déstructuration
+  const { cra_id, type_detail, description, date_detail } = detailData;
   try {
+    // Correction: Suppression de 'montant' et 'statut_depense' de la clause INSERT
     const [result] = await db.execute(
-      "INSERT INTO cra_details (cra_id, type_detail, montant, description, date_detail, statut_depense) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        cra_id,
-        type_detail,
-        montant,
-        description,
-        date_detail,
-        statut_depense || "En attente",
-      ]
+      "INSERT INTO cra_details (cra_id, type_detail, description, date_detail) VALUES (?, ?, ?, ?)",
+      [cra_id, type_detail, description, date_detail]
     );
     return { id: result.insertId, ...detailData };
   } catch (error) {
-    console.error("Erreur lors de la création du détail de CRA:", error);
+    console.error(
+      "Erreur lors de la création du détail de CRA (modèle):",
+      error
+    );
     throw error;
   }
 }
@@ -110,10 +105,11 @@ export async function updateCraDetail(id, updateData) {
     fields.push("type_detail = ?");
     values.push(updateData.type_detail);
   }
-  if (updateData.montant !== undefined) {
-    fields.push("montant = ?");
-    values.push(updateData.montant);
-  }
+  // Correction: Suppression de la logique de mise à jour pour 'montant'
+  // if (updateData.montant !== undefined) {
+  //   fields.push("montant = ?");
+  //   values.push(updateData.montant);
+  // }
   if (updateData.description !== undefined) {
     fields.push("description = ?");
     values.push(updateData.description);
@@ -122,10 +118,11 @@ export async function updateCraDetail(id, updateData) {
     fields.push("date_detail = ?");
     values.push(updateData.date_detail);
   }
-  if (updateData.statut_depense !== undefined) {
-    fields.push("statut_depense = ?");
-    values.push(updateData.statut_depense);
-  }
+  // Correction: Suppression de la logique de mise à jour pour 'statut_depense'
+  // if (updateData.statut_depense !== undefined) {
+  //   fields.push("statut_depense = ?");
+  //   values.push(updateData.statut_depense);
+  // }
 
   if (fields.length === 0) {
     return false;
@@ -141,7 +138,7 @@ export async function updateCraDetail(id, updateData) {
     return result.affectedRows > 0;
   } catch (error) {
     console.error(
-      `Erreur lors de la mise à jour du détail de CRA avec l'ID ${id}:`,
+      `Erreur lors de la mise à jour du détail de CRA avec l'ID ${id} (modèle):`,
       error
     );
     throw error;
@@ -161,7 +158,7 @@ export async function deleteCraDetail(id) {
     return result.affectedRows > 0;
   } catch (error) {
     console.error(
-      `Erreur lors de la suppression du détail de CRA avec l'ID ${id}:`,
+      `Erreur lors de la suppression du détail de CRA avec l'ID ${id} (modèle):`,
       error
     );
     throw error;

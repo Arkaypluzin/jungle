@@ -1,34 +1,29 @@
-"use client"; // Ce composant est un Client Component
+// app/cra-manager/page.js
+"use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import UnifiedManager from "../../components/UnifiedManager"; // Chemin correct vers le composant
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import CraBoard from "../../components/CraBoard";
+import UnifiedManager from "../../components/UnifiedManager";
+import SummaryReport from "../../components/SummaryReport";
 
 export default function CRAPage() {
-  const [activityTypes, setActivityTypes] = useState([]);
-  const [clientTypes, setClientTypes] = useState([]);
+  const [craActivities, setCraActivities] = useState([]);
+  const [clientDefinitions, setClientDefinitions] = useState([]);
+  const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // État pour gérer l'onglet actif, initialisé à "activities"
-  const [activeTab, setActiveTab] = useState("activities");
 
-  // Fonction pour récupérer les données initiales
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(null); // Réinitialiser les erreurs
+    setError(null);
 
     try {
-      // Récupération des activités
-      const activitiesRes = await fetch("/api/cra_activities");
-      if (!activitiesRes.ok) {
-        const errorData = await activitiesRes.json();
-        throw new Error(
-          errorData.message || `HTTP error! status: ${activitiesRes.status}`
-        );
-      }
-      const activitiesData = await activitiesRes.json();
-      setActivityTypes(activitiesData);
-
-      // Récupération des clients
       const clientsRes = await fetch("/api/client");
       if (!clientsRes.ok) {
         const errorData = await clientsRes.json();
@@ -37,169 +32,81 @@ export default function CRAPage() {
         );
       }
       const clientsData = await clientsRes.json();
-      setClientTypes(clientsData);
+      setClientDefinitions(clientsData);
+
+      const craActivitiesRes = await fetch("/api/cra_activities");
+      if (!craActivitiesRes.ok) {
+        const errorData = await craActivitiesRes.json();
+        throw new Error(
+          errorData.message || `HTTP error! status: ${craActivitiesRes.status}`
+        );
+      }
+      const craActivitiesData = await craActivitiesRes.json();
+      setCraActivities(craActivitiesData);
+
+      const activityTypesRes = await fetch("/api/activity_type");
+      if (!activityTypesRes.ok) {
+        const errorData = await activityTypesRes.json();
+        throw new Error(
+          errorData.message || `Erreur HTTP! status: ${activityTypesRes.status}`
+        );
+      }
+      const activityTypesData = await activityTypesRes.json();
+      setActivityTypeDefinitions(activityTypesData);
     } catch (err) {
       console.error("Erreur lors du chargement des données:", err);
       setError(`Erreur de chargement des données: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  }, []); // Aucune dépendance car fetchData est stable et n'a pas besoin de changer
+  }, []);
 
-  // Exécute fetchData au montage du composant
   useEffect(() => {
     fetchData();
-  }, [fetchData]); // Déclenche le useEffect quand fetchData change (une fois au début)
+  }, [fetchData]);
 
-  // --- Fonctions passées à UnifiedManager pour les Activités ---
-  const handleAddActivity = useCallback(
-    async (activityData) => {
-      try {
-        const res = await fetch("/api/cra_activities", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(activityData),
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(
-            errorData.message || `HTTP error! status: ${res.status}`
-          );
-        }
-
-        console.log("Activité ajoutée avec succès:", await res.json());
-        await fetchData(); // Re-fetch pour mettre à jour la liste
-        return true;
-      } catch (err) {
-        console.error("Erreur lors de l'ajout de l'activité:", err);
-        setError(`Erreur lors de l'ajout de l'activité: ${err.message}`);
-        return false;
-      }
-    },
-    [fetchData]
-  );
-
-  const handleUpdateActivity = useCallback(
-    async (id, updateData) => {
-      try {
-        const res = await fetch(`/api/cra_activities/${id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updateData),
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(
-            errorData.message || `HTTP error! status: ${res.status}`
-          );
-        }
-
-        console.log("Activité mise à jour avec succès.");
-        await fetchData(); // Re-fetch pour mettre à jour la liste
-        return true;
-      } catch (err) {
-        console.error(
-          `Erreur lors de la mise à jour de l'activité ${id}:`,
-          err
-        );
-        setError(`Erreur lors de la mise à jour de l'activité: ${err.message}`);
-        return false;
-      }
-    },
-    [fetchData]
-  );
-
-  const handleDeleteActivity = useCallback(
-    async (id) => {
-      try {
-        const res = await fetch(`/api/cra_activities/${id}`, {
-          method: "DELETE",
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(
-            errorData.message || `HTTP error! status: ${res.status}`
-          );
-        }
-
-        console.log("Activité supprimée avec succès.");
-        await fetchData(); // Re-fetch pour mettre à jour la liste
-        return true;
-      } catch (err) {
-        console.error(
-          `Erreur lors de la suppression de l'activité ${id}:`,
-          err
-        );
-        setError(`Erreur lors de la suppression de l'activité: ${err.message}`);
-        return false;
-      }
-    },
-    [fetchData]
-  );
-
-  // --- Fonctions passées à UnifiedManager pour les Clients ---
+  // Client Management Functions
   const handleAddClient = useCallback(
     async (clientData) => {
       try {
-        const res = await fetch("/api/client", {
+        const response = await fetch("/api/client", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(clientData),
         });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(
-            errorData.message || `HTTP error! status: ${res.status}`
-          );
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to add client");
         }
-
-        console.log("Client ajouté avec succès:", await res.json());
-        await fetchData(); // Re-fetch pour mettre à jour la liste
-        return true;
-      } catch (err) {
-        console.error("Erreur lors de l'ajout du client:", err);
-        setError(`Erreur lors de l'ajout du client: ${err.message}`);
-        return false;
+        await fetchData();
+      } catch (error) {
+        console.error("Error adding client:", error);
+        alert(`Erreur d'ajout de client: ${error.message}`);
       }
     },
     [fetchData]
   );
 
   const handleUpdateClient = useCallback(
-    async (id, updateData) => {
+    async (id, clientData) => {
       try {
-        const res = await fetch(`/api/client/${id}`, {
+        const response = await fetch(`/api/client/${id}`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updateData),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(clientData),
         });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(
-            errorData.message || `HTTP error! status: ${res.status}`
-          );
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log("Client mis à jour avec succès (204 No Content).");
+          } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || "Failed to update client");
+          }
         }
-
-        console.log("Client mis à jour avec succès.");
-        await fetchData(); // Re-fetch pour mettre à jour la liste
-        return true;
-      } catch (err) {
-        console.error(`Erreur lors de la mise à jour du client ${id}:`, err);
-        setError(`Erreur lors de la mise à jour du client: ${err.message}`);
-        return false;
+        await fetchData();
+      } catch (error) {
+        console.error("Error updating client:", error);
+        alert(`Erreur de mise à jour client: ${error.message}`);
       }
     },
     [fetchData]
@@ -207,25 +114,202 @@ export default function CRAPage() {
 
   const handleDeleteClient = useCallback(
     async (id) => {
+      if (!confirm("Êtes-vous sûr de vouloir supprimer ce client ?")) return;
       try {
-        const res = await fetch(`/api/client/${id}`, {
+        const response = await fetch(`/api/client/${id}`, {
           method: "DELETE",
         });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log("Client supprimé avec succès (204 No Content).");
+          } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || "Failed to delete client");
+          }
+        }
+        await fetchData();
+      } catch (error) {
+        console.error("Error deleting client:", error);
+        alert(`Erreur de suppression client: ${error.message}`);
+      }
+    },
+    [fetchData]
+  );
 
-        if (!res.ok) {
-          const errorData = await res.json();
+  // Activity Type Management Functions
+  const handleAddActivityType = useCallback(
+    async (activityTypeData) => {
+      try {
+        const response = await fetch("/api/activity_type", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(activityTypeData),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to add activity type");
+        }
+        await fetchData();
+      } catch (error) {
+        console.error("Error adding activity type:", error);
+        alert(`Erreur d'ajout de type d'activité: ${error.message}`);
+      }
+    },
+    [fetchData]
+  );
+
+  const handleUpdateActivityType = useCallback(
+    async (id, activityTypeData) => {
+      try {
+        const response = await fetch(`/api/activity_type/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(activityTypeData),
+        });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log(
+              "Type d'activité mis à jour avec succès (204 No Content)."
+            );
+          } else {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.message || "Failed to update activity type"
+            );
+          }
+        }
+        await fetchData();
+      } catch (error) {
+        console.error("Error updating activity type:", error);
+        alert(`Erreur de mise à jour de type d'activité: ${error.message}`);
+      }
+    },
+    [fetchData]
+  );
+
+  const handleDeleteActivityType = useCallback(
+    async (id) => {
+      if (
+        !confirm(
+          "Êtes-vous sûr de vouloir supprimer ce type d'activité ? Cela affectera les CRAs existants qui l'utilisent."
+        )
+      )
+        return;
+      try {
+        const response = await fetch(`/api/activity_type/${id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log(
+              "Type d'activité supprimé avec succès (204 No Content)."
+            );
+          } else {
+            const errorData = await response.json();
+            throw new new Error(
+              errorData.message || "Failed to delete activity type"
+            )();
+          }
+        }
+        await fetchData();
+      } catch (error) {
+        console.error("Error deleting activity type:", error);
+        alert(`Erreur de suppression de type d'activité: ${error.message}`);
+      }
+    },
+    [fetchData]
+  );
+
+  // CRA Activity Management Functions
+  const handleAddCraActivity = useCallback(
+    async (activityData) => {
+      try {
+        const payload = {
+          description_activite: activityData.descriptionActivite,
+          temps_passe: parseFloat(activityData.tempsPasse),
+          date_activite: activityData.dateCra,
+          type_activite: activityData.typeActivite,
+          client_name: activityData.clientName,
+          override_non_working_day: activityData.overrideNonWorkingDay,
+        };
+
+        const response = await fetch("/api/cra_activities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
           throw new Error(
-            errorData.message || `HTTP error! status: ${res.status}`
+            errorData.message || "Erreur lors de la création de l'activité CRA."
           );
         }
+        await fetchData();
+      } catch (error) {
+        console.error("Erreur lors de l'ajout d'activité CRA:", error);
+        alert(`Erreur d'ajout d'activité CRA: ${error.message}`);
+      }
+    },
+    [fetchData]
+  );
 
-        console.log("Client supprimé avec succès.");
-        await fetchData(); // Re-fetch pour mettre à jour la liste
-        return true;
-      } catch (err) {
-        console.error(`Erreur lors de la suppression du client ${id}:`, err);
-        setError(`Erreur lors de la suppression du client: ${err.message}`);
-        return false;
+  const handleUpdateCraActivity = useCallback(
+    async (id, activityData) => {
+      try {
+        const payload = {
+          description_activite: activityData.descriptionActivite,
+          temps_passe: parseFloat(activityData.tempsPasse),
+          date_activite: activityData.dateCra,
+          type_activite: activityData.typeActivite,
+          client_name: activityData.clientName,
+          override_non_working_day: activityData.overrideNonWorkingDay,
+        };
+        const response = await fetch(`/api/cra_activities/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log(
+              "Activité CRA mise à jour avec succès (204 No Content)."
+            );
+          } else {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.message || "Failed to update CRA activity"
+            );
+          }
+        }
+        await fetchData();
+      } catch (error) {
+        console.error("Error updating CRA activity:", error);
+        alert(`Erreur de mise à jour d'activité CRA: ${error.message}`);
+      }
+    },
+    [fetchData]
+  );
+
+  const handleDeleteCraActivity = useCallback(
+    async (id) => {
+      try {
+        const response = await fetch(`/api/cra_activities/${id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log("Activité CRA supprimée avec succès (204 No Content).");
+          } else {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.message || "Failed to delete CRA activity"
+            );
+          }
+        }
+        await fetchData();
+      } catch (error) {
+        console.error("Error deleting CRA activity:", error);
+        alert(`Erreur de suppression d'activité CRA: ${error.message}`);
       }
     },
     [fetchData]
@@ -233,7 +317,7 @@ export default function CRAPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen text-lg text-gray-700">
+      <div className="flex justify-center items-center h-screen text-xl text-gray-700">
         Chargement des données...
       </div>
     );
@@ -241,31 +325,39 @@ export default function CRAPage() {
 
   if (error) {
     return (
-      <div className="flex flex-col justify-center items-center h-screen text-lg text-red-600">
-        <p>{error}</p>
-        <button
-          onClick={fetchData}
-          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Réessayer
-        </button>
+      <div className="flex justify-center items-center h-screen text-xl text-red-600">
+        Erreur: {error}
       </div>
     );
   }
 
   return (
-    <UnifiedManager
-      activityTypes={activityTypes}
-      onAddActivity={handleAddActivity}
-      onUpdateActivity={handleUpdateActivity}
-      onDeleteActivity={handleDeleteActivity}
-      clientTypes={clientTypes}
-      onAddClient={handleAddClient}
-      onUpdateClient={handleUpdateClient}
-      onDeleteClient={handleDeleteClient}
-      // Passe l'état et la fonction de mise à jour de l'onglet actif
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-    />
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-8">
+      <h1 className="text-4xl font-extrabold text-center text-gray-800 mb-8">
+        Gestionnaire CRA
+      </h1>
+
+      {/* Calendrier en premier */}
+      <CraBoard
+        craActivities={craActivities}
+        activityTypeDefinitions={activityTypeDefinitions}
+        clientDefinitions={clientDefinitions}
+        onAddCraActivity={handleAddCraActivity}
+        onUpdateCraActivity={handleUpdateCraActivity}
+        onDeleteCraActivity={handleDeleteCraActivity}
+      />
+
+      {/* Gestionnaire Unified en second */}
+      <UnifiedManager
+        clientDefinitions={clientDefinitions}
+        onAddClient={handleAddClient}
+        onUpdateClient={handleUpdateClient}
+        onDeleteClient={handleDeleteClient}
+        activityTypeDefinitions={activityTypeDefinitions}
+        onAddActivityType={handleAddActivityType}
+        onUpdateActivityType={handleUpdateActivityType}
+        onDeleteActivityType={handleDeleteActivityType}
+      />
+    </div>
   );
 }

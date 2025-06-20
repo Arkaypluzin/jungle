@@ -1,17 +1,17 @@
 // app/api/client/route.js
-
 import { NextResponse } from "next/server";
-// CORRECTION ICI : Le contrôleur est dans le même dossier
-import { getClients, createClient } from "./controller";
+// Correction: Importer getAllClientsController (pas getClient)
+import { getAllClientsController, createClientController } from "./controller";
 
 /**
  * Gère les requêtes GET pour récupérer tous les clients.
- * @param {Request} request L'objet de requête.
- * @returns {NextResponse} Une réponse JSON contenant la liste des clients ou une erreur.
+ * @param {Request} request L'objet de requête Next.js.
+ * @returns {NextResponse} Une réponse JSON.
  */
-export async function GET(request) {
+export async function GET() {
   try {
-    return await getClients();
+    // Correction: Appeler getAllClientsController
+    return await getAllClientsController();
   } catch (error) {
     console.error("Erreur dans la route GET /api/client:", error);
     return NextResponse.json(
@@ -26,21 +26,21 @@ export async function GET(request) {
 
 /**
  * Gère les requêtes POST pour créer un nouveau client.
- * @param {Request} request L'objet de requête.
- * @returns {NextResponse} Une réponse JSON confirmant la création ou une erreur.
+ * @param {Request} request L'objet de requête Next.js.
+ * @returns {NextResponse} Une réponse JSON.
  */
 export async function POST(request) {
   try {
     const clientData = await request.json();
-    return await createClient(clientData);
+    return await createClientController(clientData);
   } catch (error) {
-    console.error("Erreur dans la route POST /api/client:", error);
+    console.error("Erreur dans POST /api/client (route):", error);
     return NextResponse.json(
       {
-        message: "Erreur lors de la création du client.",
+        message: "Requête invalide: le corps doit être un JSON valide.",
         error: error.message,
       },
-      { status: 500 }
+      { status: 400 }
     );
   }
 }

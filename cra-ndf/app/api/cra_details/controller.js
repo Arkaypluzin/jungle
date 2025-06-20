@@ -1,167 +1,164 @@
-// controllers/craDetailController.js
-// Ce contrôleur gère les requêtes HTTP liées aux opérations sur les détails de CRA (notes de frais).
+// app/api/cra_details/controller.js
+import * as craDetailModel from "./model";
+import { NextResponse } from "next/server";
 
-import * as craDetailModel from "../model/cra_detail";
-import { NextResponse } from "next/server"; // Nécessaire pour les réponses Next.js
-
-/**
- * Récupère tous les détails de CRA.
- * GET /api/cra-details
- */
-export async function getCraDetails(req, res) {
+export async function getCraDetailsController() {
   try {
     const details = await craDetailModel.getAllCraDetails();
-    return res.status(200).json(details);
+    return NextResponse.json(details);
   } catch (error) {
-    console.error("Erreur dans getCraDetails:", error);
-    return res.status(500).json({
-      message: "Erreur lors de la récupération des détails de CRA",
-      error: error.message,
-    });
+    console.error("Erreur dans getCraDetailsController:", error);
+    return NextResponse.json(
+      { message: "Server Error", error: error.message },
+      { status: 500 }
+    );
   }
 }
 
-/**
- * Récupère un détail dxe CRA par son ID.
- * GET /api/cra-details/:id
- * @param {Object} req - L'objet Request de Next.js
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} id - L'ID du détail
- */
-export async function getCraDetailById(req, res, id) {
+export async function getCraDetailByIdController(id) {
   try {
-    const detail = await craDetailModel.getCraDetailById(parseInt(id, 10));
+    const detail = await craDetailModel.getCraDetailById(id);
     if (detail) {
-      return res.status(200).json(detail);
+      return NextResponse.json(detail);
     } else {
-      return res.status(404).json({ message: "Détail de CRA non trouvé" });
+      return NextResponse.json(
+        { message: "Détail de CRA non trouvé." },
+        { status: 404 }
+      );
     }
   } catch (error) {
-    console.error(`Erreur dans getCraDetailById pour l'ID ${id}:`, error);
-    return res.status(500).json({
-      message: "Erreur lors de la récupération du détail de CRA",
-      error: error.message,
-    });
+    console.error(
+      `Erreur dans getCraDetailByIdController pour l'ID ${id}:`,
+      error
+    );
+    return NextResponse.json(
+      { message: "Server Error", error: error.message },
+      { status: 500 }
+    );
   }
 }
 
-/**
- * Récupère tous les détails pour un CRA spécifique.
- * GET /api/cras/:craId/details
- * @param {Object} req - L'objet Request de Next.js
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} craId - L'ID du CRA parent
- */
-export async function getDetailsByCraId(req, res, craId) {
+export async function getDetailsByCraIdController(craId) {
   try {
-    const details = await craDetailModel.getDetailsByCraId(parseInt(craId, 10));
-    return res.status(200).json(details);
+    const details = await craDetailModel.getDetailsByCraId(craId);
+    return NextResponse.json(details);
   } catch (error) {
-    console.error(`Erreur dans getDetailsByCraId pour CRA ID ${craId}:`, error);
-    return res.status(500).json({
-      message: "Erreur lors de la récupération des détails pour ce CRA",
-      error: error.message,
-    });
+    console.error(
+      `Erreur dans getDetailsByCraIdController pour CRA ID ${craId}:`,
+      error
+    );
+    return NextResponse.json(
+      { message: "Server Error", error: error.message },
+      { status: 500 }
+    );
   }
 }
 
-/**
- * Crée un nouveau détail de CRA (note de frais).
- * POST /api/cra-details
- * @param {Object} req - L'objet Request de Next.js (contenant req.body)
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- */
-export async function createCraDetail(req, res) {
-  const detailData = req.body;
+export async function createCraDetailController(detailData) {
+  // Correction: Suppression des validations spécifiques à 'montant' et 'statut_depense'
   if (
     !detailData.cra_id ||
     !detailData.type_detail ||
     !detailData.date_detail
   ) {
-    return res
-      .status(400)
-      .json({ message: "cra_id, type_detail et date_detail sont requis." });
+    return NextResponse.json(
+      { message: "cra_id, type_detail et date_detail sont requis." },
+      { status: 400 }
+    );
   }
-  // Validation spécifique pour le montant si type_detail est 'Dépense'
-  if (
-    detailData.type_detail === "Dépense" &&
-    detailData.montant === undefined
-  ) {
-    return res.status(400).json({
-      message: 'Le montant est requis pour le type de détail "Dépense".',
-    });
-  }
-
+  // Suppression de la validation pour montant
+  // if (detailData.type_detail === "Dépense" && (detailData.montant === undefined || isNaN(detailData.montant) || parseFloat(detailData.montant) <= 0)) {
+  //   return NextResponse.json({ message: 'Le montant est requis et doit être un nombre positif pour le type de détail "Dépense".' }, { status: 400 });
+  // }
   try {
     const newDetail = await craDetailModel.createCraDetail(detailData);
-    return res.status(201).json(newDetail);
+    return NextResponse.json(newDetail, { status: 201 });
   } catch (error) {
-    console.error("Erreur dans createCraDetail:", error);
-    return res.status(500).json({
-      message: "Erreur lors de la création du détail de CRA",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * Met à jour un détail de CRA (note de frais) existant.
- * PUT /api/cra-details/:id
- * @param {Object} req - L'objet Request de Next.js (contenant req.body)
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} id - L'ID du détail
- */
-export async function updateCraDetail(req, res, id) {
-  const updateData = req.body;
-  if (Object.keys(updateData).length === 0) {
-    return res
-      .status(400)
-      .json({ message: "Aucune donnée fournie pour la mise à jour." });
-  }
-
-  try {
-    const success = await craDetailModel.updateCraDetail(
-      parseInt(id, 10),
-      updateData
-    );
-    if (success) {
-      return res
-        .status(200)
-        .json({ message: "Détail de CRA mis à jour avec succès." });
-    } else {
-      return res.status(404).json({
-        message: "Détail de CRA non trouvé ou aucune modification effectuée.",
-      });
+    console.error("Erreur dans createCraDetailController:", error);
+    let errorMessage = "Erreur lors de la création du détail de CRA.";
+    if (error.code === "ER_NO_REFERENCED_ROW_2" || error.errno === 1452) {
+      errorMessage = "Erreur: Le CRA parent spécifié (cra_id) n'existe pas.";
     }
-  } catch (error) {
-    console.error(`Erreur dans updateCraDetail pour l'ID ${id}:`, error);
-    return res.status(500).json({
-      message: "Erreur lors de la mise à jour du détail de CRA",
-      error: error.message,
-    });
+    return NextResponse.json(
+      { message: errorMessage, error: error.message },
+      { status: 500 }
+    );
   }
 }
 
-/**
- * Supprime un détail de CRA (note de frais) par son ID.
- * DELETE /api/cra-details/:id
- * @param {Object} req - L'objet Request de Next.js
- * @param {Object} res - L'objet de réponse simulé (mockRes)
- * @param {string} id - L'ID du détail
- */
-export async function deleteCraDetail(req, res, id) {
+export async function updateCraDetailController(id, updateData) {
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json(
+      { message: "Aucune donnée fournie pour la mise à jour." },
+      { status: 400 }
+    );
+  }
+  // Correction: Suppression des validations spécifiques à 'montant' et 'statut_depense'
+  // if (updateData.montant !== undefined && (isNaN(updateData.montant) || parseFloat(updateData.montant) <= 0)) {
+  //     return NextResponse.json({ message: "Le montant doit être un nombre positif." }, { status: 400 });
+  // }
+  if (
+    updateData.date_detail !== undefined &&
+    updateData.date_detail.trim() === ""
+  ) {
+    return NextResponse.json(
+      { message: "La date de détail ne peut pas être vide." },
+      { status: 400 }
+    );
+  }
   try {
-    const success = await craDetailModel.deleteCraDetail(parseInt(id, 10));
+    const success = await craDetailModel.updateCraDetail(id, updateData);
     if (success) {
-      return res.status(204).send();
+      return NextResponse.json(
+        { message: "Détail de CRA mis à jour avec succès." },
+        { status: 200 }
+      );
     } else {
-      return res.status(404).json({ message: "Détail de CRA non trouvé." });
+      return NextResponse.json(
+        {
+          message: "Détail de CRA non trouvé ou aucune modification effectuée.",
+        },
+        { status: 404 }
+      );
     }
   } catch (error) {
     console.error(
-      `Erreur lors de la suppression du détail de CRA avec l'ID ${id}:`,
+      `Erreur dans updateCraDetailController pour l'ID ${id}:`,
       error
     );
-    return res.status(500).json({ message: "Server Error" });
+    let errorMessage = "Erreur lors de la mise à jour du détail de CRA.";
+    if (error.code === "ER_NO_REFERENCED_ROW_2" || error.errno === 1452) {
+      errorMessage = "Erreur: Le CRA parent spécifié (cra_id) n'existe pas.";
+    }
+    return NextResponse.json(
+      { message: errorMessage, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function deleteCraDetailController(id) {
+  try {
+    const success = await craDetailModel.deleteCraDetail(id);
+    if (success) {
+      return NextResponse.json(
+        { message: "Détail de CRA supprimé avec succès." },
+        { status: 200 }
+      );
+    } else {
+      return NextResponse.json(
+        { message: "Détail de CRA non trouvé." },
+        { status: 404 }
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Erreur dans deleteCraDetailController pour l'ID ${id}:`,
+      error
+    );
+    return NextResponse.json(
+      { message: "Server Error", error: error.message },
+      { status: 500 }
+    );
   }
 }

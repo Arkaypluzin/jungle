@@ -1,20 +1,20 @@
-// app/api/cra_details/route.js
+// app/api/activity_type/route.js
 import { NextResponse } from "next/server";
 import {
-  getCraDetailsController,
-  createCraDetailController,
+  getAllActivityTypesController,
+  createActivityTypeController,
 } from "./controller";
 
 export async function GET() {
-  return await getCraDetailsController();
+  return await getAllActivityTypesController();
 }
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    return await createCraDetailController(body);
+    const activityTypeData = await request.json();
+    return await createActivityTypeController(activityTypeData);
   } catch (error) {
-    console.error("Erreur dans POST /api/cra_details:", error);
+    console.error("Erreur dans POST /api/activity_type (route):", error);
     return NextResponse.json(
       {
         message: "Requête invalide: le corps doit être un JSON valide.",

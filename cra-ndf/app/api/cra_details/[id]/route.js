@@ -1,44 +1,52 @@
-// app/api/cra-details/[id]/route.js
+// app/api/cra_details/[id]/route.js
 import { NextResponse } from "next/server";
 import {
-  getCraDetailById,
-  updateCraDetail,
-  deleteCraDetail,
-} from "../../../../controllers/craDetailController";
+  getCraDetailByIdController,
+  updateCraDetailController,
+  deleteCraDetailController,
+} from "../controller";
 
-// Gère les requêtes GET pour récupérer un détail de CRA par ID
+/**
+ * Gère les requêtes GET pour récupérer un détail de CRA par ID.
+ * @param {Request} request L'objet de requête Next.js.
+ * @param {Object} context Contient les paramètres dynamiques comme { params: { id } }.
+ * @returns {NextResponse} Une réponse JSON.
+ */
 export async function GET(request, { params }) {
-  const { id } = params;
-  const mockRes = {
-    status: (statusCode) => ({
-      json: (data) => NextResponse.json(data, { status: statusCode }),
-      send: () => new NextResponse(null, { status: statusCode }),
-    }),
-  };
-  return getCraDetailById({ params: { id: id } }, mockRes);
+  const { id } = await params; // Correction: Ajouter 'await'
+  return await getCraDetailByIdController(parseInt(id, 10));
 }
 
-// Gère les requêtes PUT pour mettre à jour un détail de CRA par ID
+/**
+ * Gère les requêtes PUT pour mettre à jour un détail de CRA par ID.
+ * @param {Request} request L'objet de requête Next.js.
+ * @param {Object} context Contient les paramètres dynamiques comme { params: { id } }.
+ * @returns {NextResponse} Une réponse JSON.
+ */
 export async function PUT(request, { params }) {
-  const { id } = params;
-  const body = await request.json();
-  const mockRes = {
-    status: (statusCode) => ({
-      json: (data) => NextResponse.json(data, { status: statusCode }),
-      send: () => new NextResponse(null, { status: statusCode }),
-    }),
-  };
-  return updateCraDetail({ params: { id: id }, body: body }, mockRes);
+  const { id } = await params; // Correction: Ajouter 'await'
+  try {
+    const updateData = await request.json();
+    return await updateCraDetailController(parseInt(id, 10), updateData);
+  } catch (error) {
+    console.error("Erreur dans PUT /api/cra_details/[id]:", error);
+    return NextResponse.json(
+      {
+        message: "Requête invalide: le corps doit être un JSON valide.",
+        error: error.message,
+      },
+      { status: 400 }
+    );
+  }
 }
 
-// Gère les requêtes DELETE pour supprimer un détail de CRA par ID
+/**
+ * Gère les requêtes DELETE pour supprimer un détail de CRA par ID.
+ * @param {Request} request L'objet de requête Next.js.
+ * @param {Object} context Contient les paramètres dynamiques comme { params: { id } }.
+ * @returns {NextResponse} Une réponse JSON.
+ */
 export async function DELETE(request, { params }) {
-  const { id } = params;
-  const mockRes = {
-    status: (statusCode) => ({
-      json: (data) => NextResponse.json(data, { status: statusCode }),
-      send: () => new NextResponse(null, { status: statusCode }),
-    }),
-  };
-  return deleteCraDetail({ params: { id: id } }, mockRes);
+  const { id } = await params; // Correction: Ajouter 'await'
+  return await deleteCraDetailController(parseInt(id, 10));
 }

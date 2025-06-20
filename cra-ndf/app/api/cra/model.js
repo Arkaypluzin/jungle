@@ -1,6 +1,7 @@
+// app/api/cra/model.js
 // Modèle pour interagir avec la table 'CRA' dans la base de données.
 
-import { db } from "../lib/db"; // Importe l'instance de la connexion à la DB
+import { db } from "../../../lib/db"; // Assurez-vous que ce chemin est correct
 
 /**
  * Récupère tous les CRAs.
@@ -13,7 +14,10 @@ export async function getAllCRAs() {
     );
     return rows;
   } catch (error) {
-    console.error("Erreur lors de la récupération de tous les CRAs:", error);
+    console.error(
+      "Erreur lors de la récupération de tous les CRAs (modèle):",
+      error
+    );
     throw error;
   }
 }
@@ -32,7 +36,7 @@ export async function getCRAById(id) {
     return rows[0] || null;
   } catch (error) {
     console.error(
-      `Erreur lors de la récupération du CRA avec l'ID ${id}:`,
+      `Erreur lors de la récupération du CRA avec l'ID ${id} (modèle):`,
       error
     );
     throw error;
@@ -41,19 +45,36 @@ export async function getCRAById(id) {
 
 /**
  * Crée un nouveau CRA.
- * @param {Object} craData Les données du CRA à créer (user_id, client_id, date_cra, statut, commentaires).
+ * @param {Object} craData Les données du CRA à créer.
  * @returns {Promise<Object>} Une promesse qui résout en le CRA créé (avec son ID généré).
  */
 export async function createCRA(craData) {
   const { user_id, client_id, date_cra, statut, commentaires } = craData;
   try {
+    // Vérification explicite des valeurs pour éviter 'undefined'
+    if (
+      user_id === undefined ||
+      client_id === undefined ||
+      date_cra === undefined
+    ) {
+      throw new Error(
+        "user_id, client_id et date_cra ne peuvent pas être undefined."
+      );
+    }
+
     const [result] = await db.execute(
       "INSERT INTO CRA (user_id, client_id, date_cra, statut, commentaires) VALUES (?, ?, ?, ?, ?)",
-      [user_id, client_id, date_cra, statut || "Brouillon", commentaires]
+      [
+        user_id,
+        client_id,
+        date_cra,
+        statut || "Brouillon",
+        commentaires || null,
+      ] // Commentaires peut être null
     );
     return { id: result.insertId, ...craData };
   } catch (error) {
-    console.error("Erreur lors de la création du CRA:", error);
+    console.error("Erreur lors de la création du CRA (modèle):", error);
     throw error;
   }
 }
@@ -103,7 +124,7 @@ export async function updateCRA(id, updateData) {
     return result.affectedRows > 0;
   } catch (error) {
     console.error(
-      `Erreur lors de la mise à jour du CRA avec l'ID ${id}:`,
+      `Erreur lors de la mise à jour du CRA avec l'ID ${id} (modèle):`,
       error
     );
     throw error;
@@ -121,7 +142,7 @@ export async function deleteCRA(id) {
     return result.affectedRows > 0;
   } catch (error) {
     console.error(
-      `Erreur lors de la suppression du CRA avec l'ID ${id}:`,
+      `Erreur lors de la suppression du CRA avec l'ID ${id} (modèle):`,
       error
     );
     throw error;

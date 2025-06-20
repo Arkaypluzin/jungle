@@ -1,52 +1,52 @@
 // app/api/cra_activities/[id]/route.js
-// Gère les requêtes API pour une activité de CRA spécifique par ID (GET, PUT, DELETE).
-
 import { NextResponse } from "next/server";
-// IMPORTANT : Le chemin vers controller.js est ajusté.
-// Pour atteindre controller.js depuis [id]/route.js, il faut remonter d'un niveau.
-import * as craActivityController from "../controller"; // 'controller.js' est dans le dossier parent (cra_activities/)
+import {
+  getCraActivityByIdController,
+  updateCraActivityController,
+  deleteCraActivityController,
+} from "../controller";
 
 /**
- * Gère les requêtes GET pour récupérer une activité de CRA par ID.
- * @param {Request} request La requête HTTP entrante.
- * @param {{params: {id: string}}} {params} L'objet contenant les paramètres de l'URL, y compris l'ID de l'activité.
- * @returns {NextResponse} Une réponse JSON contenant l'activité ou une erreur.
+ * Gère les requêtes GET pour récupérer une activité CRA par ID.
+ * @param {Request} request L'objet de requête Next.js.
+ * @param {Object} context Contient les paramètres dynamiques comme { params: { id } }.
+ * @returns {NextResponse} Une réponse JSON.
  */
 export async function GET(request, { params }) {
-  const { id } = params;
-  return craActivityController.getCraActivityById(id);
+  const { id } = await params; // Correction: Ajouter 'await'
+  return await getCraActivityByIdController(parseInt(id, 10));
 }
 
 /**
- * Gère les requêtes PUT pour mettre à jour une activité de CRA par ID.
- * @param {Request} request La requête HTTP entrante.
- * @param {{params: {id: string}}} {params} L'objet contenant les paramètres de l'URL, y compris l'ID de l'activité.
- * @returns {NextResponse} Une réponse JSON indiquant le succès ou l'échec de la mise à jour.
+ * Gère les requêtes PUT pour mettre à jour une activité CRA par ID.
+ * @param {Request} request L'objet de requête Next.js.
+ * @param {Object} context Contient les paramètres dynamiques comme { params: { id } }.
+ * @returns {NextResponse} Une réponse JSON.
  */
 export async function PUT(request, { params }) {
-  const { id } = params;
+  const { id } = await params; // Correction: Ajouter 'await'
   try {
-    const body = await request.json();
-    return craActivityController.updateCraActivity(id, body);
+    const updateData = await request.json();
+    return await updateCraActivityController(parseInt(id, 10), updateData);
   } catch (error) {
-    console.error(
-      `Erreur lors du parsing du corps de la requête PUT /api/cra_activities/${id}:`,
-      error
-    );
+    console.error("Erreur dans PUT /api/cra_activities/[id]:", error);
     return NextResponse.json(
-      { message: "Données de requête invalides", error: error.message },
+      {
+        message: "Requête invalide: le corps doit être un JSON valide.",
+        error: error.message,
+      },
       { status: 400 }
     );
   }
 }
 
 /**
- * Gère les requêtes DELETE pour supprimer une activité de CRA par ID.
- * @param {Request} request La requête HTTP entrante.
- * @param {{params: {id: string}}} {params} L'objet contenant les paramètres de l'URL, y compris l'ID de l'activité.
- * @returns {NextResponse} Une réponse vide (204 No Content) ou une erreur.
+ * Gère les requêtes DELETE pour supprimer une activité CRA par ID.
+ * @param {Request} request L'objet de requête Next.js.
+ * @param {Object} context Contient les paramètres dynamiques comme { params: { id } }.
+ * @returns {NextResponse} Une réponse JSON.
  */
 export async function DELETE(request, { params }) {
-  const { id } = params;
-  return craActivityController.deleteCraActivity(id);
+  const { id } = await params; // Correction: Ajouter 'await'
+  return await deleteCraActivityController(parseInt(id, 10));
 }
