@@ -1,46 +1,50 @@
 // app/api/client/route.js
 import { NextResponse } from "next/server";
-// Correction: Importer getAllClientsController (pas getClient)
-import { getAllClientsController, createClientController } from "./controller";
+import { db } from "@/lib/db"; // Importation de 'db' nommée
 
-/**
- * Gère les requêtes GET pour récupérer tous les clients.
- * @param {Request} request L'objet de requête Next.js.
- * @returns {NextResponse} Une réponse JSON.
- */
-export async function GET() {
+// Fonction utilitaire pour gérer les réponses d'erreur
+const handleError = (message, status = 500) => {
+  console.error("Erreur API :", message);
+  return NextResponse.json({ message }, { status });
+};
+
+export async function GET(request) {
   try {
-    // Correction: Appeler getAllClientsController
-    return await getAllClientsController();
+    const [clients] = await db.execute(
+      "SELECT id, nom_client FROM client ORDER BY nom_client ASC"
+    );
+    return NextResponse.json(clients);
   } catch (error) {
-    console.error("Erreur dans la route GET /api/client:", error);
-    return NextResponse.json(
-      {
-        message: "Erreur lors de la récupération des clients.",
-        error: error.message,
-      },
-      { status: 500 }
+    return handleError(
+      `Impossible de récupérer les clients : ${error.message}`
     );
   }
 }
 
-/**
- * Gère les requêtes POST pour créer un nouveau client.
- * @param {Request} request L'objet de requête Next.js.
- * @returns {NextResponse} Une réponse JSON.
- */
 export async function POST(request) {
   try {
-    const clientData = await request.json();
-    return await createClientController(clientData);
-  } catch (error) {
-    console.error("Erreur dans POST /api/client (route):", error);
-    return NextResponse.json(
-      {
-        message: "Requête invalide: le corps doit être un JSON valide.",
-        error: error.message,
-      },
-      { status: 400 }
+    const { nom_client } = await request.json();
+
+    if (!nom_client || nom_client.trim() === "") {
+      return handleError("Le nom du client est requis.", 400);
+    }
+
+    const [result] = await db.execute(
+      "INSERT INTO client (nom_client) VALUES (?)",
+      [nom_client.trim()]
     );
+
+    return NextResponse.json(
+      { id: result.insertId, nom_client: nom_client.trim() },
+      { status: 201 }
+    );
+  } catch (error) {
+    if (
+      error.message.includes("Duplicate entry") ||
+      error.code === "ER_DUP_ENTRY"
+    ) {
+      return handleError("Un client avec ce nom existe déjà.", 409); // Conflit
+    }
+    return handleError(`Impossible d'ajouter le client : ${error.message}`);
   }
 }

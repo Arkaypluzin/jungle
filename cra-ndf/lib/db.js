@@ -1,3 +1,4 @@
+// lib/db.js
 import mysql from "mysql2/promise";
 
 // TEMPORAIRE POUR DEBUG : Vérifiez ce que Next.js lit
@@ -14,3 +15,7 @@ export const db = await mysql.createConnection({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 });
+
+// Note: La connexion est exportée directement.
+// Les fichiers qui l'importent devront utiliser `db.execute()` ou `db.query()`
+// directement sur l'objet 'db'.

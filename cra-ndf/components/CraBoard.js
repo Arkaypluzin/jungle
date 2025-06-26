@@ -1,4 +1,3 @@
-// components/CraBoard.js
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -15,73 +14,130 @@ import {
   isSameDay,
   isWeekend,
   parseISO,
+  isValid, // Importation de isValid
 } from "date-fns";
 import { fr } from "date-fns/locale";
 import ActivityModal from "./ActivityModal";
-import SummaryReport from "./SummaryReport"; // Importer SummaryReport ici
+import SummaryReport from "./SummaryReport";
+import ConfirmationModal from "./ConfirmationModal";
 
 export default function CraBoard({
   craActivities = [],
   activityTypeDefinitions = [],
-  clientDefinitions = [],
+  clientDefinitions = [], // Gardé ici car passé au SummaryReport, mais plus utilisé pour les activités CRA
   onAddCraActivity,
   onUpdateCraActivity,
   onDeleteCraActivity,
+  showMessage,
+  onFinalizeMonth,
+  currentUserId,
+  currentUserName,
 }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [selectedDateForModal, setSelectedDateForModal] = useState(null);
   const [editingActivity, setEditingActivity] = useState(null);
-  const [message, setMessage] = useState("");
-  const [isMessageVisible, setIsMessageVisible] = useState(false);
   const [publicHolidays, setPublicHolidays] = useState([]);
   const [isHolidayOrWeekendSelected, setIsHolidayOrWeekendSelected] =
     useState(false);
-  const [showSummaryReport, setShowSummaryReport] = useState(false); // État pour afficher/masquer le récap
-  const [summaryReportMonth, setSummaryReportMonth] = useState(null); // Mois à afficher dans le récap
+  const [showSummaryReport, setShowSummaryReport] = useState(false);
+  const [summaryReportMonth, setSummaryReportMonth] = useState(null);
 
-  const showTemporaryMessage = useCallback((msg) => {
-    setMessage(msg);
-    setIsMessageVisible(true);
-    const timer = setTimeout(() => {
-      setIsMessageVisible(false);
-      setMessage("");
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [activityToDelete, setActivityToDelete] = useState(null);
 
-  // Fetch public holidays for the current year and the next
+  const [showResetMonthConfirmModal, setShowResetMonthConfirmModal] =
+    useState(false);
+  const [showFinalizeMonthConfirmModal, setShowFinalizeMonthConfirmModal] =
+    useState(false);
+
+  const [showSendConfirmModal, setShowSendConfirmModal] = useState(false);
+
+  const isCurrentMonthFinalized = useCallback(() => {
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const userActivitiesInMonth = craActivities.filter(
+      (activity) =>
+        activity.user_id === currentUserId &&
+        isValid(parseISO(activity.date_activite)) &&
+        parseISO(activity.date_activite) >= monthStart &&
+        parseISO(activity.date_activite) <= monthEnd
+    );
+    if (userActivitiesInMonth.length === 0) return false;
+    return userActivitiesInMonth.every(
+      (activity) => activity.status === "finalized"
+    );
+  }, [currentDate, craActivities, currentUserId]);
+
+  const isCurrentMonthPartiallyFinalized = useCallback(() => {
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const userActivitiesInMonth = craActivities.filter(
+      (activity) =>
+        activity.user_id === currentUserId &&
+        isValid(parseISO(activity.date_activite)) &&
+        parseISO(activity.date_activite) >= monthStart &&
+        parseISO(activity.date_activite) <= monthEnd
+    );
+    if (userActivitiesInMonth.length === 0) return false;
+    const hasDraft = userActivitiesInMonth.some(
+      (activity) => activity.status === "draft"
+    );
+    const hasFinalized = userActivitiesInMonth.some(
+      (activity) => activity.status === "finalized"
+    );
+    return hasDraft && hasFinalized;
+  }, [currentDate, craActivities, currentUserId]);
+
   const fetchPublicHolidays = useCallback(async () => {
     try {
       const currentYear = format(currentDate, "yyyy");
       const nextYear = format(addMonths(currentDate, 12), "yyyy");
 
       const resCurrent = await fetch(
-        `https://date.nager.at/api/v3/PublicHolidays/${currentYear}/FR`
+        `/api/public_holidays?year=${currentYear}&countryCode=FR`
       );
+      if (!resCurrent.ok) {
+        const errorText = await resCurrent.text();
+        throw new Error(
+          `Erreur HTTP ${resCurrent.status}: ${
+            resCurrent.statusText
+          } - Détails: ${errorText.substring(0, 100)}...`
+        );
+      }
       const holidaysCurrent = await resCurrent.json();
 
       const resNext = await fetch(
-        `https://date.nager.at/api/v3/PublicHolidays/${nextYear}/FR`
+        `/api/public_holidays?year=${nextYear}&countryCode=FR`
       );
+      if (!resNext.ok) {
+        const errorText = await resNext.text();
+        throw new Error(
+          `Erreur HTTP ${resNext.status}: ${
+            resNext.statusText
+          } - Détails: ${errorText.substring(0, 100)}...`
+        );
+      }
       const holidaysNext = await resNext.json();
 
       const allHolidays = [...holidaysCurrent, ...holidaysNext];
       setPublicHolidays(allHolidays.map((h) => h.date));
     } catch (error) {
-      console.error("Erreur lors de la récupération des jours fériés:", error);
-      showTemporaryMessage(
-        "Impossible de charger les jours fériés. Vérifiez votre connexion internet."
+      console.error("Erreur lors de la récupération des jours fériés :", error);
+      showMessage(
+        `Impossible de charger les jours fériés. Veuillez réessayer. (${error.message})`,
+        "warning"
       );
     }
-  }, [currentDate, showTemporaryMessage]); // Dependencies for useCallback
+  }, [currentDate, showMessage]);
 
   useEffect(() => {
-    fetchPublicHolidays(); // Call the async function
-  }, [fetchPublicHolidays]); // Dependency for useEffect (the function itself)
+    fetchPublicHolidays();
+  }, [fetchPublicHolidays]);
 
   const isPublicHoliday = useCallback(
     (date) => {
+      if (!isValid(date)) return false;
       const formattedDate = format(date, "yyyy-MM-dd");
       return publicHolidays.includes(formattedDate);
     },
@@ -89,18 +145,63 @@ export default function CraBoard({
   );
 
   const handleDayClick = (dayDate) => {
+    if (!isValid(dayDate)) {
+      console.error("handleDayClick: dayDate invalide reçue", dayDate);
+      showMessage(
+        "Erreur : Date sélectionnée invalide. Impossible d'ajouter une activité.",
+        "error"
+      );
+      return;
+    }
+
+    if (isCurrentMonthFinalized()) {
+      showMessage(
+        "Ce mois est finalisé. Vous ne pouvez pas ajouter de nouvelles activités.",
+        "info"
+      );
+      return;
+    }
+
     const isWeekendDay = isWeekend(dayDate, { weekStartsOn: 1 });
     const isPublicHolidayDay = isPublicHoliday(dayDate);
     const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
 
-    setSelectedDateForModal(dayDate);
+    setSelectedDateForModal(new Date(dayDate.getTime()));
     setEditingActivity(null);
     setIsHolidayOrWeekendSelected(isNonWorkingDay);
     setShowActivityModal(true);
   };
 
   const handleActivityClick = (activity) => {
-    const activityDate = new Date(activity.date_activite);
+    if (activity.user_id !== currentUserId) {
+      showMessage(
+        "Vous ne pouvez pas modifier ou supprimer les activités des autres utilisateurs.",
+        "error"
+      );
+      return;
+    }
+
+    if (activity.status === "finalized") {
+      showMessage(
+        "Cette activité est finalisée et ne peut pas être modifiée ou supprimée.",
+        "info"
+      );
+      return;
+    }
+
+    const activityDate = parseISO(activity.date_activite);
+    if (!isValid(activityDate)) {
+      console.error(
+        "handleActivityClick: Date d'activité invalide de la base de données",
+        activity.date_activite
+      );
+      showMessage(
+        "Erreur : Date d'activité existante invalide. Impossible de modifier.",
+        "error"
+      );
+      return;
+    }
+
     const isWeekendDay = isWeekend(activityDate, { weekStartsOn: 1 });
     const isPublicHolidayDay = isPublicHoliday(activityDate);
 
@@ -117,24 +218,51 @@ export default function CraBoard({
     setIsHolidayOrWeekendSelected(false);
   };
 
-  const handleDeleteFromCalendar = useCallback(
-    async (activityId, event) => {
+  const requestDeleteFromCalendar = useCallback(
+    (activityId, event) => {
       event.stopPropagation();
-      if (confirm("Êtes-vous sûr de vouloir supprimer cette activité ?")) {
-        try {
-          await onDeleteCraActivity(activityId);
-          showTemporaryMessage("Activité supprimée avec succès !");
-        } catch (error) {
-          console.error(
-            "Erreur lors de la suppression depuis le calendrier:",
-            error
-          );
-          showTemporaryMessage(`Erreur de suppression: ${error.message}`);
-        }
+      const activity = craActivities.find((act) => act.id === activityId);
+
+      if (activity.user_id !== currentUserId) {
+        showMessage(
+          "Vous ne pouvez pas supprimer les activités des autres utilisateurs.",
+          "error"
+        );
+        return;
       }
+
+      if (activity && activity.status === "finalized") {
+        showMessage(
+          "Cette activité est finalisée et ne peut pas être supprimée.",
+          "info"
+        );
+        return;
+      }
+      setActivityToDelete(activityId);
+      setShowConfirmModal(true);
     },
-    [onDeleteCraActivity, showTemporaryMessage]
+    [craActivities, showMessage, currentUserId]
   );
+
+  const confirmDeleteActivity = useCallback(async () => {
+    setShowConfirmModal(false);
+    if (activityToDelete) {
+      try {
+        await onDeleteCraActivity(activityToDelete);
+        showMessage("Activité supprimée avec succès !", "success");
+      } catch (error) {
+        console.error("Erreur lors de la suppression du calendrier :", error);
+        showMessage(`Erreur de suppression : ${error.message}`, "error");
+      } finally {
+        setActivityToDelete(null);
+      }
+    }
+  }, [activityToDelete, onDeleteCraActivity, showMessage]);
+
+  const cancelDeleteActivity = useCallback(() => {
+    setShowConfirmModal(false);
+    setActivityToDelete(null);
+  }, []);
 
   const goToPreviousMonth = useCallback(() => {
     setCurrentDate((prevDate) => subMonths(prevDate, 1));
@@ -146,20 +274,171 @@ export default function CraBoard({
 
   const handleToggleSummaryReport = useCallback(() => {
     setShowSummaryReport((prev) => !prev);
-    // Quand on ouvre le récap, on définit le mois à celui du calendrier
     if (!showSummaryReport) {
       setSummaryReportMonth(currentDate);
     } else {
-      setSummaryReportMonth(null); // Réinitialiser quand on ferme
+      setSummaryReportMonth(null);
     }
   }, [showSummaryReport, currentDate]);
 
   useEffect(() => {
-    // Met à jour le mois du récap lorsque le mois du calendrier change
     if (showSummaryReport) {
       setSummaryReportMonth(currentDate);
     }
   }, [currentDate, showSummaryReport]);
+
+  const requestResetMonth = useCallback(() => {
+    if (isCurrentMonthFinalized()) {
+      showMessage(
+        "Ce mois est finalisé et ne peut pas être réinitialisé. Seul un administrateur peut annuler la finalisation.",
+        "info"
+      );
+      return;
+    }
+    setShowResetMonthConfirmModal(true);
+  }, [isCurrentMonthFinalized, showMessage]);
+
+  const confirmResetMonth = useCallback(async () => {
+    setShowResetMonthConfirmModal(false);
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+
+    const activitiesInMonth = craActivities.filter(
+      (activity) =>
+        activity.user_id === currentUserId &&
+        isValid(parseISO(activity.date_activite)) &&
+        parseISO(activity.date_activite) >= monthStart &&
+        parseISO(activity.date_activite) <= monthEnd &&
+        activity.status === "draft"
+    );
+
+    if (activitiesInMonth.length === 0) {
+      showMessage(
+        `Aucune activité brouillon à réinitialiser pour ${format(
+          currentDate,
+          "MMMM 'yyyy'",
+          { locale: fr }
+        )}.`,
+        "info"
+      );
+      return;
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const activity of activitiesInMonth) {
+      try {
+        await onDeleteCraActivity(activity.id);
+        successCount++;
+      } catch (error) {
+        console.error(
+          `Erreur lors de la suppression de l'activité ${activity.id} :`,
+          error
+        );
+        errorCount++;
+      }
+    }
+
+    if (errorCount === 0) {
+      showMessage(
+        `${successCount} activités brouillon supprimées pour ${format(
+          currentDate,
+          "MMMM 'yyyy'",
+          { locale: fr }
+        )}.`,
+        "success"
+      );
+    } else if (successCount > 0) {
+      showMessage(
+        `${successCount} activités brouillon supprimées, mais ${errorCount} erreurs rencontrées.`,
+        "warning"
+      );
+    } else {
+      showMessage(
+        `Échec de la réinitialisation du mois. Aucune activité supprimée.`,
+        "error"
+      );
+    }
+  }, [
+    currentDate,
+    craActivities,
+    onDeleteCraActivity,
+    showMessage,
+    currentUserId,
+  ]);
+
+  const cancelResetMonth = useCallback(() => {
+    setShowResetMonthConfirmModal(false);
+  }, []);
+
+  const requestFinalizeMonth = useCallback(() => {
+    if (isCurrentMonthFinalized()) {
+      showMessage("Ce mois est déjà finalisé.", "info");
+      return;
+    }
+    setShowFinalizeMonthConfirmModal(true);
+  }, [isCurrentMonthFinalized, showMessage]);
+
+  const confirmFinalizeMonth = useCallback(async () => {
+    setShowFinalizeMonthConfirmModal(false);
+    const year = format(currentDate, "yyyy");
+    const month = parseInt(format(currentDate, "MM"));
+
+    await onFinalizeMonth(year, month);
+  }, [currentDate, onFinalizeMonth]);
+
+  const cancelFinalizeMonth = useCallback(() => {
+    setShowFinalizeMonthConfirmModal(false);
+  }, []);
+
+  const requestSendCra = useCallback(() => {
+    if (!isCurrentMonthFinalized()) {
+      showMessage("Seuls les mois finalisés peuvent être envoyés.", "info");
+      return;
+    }
+    setShowSendConfirmModal(true);
+  }, [isCurrentMonthFinalized, showMessage]);
+
+  const confirmSendCra = useCallback(async () => {
+    setShowSendConfirmModal(false);
+    const year = format(currentDate, "yyyy");
+    const month = parseInt(format(currentDate, "MM"));
+
+    try {
+      const response = await fetch(`/api/cra_activities?action=send-cra`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId,
+          year,
+          month,
+          userName: currentUserName,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Échec de l'envoi du CRA.");
+      }
+
+      showMessage(
+        `Le CRA pour ${currentUserName} pour ${format(
+          currentDate,
+          "MMMM 'yyyy'",
+          { locale: fr }
+        )} a été envoyé avec succès !`,
+        "success"
+      );
+    } catch (error) {
+      console.error("Erreur lors de l'envoi du CRA :", error);
+      showMessage(`Erreur lors de l'envoi du CRA : ${error.message}`, "error");
+    }
+  }, [currentDate, currentUserId, currentUserName, showMessage]);
+
+  const cancelSendCra = useCallback(() => {
+    setShowSendConfirmModal(false);
+  }, []);
 
   const renderHeader = () => {
     return (
@@ -185,8 +464,17 @@ export default function CraBoard({
           </svg>
         </button>
         <h2 className="text-2xl font-semibold text-blue-800">
-          {format(currentDate, "MMMM yyyy", { locale: fr })}{" "}
-          {/* Ajout de l'année */}
+          {format(currentDate, "MMMM 'yyyy'", { locale: fr })}
+          {isCurrentMonthFinalized() && (
+            <span className="ml-3 text-sm font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+              FINALISÉ
+            </span>
+          )}
+          {isCurrentMonthPartiallyFinalized() && (
+            <span className="ml-3 text-sm font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
+              PARTIELLEMENT FINALISÉ
+            </span>
+          )}
         </h2>
         <button
           onClick={goToNextMonth}
@@ -243,6 +531,7 @@ export default function CraBoard({
     const allCells = [];
     let day = startCalendarDay;
 
+    // Remplir les jours du mois précédent
     while (day < monthStart) {
       allCells.push(
         <div
@@ -253,18 +542,20 @@ export default function CraBoard({
       day = addDays(day, 1);
     }
 
+    // Jours du mois actuel
     for (let i = 0; i < numDaysInMonth; i++) {
       const currentDay = addDays(monthStart, i);
       const formattedDate = format(currentDay, "d");
       const cloneDay = currentDay;
 
       const activitiesForDay = craActivities
-        .filter((activity) =>
-          isSameDay(parseISO(activity.date_activite), cloneDay)
+        .filter(
+          (activity) =>
+            isValid(parseISO(activity.date_activite)) &&
+            isSameDay(parseISO(activity.date_activite), cloneDay) &&
+            activity.user_id === currentUserId
         )
         .sort((a, b) => {
-          if ((a.client_name || "") < (b.client_name || "")) return -1;
-          if ((a.client_name || "") > (b.client_name || "")) return 1;
           if ((a.type_activite || "") < (b.type_activite || "")) return -1;
           if ((a.type_activite || "") > (b.type_activite || "")) return 1;
           return 0;
@@ -282,7 +573,7 @@ export default function CraBoard({
       `;
 
       if (isToday) {
-        cellClasses += "bg-blue-100 border-blue-500 shadow-md text-blue-800";
+        cellClasses += " bg-blue-100 border-blue-500 shadow-md text-blue-800";
       } else if (isNonWorkingDay) {
         cellClasses += " bg-gray-200 text-gray-500 cursor-not-allowed";
       } else {
@@ -314,7 +605,11 @@ export default function CraBoard({
           )}
           <div className="flex-grow overflow-y-auto w-full pr-1 scrollbar-hide">
             {activitiesForDay.map((activity) => {
-              const clientLabel = activity.client_name || "Client Inconnu";
+              // client_id et client_name ne sont plus utilisés ici pour l'affichage de l'activité
+              // Si vous voulez l'afficher, vous devrez ajouter la colonne client_id à votre table cra_activities
+              // et ajuster l'API pour joindre et renvoyer le nom du client.
+              // Pour l'instant, on retire la référence.
+
               const activityTypeLabel = activity.type_activite || "Activité";
               const timeSpentLabel = activity.temps_passe
                 ? `${parseFloat(activity.temps_passe)}j`
@@ -328,43 +623,68 @@ export default function CraBoard({
                 : "bg-blue-200 text-blue-800";
 
               const overrideLabel = activity.override_non_working_day
-                ? " (Dérog.)"
+                ? " (Dérogation)"
                 : "";
+
+              let statusColorClass = "";
+              if (activity.status === "finalized") {
+                statusColorClass = "bg-green-300 text-green-900";
+              } else {
+                statusColorClass = "bg-gray-300 text-gray-800";
+              }
+
+              const isActivityFinalized = activity.status === "finalized";
 
               return (
                 <div
                   key={activity.id}
-                  className={`relative text-xs px-2 py-0.5 rounded-md mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${typeColorClass}`}
+                  className={`relative text-xs px-2 py-0.5 rounded-md mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis 
+                              ${typeColorClass} ${
+                    isActivityFinalized ? "opacity-70" : ""
+                  }`}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleActivityClick(activity);
                   }}
-                  title={`Client: ${clientLabel}\nType: ${activityTypeLabel}\nTemps: ${timeSpentLabel}\nDescription: ${
+                  title={`Type: ${activityTypeLabel}\nTemps: ${timeSpentLabel}\nDescription: ${
                     activity.description_activite || "N/A"
-                  }${overrideLabel ? "\nDérogation jour non ouvrable" : ""}`}
+                  }${
+                    overrideLabel ? "\nDérogation jour non ouvrable" : ""
+                  }\nStatut: ${
+                    isActivityFinalized ? "Finalisé" : "Brouillon"
+                  }\nUtilisateur: ${currentUserName}`}
                 >
-                  {`${displayLabel} - ${clientLabel}${overrideLabel}`}
-                  <button
-                    onClick={(e) => handleDeleteFromCalendar(activity.id, e)}
-                    className="absolute top-0 right-0 h-full flex items-center justify-center p-1 bg-red-600 hover:bg-red-700 text-white rounded-tr-md rounded-br-md opacity-0 hover:opacity-100 transition-opacity duration-200"
-                    title="Supprimer l'activité"
-                    aria-label="Supprimer l'activité"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-3 w-3"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth="2"
+                  {`${displayLabel}${overrideLabel}`} {/* clientLabel retiré */}
+                  {isActivityFinalized && (
+                    <span
+                      className={`absolute top-0 right-0 h-full flex items-center justify-center p-1 text-xs font-semibold rounded-tr-md rounded-br-md ${statusColorClass}`}
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
+                      F
+                    </span>
+                  )}
+                  {!isActivityFinalized && (
+                    <button
+                      onClick={(e) => requestDeleteFromCalendar(activity.id, e)}
+                      className="absolute top-0 right-0 h-full flex items-center justify-center p-1 bg-red-600 hover:bg-red-700 text-white rounded-tr-md rounded-br-md opacity-0 hover:opacity-100 transition-opacity duration-200"
+                      title="Supprimer l'activité"
+                      aria-label="Supprimer l'activité"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-3 w-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -399,56 +719,152 @@ export default function CraBoard({
 
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
-      <h2 className="text-3xl font-bold text-gray-700 mb-6 border-b-2 pb-2">
-        Calendrier des Activités CRA
-      </h2>
-
-      {renderHeader()}
-      {renderDaysOfWeek()}
-      {renderCells()}
-
-      <div className="flex justify-center mt-6">
-        <button
-          onClick={handleToggleSummaryReport}
-          className="px-6 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-75"
-        >
-          {showSummaryReport
-            ? "Masquer le Récapitulatif Mensuel"
-            : "Afficher le Récapitulatif Mensuel"}
-        </button>
+      <div className="calendar-header mb-4">
+        {renderHeader()}
+        <div className="flex justify-center space-x-4 mt-6">
+          <button
+            onClick={handleToggleSummaryReport}
+            className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
+          >
+            {showSummaryReport ? "Masquer le rapport" : "Afficher le rapport"}
+          </button>
+          <button
+            onClick={requestFinalizeMonth}
+            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+              ${
+                isCurrentMonthFinalized()
+                  ? "bg-green-500 text-white cursor-not-allowed opacity-70"
+                  : "bg-orange-500 text-white hover:bg-orange-600"
+              }`}
+            disabled={isCurrentMonthFinalized()}
+          >
+            {isCurrentMonthFinalized() ? "Mois finalisé" : "Finaliser le mois"}
+          </button>
+          <button
+            onClick={confirmResetMonth}
+            className={`px-6 py-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-300
+              ${
+                isCurrentMonthFinalized() ? "cursor-not-allowed opacity-70" : ""
+              }`}
+            disabled={isCurrentMonthFinalized()}
+          >
+            Réinitialiser le mois
+          </button>
+          <button
+            onClick={requestSendCra}
+            className={`px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg shadow-md transition duration-300
+              ${
+                !isCurrentMonthFinalized()
+                  ? "cursor-not-allowed opacity-70"
+                  : "hover:bg-purple-700"
+              }`}
+            disabled={!isCurrentMonthFinalized()}
+          >
+            Envoyer le CRA
+          </button>
+        </div>
       </div>
 
-      {showSummaryReport && (
-        <SummaryReport
-          craActivities={craActivities}
-          activityTypeDefinitions={activityTypeDefinitions}
-          monthToDisplay={summaryReportMonth} // Passer le mois au SummaryReport
-        />
-      )}
+      {renderDaysOfWeek()}
+      {renderCells()}
 
       {showActivityModal && (
         <ActivityModal
           isOpen={showActivityModal}
           onClose={handleCloseModal}
-          onSave={onAddCraActivity}
-          onUpdate={onUpdateCraActivity}
-          onDelete={onDeleteCraActivity}
-          initialDate={selectedDateForModal}
-          editingActivity={editingActivity}
+          selectedDate={selectedDateForModal}
           activityTypeDefinitions={activityTypeDefinitions}
-          clientDefinitions={clientDefinitions}
-          showMessage={showTemporaryMessage}
-          isHolidayOrWeekend={isHolidayOrWeekendSelected}
-          publicHolidays={publicHolidays}
-          craActivities={craActivities}
+          clientDefinitions={[]} // Ne pas passer les définitions de clients pour les activités CRA ici
+          editingActivity={editingActivity}
+          onSave={editingActivity ? onUpdateCraActivity : onAddCraActivity}
+          isHolidayOrWeekendSelected={isHolidayOrWeekendSelected}
+          showMessage={showMessage}
         />
       )}
 
-      {isMessageVisible && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 transform animate-fade-in-up">
-          {message}
+      {showSummaryReport && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative p-6">
+            <button
+              onClick={handleToggleSummaryReport}
+              className="absolute top-4 right-4 p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition duration-200"
+              aria-label="Fermer le rapport"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6 text-gray-700"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+            <h2 className="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-2">
+              Récapitulatif CRA pour {currentUserName} pour{" "}
+              {format(summaryReportMonth, "MMMM 'yyyy'", { locale: fr })}
+            </h2>
+            <SummaryReport
+              craActivities={craActivities}
+              activityTypeDefinitions={activityTypeDefinitions}
+              monthToDisplay={summaryReportMonth}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              showMessage={showMessage}
+              clientDefinitions={clientDefinitions} // ClientDefinitions est toujours passé au SummaryReport
+            />
+          </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={cancelDeleteActivity}
+        onConfirm={confirmDeleteActivity}
+        title="Confirmer la suppression"
+        message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible."
+      />
+
+      <ConfirmationModal
+        isOpen={showResetMonthConfirmModal}
+        onClose={cancelResetMonth}
+        onConfirm={confirmResetMonth}
+        title="Confirmer la réinitialisation du mois"
+        message={`Êtes-vous sûr de vouloir supprimer TOUTES les activités brouillon pour ${format(
+          currentDate,
+          "MMMM 'yyyy'",
+          { locale: fr }
+        )} ?`}
+      />
+
+      <ConfirmationModal
+        isOpen={showFinalizeMonthConfirmModal}
+        onClose={cancelFinalizeMonth}
+        onConfirm={confirmFinalizeMonth}
+        title="Confirmer la finalisation du mois"
+        message={`Êtes-vous sûr de vouloir finaliser toutes les activités brouillon pour ${format(
+          currentDate,
+          "MMMM 'yyyy'",
+          { locale: fr }
+        )} ? Une fois finalisées, les activités ne peuvent pas être modifiées ou supprimées (sauf par un administrateur).`}
+      />
+
+      <ConfirmationModal
+        isOpen={showSendConfirmModal}
+        onClose={cancelSendCra}
+        onConfirm={confirmSendCra}
+        title="Confirmer l'envoi du CRA"
+        message={`Êtes-vous sûr de vouloir envoyer le CRA pour ${currentUserName} pour ${format(
+          currentDate,
+          "MMMM 'yyyy'",
+          { locale: fr }
+        )} ?`}
+      />
     </div>
   );
 }
