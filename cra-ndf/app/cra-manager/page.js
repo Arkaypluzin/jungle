@@ -5,25 +5,29 @@ import { useRouter } from "next/navigation";
 import CraBoard from "../../components/CraBoard";
 import UnifiedManager from "../../components/UnifiedManager";
 import ToastMessage from "../../components/ToastMessage";
+import SentCraHistory from "../../components/SentCraHistory";
 import { useSession } from "next-auth/react";
-import Link from "next/link"; // Importation de Link pour la navigation
+import Link from "next/link";
+import { format, parseISO, isValid } from "date-fns";
+import { fr } from "date-fns/locale";
 
 export default function CRAPage() {
   const router = useRouter();
-  const { data: session, status } = useSession(); // Accéder à l'état de la session
+  const { data: session, status } = useSession();
 
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserName, setCurrentUserName] = useState("Chargement...");
+  const [activeTab, setActiveTab] = useState("craManager");
 
   // Effet pour définir l'ID et le nom de l'utilisateur une fois la session chargée
   useEffect(() => {
     if (status === "authenticated" && session?.user?.id) {
       setCurrentUserId(session.user.id);
       setCurrentUserName(
-        session.user.name || session.user.email || "Utilisateur" // Nom d'utilisateur par défaut
+        session.user.name || session.user.email || "Utilisateur"
       );
     } else if (status === "unauthenticated") {
-      setCurrentUserId("unauthenticated"); // Indique un état non authentifié
+      setCurrentUserId("unauthenticated");
       setCurrentUserName("Non connecté");
     }
   }, [session, status]);
@@ -92,9 +96,8 @@ export default function CRAPage() {
 
   // Fonction principale de récupération des données
   const fetchData = useCallback(async () => {
-    // Ne récupérer les données que si l'utilisateur est authentifié et que son ID est disponible
     if (!currentUserId || currentUserId === "unauthenticated") {
-      setLoading(false); // Arrêter le chargement si l'utilisateur n'est pas authentifié
+      setLoading(false);
       return;
     }
 
@@ -102,18 +105,15 @@ export default function CRAPage() {
     setError(null);
 
     try {
-      // Récupérer les clients (nécessaire pour UnifiedManager)
       const clientsData = await fetchAndParse("/api/client", "clients");
       setClientDefinitions(clientsData);
 
-      // Récupérer les activités CRA pour l'utilisateur actuel
       const craActivitiesData = await fetchAndParse(
         `/api/cra_activities?userId=${currentUserId}`,
         "activités CRA"
       );
       setCraActivities(craActivitiesData);
 
-      // Récupérer les types d'activité
       const activityTypesData = await fetchAndParse(
         "/api/activity_type",
         "types d'activité"
@@ -121,14 +121,14 @@ export default function CRAPage() {
       setActivityTypeDefinitions(activityTypesData);
     } catch (err) {
       console.error("Erreur lors du chargement des données:", err);
-      setError(`Erreur de chargement des données: ${err.message}`);
+      setError(`Erreur de chargement: ${err.message}`);
       showMessage(`Erreur de chargement: ${err.message}`, "error");
     } finally {
       setLoading(false);
     }
   }, [currentUserId, showMessage, fetchAndParse]);
 
-  // Effet pour déclencher la récupération des données lorsque currentUserId change ou au chargement initial après l'authentification
+  // Effet pour déclencher la récupération des données
   useEffect(() => {
     if (
       status === "authenticated" &&
@@ -139,7 +139,7 @@ export default function CRAPage() {
     }
   }, [fetchData, currentUserId, status]);
 
-  // Fonctions de gestion des clients (passées à UnifiedManager)
+  // Fonctions de gestion des clients
   const handleAddClient = useCallback(
     async (clientData) => {
       try {
@@ -223,7 +223,7 @@ export default function CRAPage() {
     [showMessage]
   );
 
-  // Fonctions de gestion des types d'activité (passées à UnifiedManager)
+  // Fonctions de gestion des types d'activité
   const handleAddActivityType = useCallback(
     async (activityTypeData) => {
       try {
@@ -316,12 +316,11 @@ export default function CRAPage() {
         setActivityTypeDefinitions((prevTypes) =>
           prevTypes.filter((type) => type.id !== id)
         );
-        // Mettre à jour les activités CRA pour refléter le type supprimé (définir sur 'Type Inconnu' ou similaire)
         setCraActivities((prevActivities) =>
           prevActivities.map((activity) =>
             activity.type_activite ===
-            activityTypeDefinitions.find((t) => t.id === id)?.name // Trouver le nom du type supprimé
-              ? { ...activity, type_activite: "Type Inconnu" } // Définir sur une valeur par défaut si le type est supprimé
+            activityTypeDefinitions.find((t) => t.id === id)?.name
+              ? { ...activity, type_activite: "Type Inconnu" }
               : activity
           )
         );
@@ -340,7 +339,7 @@ export default function CRAPage() {
     [activityTypeDefinitions, showMessage]
   );
 
-  // Fonctions de gestion des activités CRA (ne gèrent plus clientId)
+  // Fonctions de gestion des activités CRA
   const handleAddCraActivity = useCallback(
     async (activityData) => {
       if (!currentUserId || currentUserId === "unauthenticated") {
@@ -350,15 +349,63 @@ export default function CRAPage() {
         );
         return;
       }
+
+      const dateToFormat = parseISO(activityData.date);
+      if (!isValid(dateToFormat)) {
+        showMessage("Erreur : Date d'activité invalide.", "error");
+        return;
+      }
+      const formattedDate = format(dateToFormat, "yyyy-MM-dd");
+
+      const newActivityTime = parseFloat(activityData.tempsPasse) || 0;
+      const isOvertime = activityData.typeActivite === "Heure supplémentaire";
+      const isBillable = activityData.isBillable; // Get billable status from activityData
+
+      // Calculate total time for the selected day, considering only non-overtime activities
+      const totalTimeForDayExcludingOvertime = craActivities
+        .filter(
+          (activity) =>
+            activity.user_id === currentUserId &&
+            activity.date_activite === formattedDate &&
+            activity.type_activite !== "Heure supplémentaire"
+        )
+        .reduce(
+          (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+          0
+        );
+
+      // Validation for regular activities (max 1 day)
+      // If it's NOT an overtime activity AND the sum of regular activities + new activity time exceeds 1 day
+      if (
+        !isOvertime &&
+        totalTimeForDayExcludingOvertime + newActivityTime > 1
+      ) {
+        showMessage(
+          `Le temps total pour le ${format(dateToFormat, "dd MMMM yyyy", {
+            locale: fr,
+          })} dépassera 1 jour (${(
+            totalTimeForDayExcludingOvertime + newActivityTime
+          ).toFixed(
+            2
+          )}j). Maximum autorisé pour les activités régulières : 1 jour.`,
+          "error"
+        );
+        return;
+      }
+
       try {
         const payload = {
           description_activite: activityData.descriptionActivite,
-          temps_passe: parseFloat(activityData.tempsPasse),
-          date_activite: activityData.date,
+          temps_passe: newActivityTime, // Use the parsed float value
+          date_activite: formattedDate, // Use the formatted date
           type_activite: activityData.typeActivite,
           override_non_working_day: activityData.overrideNonWorkingDay,
           user_id: currentUserId,
-          // client_id est supprimé du payload
+          client_id:
+            activityData.clientId === ""
+              ? null
+              : parseInt(activityData.clientId),
+          is_billable: isBillable, // Pass billable status to API
         };
 
         console.log(
@@ -382,13 +429,33 @@ export default function CRAPage() {
           ...prevActivities,
           newCraActivity,
         ]);
-        showMessage("Activité CRA ajoutée avec succès !", "success");
+
+        // Specific message for overtime
+        if (isOvertime) {
+          if (totalTimeForDayExcludingOvertime >= 1) {
+            showMessage(
+              `Heure supplémentaire ajoutée pour le ${format(
+                dateToFormat,
+                "dd MMMM yyyy",
+                { locale: fr }
+              )}. Le total des activités régulières pour ce jour est déjà de 1 jour.`,
+              "info"
+            );
+          } else {
+            showMessage(
+              "Heure supplémentaire ajoutée avec succès !",
+              "success"
+            );
+          }
+        } else {
+          showMessage("Activité CRA ajoutée avec succès !", "success");
+        }
       } catch (error) {
         console.error("Erreur lors de l'ajout de l'activité CRA:", error);
         showMessage(`Erreur d'ajout d'activité CRA: ${error.message}`, "error");
       }
     },
-    [showMessage, currentUserId]
+    [showMessage, currentUserId, craActivities] // Add craActivities to dependencies
   );
 
   const handleUpdateCraActivity = useCallback(
@@ -400,15 +467,65 @@ export default function CRAPage() {
         );
         return;
       }
+
+      const dateToFormat = parseISO(activityData.date);
+      if (!isValid(dateToFormat)) {
+        showMessage("Erreur : Date d'activité invalide.", "error");
+        return;
+      }
+      const formattedDate = format(dateToFormat, "yyyy-MM-dd");
+
+      const updatedActivityTime = parseFloat(activityData.tempsPasse) || 0;
+      const isOvertime = activityData.typeActivite === "Heure supplémentaire";
+      const isBillable = activityData.isBillable; // Get billable status from activityData
+
+      // Calculate total time for the selected day, EXCLUDING the current activity being edited, and only considering non-overtime activities
+      const totalTimeForDayExcludingCurrentAndOvertime = craActivities
+        .filter(
+          (activity) =>
+            activity.user_id === currentUserId &&
+            activity.date_activite === formattedDate &&
+            activity.id !== id && // Exclude the current activity being edited
+            activity.type_activite !== "Heure supplémentaire"
+        )
+        .reduce(
+          (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+          0
+        );
+
+      // Validation for regular activities (max 1 day)
+      // If it's NOT an overtime activity AND the sum of regular activities + new activity time exceeds 1 day
+      if (
+        !isOvertime &&
+        totalTimeForDayExcludingCurrentAndOvertime + updatedActivityTime > 1
+      ) {
+        showMessage(
+          `Le temps total pour le ${format(dateToFormat, "dd MMMM yyyy", {
+            locale: fr,
+          })} dépassera 1 jour (${(
+            totalTimeForDayExcludingCurrentAndOvertime + updatedActivityTime
+          ).toFixed(
+            2
+          )}j). Maximum autorisé pour les activités régulières : 1 jour.`,
+          "error"
+        );
+        return;
+      }
+
       try {
         const payload = {
+          id,
           description_activite: activityData.descriptionActivite,
-          temps_passe: parseFloat(activityData.tempsPasse),
-          date_activite: activityData.date,
+          temps_passe: updatedActivityTime,
+          date_activite: formattedDate,
           type_activite: activityData.typeActivite,
           override_non_working_day: activityData.overrideNonWorkingDay,
           user_id: currentUserId,
-          // client_id est supprimé du payload
+          client_id:
+            activityData.clientId === ""
+              ? null
+              : parseInt(activityData.clientId),
+          is_billable: isBillable, // Pass billable status to API
         };
 
         console.log(
@@ -417,7 +534,7 @@ export default function CRAPage() {
         );
 
         const response = await fetch(
-          `/api/cra_activities?action=update-activity&id=${id}`,
+          `/api/cra_activities?action=update-activity`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -436,12 +553,28 @@ export default function CRAPage() {
             errorData.message || "Échec de la mise à jour de l'activité CRA"
           );
         }
-        setCraActivities((prevActivities) =>
-          prevActivities.map((activity) =>
-            activity.id === id ? { ...activity, ...payload, id } : activity
-          )
-        );
-        showMessage("Activité CRA mise à jour avec succès !", "success");
+        fetchData();
+
+        // Specific message for overtime
+        if (isOvertime) {
+          if (totalTimeForDayExcludingCurrentAndOvertime >= 1) {
+            showMessage(
+              `Heure supplémentaire mise à jour pour le ${format(
+                dateToFormat,
+                "dd MMMM yyyy",
+                { locale: fr }
+              )}. Le total des activités régulières pour ce jour est déjà de 1 jour.`,
+              "info"
+            );
+          } else {
+            showMessage(
+              "Heure supplémentaire mise à jour avec succès !",
+              "success"
+            );
+          }
+        } else {
+          showMessage("Activité CRA mise à jour avec succès !", "success");
+        }
       } catch (error) {
         console.error(
           "Erreur lors de la mise à jour de l'activité CRA:",
@@ -453,11 +586,11 @@ export default function CRAPage() {
         );
       }
     },
-    [showMessage, currentUserId]
+    [showMessage, currentUserId, craActivities, fetchData] // Add craActivities to dependencies
   );
 
   const handleDeleteCraActivity = useCallback(
-    async (id) => {
+    async (id, bypassAuth = false) => {
       if (!currentUserId || currentUserId === "unauthenticated") {
         showMessage(
           "Veuillez vous connecter pour supprimer des activités.",
@@ -466,12 +599,12 @@ export default function CRAPage() {
         return;
       }
       try {
-        const response = await fetch(
-          `/api/cra_activities?id=${id}&userId=${currentUserId}`,
-          {
-            method: "DELETE",
-          }
-        );
+        const url = `/api/cra_activities?id=${id}&userId=${currentUserId}${
+          bypassAuth ? "&bypassAuth=true" : ""
+        }`;
+        const response = await fetch(url, {
+          method: "DELETE",
+        });
         if (!response.ok) {
           const errorData = await response.json();
           if (response.status === 403) {
@@ -502,7 +635,6 @@ export default function CRAPage() {
     [showMessage, currentUserId]
   );
 
-  // Fonction pour finaliser les activités CRA d'un mois
   const handleFinalizeMonth = useCallback(
     async (year, month) => {
       if (!currentUserId || currentUserId === "unauthenticated") {
@@ -536,7 +668,10 @@ export default function CRAPage() {
 
         const result = await response.json();
         showMessage(
-          result.message || `Mois ${month}/${year} finalisé avec succès !`,
+          result.message ||
+            `Mois ${format(new Date(year, month - 1), "MMMM yyyy", {
+              locale: fr,
+            })} finalisé avec succès !`,
           "success"
         );
         fetchData();
@@ -546,6 +681,60 @@ export default function CRAPage() {
       }
     },
     [showMessage, fetchData, currentUserId]
+  );
+
+  const handleUpdateCraStatus = useCallback(
+    async (targetUserId, year, month, newStatus, message) => {
+      if (!currentUserId || currentUserId === "unauthenticated") {
+        showMessage(
+          "Vous devez être connecté pour effectuer cette action.",
+          "error"
+        );
+        return;
+      }
+      if (!targetUserId) {
+        showMessage("ID utilisateur cible manquant.", "error");
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/cra_activities?action=update-month-status`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetUserId,
+              year,
+              month,
+              newStatus,
+              message,
+              adminUserId: currentUserId,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || `Échec de la mise à jour du statut du CRA.`
+          );
+        }
+        const result = await response.json();
+        showMessage(result.message, "success");
+        fetchData();
+      } catch (error) {
+        console.error(
+          "Erreur lors de la mise à jour du statut du CRA :",
+          error
+        );
+        showMessage(
+          `Erreur lors de la mise à jour du statut : ${error.message}`,
+          "error"
+        );
+      }
+    },
+    [currentUserId, showMessage, fetchData]
   );
 
   if (status === "loading" || !currentUserId) {
@@ -622,21 +811,59 @@ export default function CRAPage() {
         Gestionnaire CRA
       </h1>
 
-      {/* Composant CraBoard */}
-      <CraBoard
-        craActivities={craActivities}
-        activityTypeDefinitions={activityTypeDefinitions}
-        // clientDefinitions n'est plus passé ici pour les activités CRA
-        onAddCraActivity={handleAddCraActivity}
-        onUpdateCraActivity={handleUpdateCraActivity}
-        onDeleteCraActivity={handleDeleteCraActivity}
-        showMessage={showMessage}
-        onFinalizeMonth={handleFinalizeMonth}
-        currentUserId={currentUserId}
-        currentUserName={currentUserName}
-      />
+      {/* Navigation par onglets */}
+      <div className="flex justify-center mb-6">
+        <button
+          onClick={() => setActiveTab("craManager")}
+          className={`px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
+            activeTab === "craManager"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
+        >
+          Mon CRA
+        </button>
+        <button
+          onClick={() => setActiveTab("sentCraHistory")}
+          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
+            activeTab === "sentCraHistory"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
+        >
+          Historique des CRAs envoyés
+        </button>
+      </div>
 
-      {/* Gestionnaire unifié pour les clients et les types d'activité (conserve clientDefinitions) */}
+      {/* Contenu conditionnel des onglets */}
+      {activeTab === "craManager" && (
+        <CraBoard
+          craActivities={craActivities}
+          activityTypeDefinitions={activityTypeDefinitions}
+          clientDefinitions={clientDefinitions}
+          onAddCraActivity={handleAddCraActivity}
+          onUpdateCraActivity={handleUpdateCraActivity}
+          onDeleteCraActivity={handleDeleteCraActivity}
+          showMessage={showMessage}
+          onFinalizeMonth={handleFinalizeMonth}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+        />
+      )}
+
+      {activeTab === "sentCraHistory" && (
+        <SentCraHistory
+          craActivities={craActivities}
+          clientDefinitions={clientDefinitions}
+          activityTypeDefinitions={activityTypeDefinitions}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          showMessage={showMessage}
+          onUpdateCraStatus={handleUpdateCraStatus}
+        />
+      )}
+
+      {/* Gestionnaire unifié pour les clients et les types d'activité */}
       <UnifiedManager
         clientDefinitions={clientDefinitions}
         onAddClient={handleAddClient}

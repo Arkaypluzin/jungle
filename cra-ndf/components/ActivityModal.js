@@ -8,7 +8,7 @@ export default function ActivityModal({
   onClose,
   selectedDate,
   activityTypeDefinitions = [],
-  // clientDefinitions n'est plus une prop pertinente ici pour les activités CRA
+  clientDefinitions = [],
   editingActivity,
   onSave,
   isHolidayOrWeekendSelected,
@@ -17,24 +17,45 @@ export default function ActivityModal({
   const [tempsPasse, setTempsPasse] = useState("");
   const [typeActivite, setTypeActivite] = useState("");
   const [descriptionActivite, setDescriptionActivite] = useState("");
-  // const [clientId, setClientId] = useState(""); // Supprimé
+  const [clientId, setClientId] = useState("");
   const [overrideNonWorkingDay, setOverrideNonWorkingDay] = useState(false);
+  const [isBillable, setIsBillable] = useState(true); // Réintroduit l'état local pour isBillable
 
+  // Effet pour initialiser les champs du formulaire
   useEffect(() => {
     if (editingActivity) {
       setTempsPasse(editingActivity.temps_passe || "");
       setTypeActivite(editingActivity.type_activite || "");
       setDescriptionActivite(editingActivity.description_activite || "");
-      // setClientId(editingActivity.client_id ? String(editingActivity.client_id) : ""); // Supprimé
+      setClientId(
+        editingActivity.client_id ? String(editingActivity.client_id) : ""
+      );
       setOverrideNonWorkingDay(editingActivity.override_non_working_day === 1);
+      setIsBillable(editingActivity.is_billable === 1); // Charger la valeur existante de l'activité
     } else {
       setTempsPasse("");
       setTypeActivite("");
       setDescriptionActivite("");
-      // setClientId(""); // Supprimé
+      setClientId("");
       setOverrideNonWorkingDay(false);
+      setIsBillable(true); // Valeur par défaut pour une nouvelle activité (sera ajustée par le type)
     }
   }, [editingActivity]);
+
+  // Effet pour mettre à jour isBillable lorsque le type d'activité change
+  useEffect(() => {
+    const selectedTypeDef = activityTypeDefinitions.find(
+      (def) => def.name === typeActivite
+    );
+    if (selectedTypeDef) {
+      setIsBillable(selectedTypeDef.is_billable === 1);
+    } else if (typeActivite === "Heure supplémentaire") {
+      // Cas spécial pour "Heure supplémentaire" si non défini dans activityTypeDefinitions
+      setIsBillable(true); // Supposons que les heures supplémentaires sont facturables par défaut
+    } else {
+      setIsBillable(true); // Par défaut facturable si le type n'est pas trouvé
+    }
+  }, [typeActivite, activityTypeDefinitions]);
 
   if (!isOpen) return null;
 
@@ -65,42 +86,62 @@ export default function ActivityModal({
       return;
     }
 
-    if (parseFloat(tempsPasse) <= 0 || parseFloat(tempsPasse) > 1) {
+    const parsedTempsPasse = parseFloat(tempsPasse);
+
+    // Ensure individual activity time is within bounds
+    if (parsedTempsPasse <= 0 || parsedTempsPasse > 1) {
       showMessage("Le temps passé doit être entre 0.1 et 1 jour.", "error");
       return;
     }
 
-    const activityTypeText = activityTypeDefinitions.find(
+    // Validate against specific allowed values
+    const allowedValues = [0.25, 0.5, 0.75, 1.0];
+    // Check if the parsedTempsPasse is in the allowedValues, considering potential floating point inaccuracies by rounding
+    if (
+      !allowedValues.some((val) => Math.abs(val - parsedTempsPasse) < 0.001)
+    ) {
+      showMessage("Le temps passé doit être 0.25, 0.5, 0.75 ou 1.", "error");
+      return;
+    }
+
+    const activityTypeDefinition = activityTypeDefinitions.find(
       (def) => def.name === typeActivite
-    )?.name;
-    const isAbsence = activityTypeText?.includes("Absence");
+    );
+    const isAbsence = activityTypeDefinition?.name?.includes("Absence");
+    const isHeureSupp = typeActivite === "Heure supplémentaire"; // Check for "Heure supplémentaire"
+    // isBillable est maintenant un état local, déjà mis à jour par l'effet ci-dessus
 
     const isSelectedDateWeekend =
       selectedDate && isWeekend(selectedDate, { weekStartsOn: 1 });
 
-    if (isHolidayOrWeekendSelected && !isAbsence && !overrideNonWorkingDay) {
+    // Rule for non-working days, apply only if not an Absence AND not an "Heure supplémentaire"
+    if (
+      isHolidayOrWeekendSelected &&
+      !isAbsence &&
+      !isHeureSupp &&
+      !overrideNonWorkingDay
+    ) {
       showMessage(
-        "Vous essayez d'ajouter une activité un jour non ouvrable (week-end ou jour férié). Cochez 'Dérogation' ou sélectionnez un type d'activité 'Absence'.",
+        "Vous essayez d'ajouter une activité un jour non ouvrable (week-end ou jour férié). Cochez 'Dérogation' ou sélectionnez un type d'activité 'Absence' ou 'Heure supplémentaire'.",
         "warning"
-      );
-      return;
-    }
-
-    if (parseFloat(tempsPasse) % 0.1 !== 0) {
-      showMessage(
-        "Le temps passé doit être un multiple de 0.1 (ex: 0.5, 0.8, 1.0).",
-        "error"
       );
       return;
     }
 
     const activityData = {
       date: format(selectedDate, "yyyy-MM-dd"),
-      tempsPasse: parseFloat(tempsPasse),
+      tempsPasse: parsedTempsPasse, // Use the parsed float value
       typeActivite,
       descriptionActivite,
-      // clientId est supprimé de activityData
+      // Client ID is null for Absence and Heure supplémentaire
+      clientId:
+        isAbsence || isHeureSupp
+          ? null
+          : clientId === ""
+          ? null
+          : parseInt(clientId),
       overrideNonWorkingDay,
+      isBillable: isBillable, // Utiliser la valeur de l'état local isBillable
     };
 
     onSave(
@@ -113,6 +154,7 @@ export default function ActivityModal({
     (def) => def.name === typeActivite
   )?.name;
   const isAbsence = activityTypeText?.includes("Absence");
+  const isHeureSupp = typeActivite === "Heure supplémentaire";
 
   const isWeekendDay =
     selectedDate && isWeekend(selectedDate, { weekStartsOn: 1 });
@@ -145,7 +187,7 @@ export default function ActivityModal({
           {editingActivity ? "Modifier l'activité" : "Ajouter une activité"}{" "}
           pour le{" "}
           {selectedDate instanceof Date && !isNaN(selectedDate.getTime())
-            ? format(selectedDate, "dd MMMM 'yyyy'", { locale: fr })
+            ? format(selectedDate, "dd MMMM", { locale: fr })
             : "date inconnue ou invalide"}
         </h2>
 
@@ -155,19 +197,26 @@ export default function ActivityModal({
               htmlFor="tempsPasse"
               className="block text-sm font-medium text-gray-700"
             >
-              Temps passé (en jours, ex: 0.5, 1)
+              Temps passé (en jours, ex: 0.25, 0.5, 0.75, 1)
             </label>
             <input
               type="number"
               id="tempsPasse"
-              step="0.1"
-              min="0.1"
+              step="0.25" // Adjust step for 0.25 increments
+              min="0.25"
               max="1"
               value={tempsPasse}
               onChange={(e) => setTempsPasse(e.target.value)}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
               required
+              list="tempsPasseOptions" // Add datalist attribute
             />
+            <datalist id="tempsPasseOptions">
+              <option value="0.25" />
+              <option value="0.50" />
+              <option value="0.75" />
+              <option value="1.00" />
+            </datalist>
           </div>
 
           <div>
@@ -190,31 +239,35 @@ export default function ActivityModal({
                   {typeDef.name}
                 </option>
               ))}
+              <option value="Heure supplémentaire">Heure supplémentaire</option>{" "}
+              {/* Added new option */}
             </select>
           </div>
 
-          {/* Le champ client est supprimé car client_id n'existe plus dans cra_activities */}
-          {/* <div>
-            <label
-              htmlFor="clientId"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Client (facultatif)
-            </label>
-            <select
-              id="clientId"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Sélectionner un client</option>
-              {clientDefinitions.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.nom_client}
-                </option>
-              ))}
-            </select>
-          </div> */}
+          {!isAbsence &&
+            !isHeureSupp && ( // Client field hidden for Absence and Heure supplémentaire
+              <div>
+                <label
+                  htmlFor="clientId"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Client (facultatif)
+                </label>
+                <select
+                  id="clientId"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Sélectionner un client</option>
+                  {clientDefinitions.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.nom_client}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
           <div>
             <label
@@ -232,29 +285,48 @@ export default function ActivityModal({
             ></textarea>
           </div>
 
-          {isHolidayOrWeekendSelected && !isAbsence && (
-            <div className="flex items-center">
+          {/* Champ pour définir si l'activité est facturable (désactivé) */}
+          <div>
+            <label
+              htmlFor="isBillable"
+              className="block text-sm font-medium text-gray-700 flex items-center"
+            >
               <input
                 type="checkbox"
-                id="overrideNonWorkingDay"
-                checked={overrideNonWorkingDay}
-                onChange={(e) => setOverrideNonWorkingDay(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                id="isBillable"
+                checked={isBillable}
+                disabled // Rendre la case à cocher désactivée
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
               />
-              <label
-                htmlFor="overrideNonWorkingDay"
-                className="ml-2 block text-sm font-medium text-gray-700"
-              >
-                Dérogation (jour{" "}
-                {isWeekendDay && isHoliday
-                  ? "férié et week-end"
-                  : isWeekendDay
-                  ? "de week-end"
-                  : "férié"}
-                )
-              </label>
-            </div>
-          )}
+              Activité facturable (dépend du type d'activité)
+            </label>
+          </div>
+
+          {isHolidayOrWeekendSelected &&
+            !isAbsence &&
+            !isHeureSupp && ( // Override checkbox hidden for Absence and Heure supplémentaire
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="overrideNonWorkingDay"
+                  checked={overrideNonWorkingDay}
+                  onChange={(e) => setOverrideNonWorkingDay(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label
+                  htmlFor="overrideNonWorkingDay"
+                  className="ml-2 block text-sm font-medium text-gray-700"
+                >
+                  Dérogation (jour{" "}
+                  {isWeekendDay && isHoliday
+                    ? "férié et week-end"
+                    : isWeekendDay
+                    ? "de week-end"
+                    : "férié"}
+                  )
+                </label>
+              </div>
+            )}
 
           <div className="flex justify-end space-x-3 mt-6">
             <button

@@ -1,53 +1,47 @@
 // app/api/activity_type/route.js
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db"; // Importation de 'db' nommée
+import { db } from "@/lib/db";
 
-// Fonction utilitaire pour gérer les réponses d'erreur
 const handleError = (message, status = 500) => {
+  console.error("API Error:", message);
   return NextResponse.json({ message }, { status });
 };
 
-export async function GET(request) {
+// GET handler (récupérer tous les types d'activité)
+export async function GET() {
+  // Removed { params } from here
   try {
-    // Correction du nom de la table : activity_types -> activity_type
-    const [activityTypes] = await db.execute(
-      "SELECT id, name FROM activity_type ORDER BY name ASC"
+    const [rows] = await db.execute(
+      "SELECT id, name, is_billable FROM activity_type ORDER BY name ASC"
     );
-    return NextResponse.json(activityTypes);
+    return NextResponse.json(rows);
   } catch (error) {
-    return handleError(
-      `Impossible de récupérer les types d'activités : ${error.message}`
-    );
+    return handleError(`Error fetching activity types: ${error.message}`);
   }
 }
 
+// POST handler (ajouter un nouveau type d'activité)
 export async function POST(request) {
   try {
-    const { name } = await request.json();
+    const { name, is_billable } = await request.json();
 
-    if (!name || name.trim() === "") {
-      return handleError("Le nom du type d'activité est requis.", 400);
+    if (!name) {
+      return handleError("Activity type name is required.", 400);
     }
 
-    // Correction du nom de la table : activity_types -> activity_type
     const [result] = await db.execute(
-      "INSERT INTO activity_type (name) VALUES (?)",
-      [name.trim()]
+      "INSERT INTO activity_type (name, is_billable) VALUES (?, ?)",
+      [name, is_billable ? 1 : 0]
     );
 
-    return NextResponse.json(
-      { id: result.insertId, name: name.trim() },
-      { status: 201 }
+    const [newTypeResult] = await db.execute(
+      "SELECT id, name, is_billable FROM activity_type WHERE id = ?",
+      [result.insertId]
     );
+    const newType = newTypeResult[0];
+
+    return NextResponse.json(newType, { status: 201 });
   } catch (error) {
-    if (
-      error.message.includes("Duplicate entry") ||
-      error.code === "ER_DUP_ENTRY"
-    ) {
-      return handleError("Un type d'activité avec ce nom existe déjà.", 409); // Conflit
-    }
-    return handleError(
-      `Impossible d'ajouter le type d'activité : ${error.message}`
-    );
+    return handleError(`Error adding activity type: ${error.message}`);
   }
 }

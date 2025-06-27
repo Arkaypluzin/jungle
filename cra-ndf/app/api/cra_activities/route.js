@@ -1,7 +1,8 @@
 // app/api/cra_activities/route.js
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db } from "@/lib/db"; // Importation de 'db' nommée
 import { format } from "date-fns";
+import { fr } from "date-fns/locale"; // S'assurer que fr est importé si utilisé dans des logs ou messages d'API
 
 // Fonction utilitaire pour gérer les réponses d'erreur
 const handleError = (message, status = 500) => {
@@ -14,21 +15,23 @@ async function getCraActivities(userId = null) {
   let sql = `
     SELECT
       ca.id,
-      ca.user_id,
-      ca.date_activite,
+      COALESCE(ca.user_id, '') AS user_id, 
+      COALESCE(ca.date_activite, '') AS date_activite, 
       ca.temps_passe,
       ca.type_activite,
       ca.description_activite,
       ca.override_non_working_day,
-      ca.status
-      -- client_id et client_name sont supprimés ici
+      ca.status,
+      ca.client_id, 
+      c.nom_client AS client_name,
+      COALESCE(ca.is_billable, 1) AS is_billable -- Récupérer is_billable directement de cra_activities, par défaut à 1
     FROM cra_activities ca
-    -- LEFT JOIN client c ON ca.client_id = c.id est supprimé
+    LEFT JOIN client c ON ca.client_id = c.id 
   `;
   const values = [];
 
   if (userId) {
-    sql += ` WHERE ca.user_id = ?`;
+    sql += ` WHERE COALESCE(ca.user_id, '') = ?`;
     values.push(userId);
   }
 
@@ -69,14 +72,17 @@ export async function POST(request) {
       description_activite,
       override_non_working_day,
       user_id,
-      // client_id est supprimé ici
+      client_id,
+      is_billable, // Récupérer le nouveau champ is_billable du frontend
     } = await request.json();
 
     console.log("API CRA (POST) : Données reçues :", {
       date_activite,
       temps_passe,
       type_activite,
+      client_id,
       user_id,
+      is_billable,
     });
 
     const missingFields = [];
@@ -101,8 +107,8 @@ export async function POST(request) {
 
     const sql = `
       INSERT INTO cra_activities 
-      (user_id, date_activite, temps_passe, type_activite, description_activite, override_non_working_day, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'draft')
+      (user_id, date_activite, temps_passe, type_activite, description_activite, override_non_working_day, status, client_id, is_billable)
+      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)
     `;
     const values = [
       user_id,
@@ -111,19 +117,23 @@ export async function POST(request) {
       type_activite,
       description_activite,
       override_non_working_day ? 1 : 0,
-      // client_id est supprimé ici
+      client_id,
+      is_billable ? 1 : 0, // Enregistrer la valeur de is_billable reçue du frontend
     ];
 
     const [result] = await db.execute(sql, values);
 
-    // Récupérer l'activité nouvellement insérée sans le client_id
-    const [newActivityRow] = await db.execute(
-      `SELECT id, user_id, date_activite, temps_passe, type_activite, 
-              description_activite, override_non_working_day, status
-       FROM cra_activities
-       WHERE id = ?`,
+    // Récupérer la nouvelle activité avec le statut is_billable directement de cra_activities
+    const [newActivityRowResult] = await db.execute(
+      `SELECT ca.id, COALESCE(ca.user_id, '') AS user_id, COALESCE(ca.date_activite, '') AS date_activite, ca.temps_passe, ca.type_activite, 
+              ca.description_activite, ca.override_non_working_day, ca.status, 
+              ca.client_id, c.nom_client AS client_name, COALESCE(ca.is_billable, 1) AS is_billable
+       FROM cra_activities ca
+       LEFT JOIN client c ON ca.client_id = c.id
+       WHERE ca.id = ?`,
       [result.insertId]
     );
+    const newActivityRow = newActivityRowResult[0];
 
     return NextResponse.json(newActivityRow, { status: 201 });
   } catch (error) {
@@ -151,7 +161,8 @@ export async function PUT(request) {
           description_activite,
           override_non_working_day,
           user_id,
-          // client_id est supprimé ici
+          client_id,
+          is_billable, // Récupérer le nouveau champ is_billable du frontend
         } = body;
 
         console.log("API CRA (PUT - update-activity) : Données reçues :", {
@@ -159,7 +170,9 @@ export async function PUT(request) {
           date_activite,
           temps_passe,
           type_activite,
+          client_id,
           user_id,
+          is_billable,
         });
 
         const missingFields = [];
@@ -183,29 +196,42 @@ export async function PUT(request) {
           );
         }
 
-        const [existingActivity] = await db.execute(
-          "SELECT user_id, status FROM cra_activities WHERE id = ?",
+        const [existingActivityResult] = await db.execute(
+          "SELECT COALESCE(user_id, '') AS user_id, status FROM cra_activities WHERE id = ?",
           [id]
         );
+        const existingActivity = existingActivityResult[0];
+
         if (!existingActivity) {
           return handleError("Activité non trouvée.", 404);
         }
+
+        console.log(`Debug User ID Check (UPDATE) - Activity ID: ${id}`);
+        console.log(`  Request User ID (from token/session): '${user_id}'`);
+        console.log(
+          `  DB User ID (from cra_activities table): '${existingActivity.user_id}'`
+        );
+        console.log(`  IDs Match: ${existingActivity.user_id === user_id}`);
+
         if (existingActivity.user_id !== user_id) {
           return handleError(
             "Accès non autorisé à cette activité (discordance d'ID utilisateur).",
             403
           );
         }
-        if (existingActivity.status === "finalized") {
+        if (
+          existingActivity.status === "finalized" ||
+          existingActivity.status === "validated"
+        ) {
           return handleError(
-            "L'activité finalisée ne peut pas être modifiée.",
+            "L'activité finalisée ou validée ne peut pas être modifiée.",
             403
           );
         }
 
         const sql = `
           UPDATE cra_activities
-          SET date_activite = ?, temps_passe = ?, type_activite = ?, description_activite = ?, override_non_working_day = ?
+          SET date_activite = ?, temps_passe = ?, type_activite = ?, description_activite = ?, override_non_working_day = ?, client_id = ?, is_billable = ?
           WHERE id = ?
         `;
         const values = [
@@ -214,6 +240,8 @@ export async function PUT(request) {
           type_activite,
           description_activite,
           override_non_working_day ? 1 : 0,
+          client_id,
+          is_billable ? 1 : 0, // Mettre à jour avec la valeur de is_billable reçue du frontend
           id,
         ];
         await db.execute(sql, values);
@@ -275,6 +303,78 @@ export async function PUT(request) {
         });
       }
 
+      case "update-month-status": {
+        const { targetUserId, year, month, newStatus, message } = body;
+        if (!targetUserId || !year || !month || !newStatus) {
+          return handleError(
+            "Données manquantes pour la mise à jour du statut du mois.",
+            400
+          );
+        }
+
+        const startDate = format(new Date(year, month - 1, 1), "yyyy-MM-dd");
+        const endDate = format(new Date(year, month, 0), "yyyy-MM-dd");
+
+        let updateSql = "";
+        let updateValues = [];
+        let successMessage = "";
+        let errorMessage = "";
+
+        if (newStatus === "validated") {
+          updateSql = `
+                UPDATE cra_activities
+                SET status = 'validated'
+                WHERE user_id = ?
+                AND date_activite BETWEEN ? AND ?
+                AND status = 'finalized'
+            `;
+          updateValues = [targetUserId, startDate, endDate];
+          successMessage = `CRA du mois ${format(
+            new Date(year, month - 1),
+            "MMMM",
+            { locale: fr }
+          )} validé pour l'utilisateur ${targetUserId}. Message: "${
+            message || "Aucun message."
+          }"`;
+          errorMessage = `Aucune activité finalisée trouvée pour valider pour l'utilisateur ${targetUserId} pour ${format(
+            new Date(year, month - 1),
+            "MMMM",
+            { locale: fr }
+          )}.`;
+        } else if (newStatus === "invalidated") {
+          updateSql = `
+                UPDATE cra_activities
+                SET status = 'draft' 
+                WHERE user_id = ?
+                AND date_activite BETWEEN ? AND ?
+                AND (status = 'finalized' OR status = 'validated')
+            `;
+          updateValues = [targetUserId, startDate, endDate];
+          successMessage = `CRA du mois ${format(
+            new Date(year, month - 1),
+            "MMMM",
+            { locale: fr }
+          )} invalidé pour l'utilisateur ${targetUserId}. Message: "${
+            message || "Aucun message."
+          }"`;
+          errorMessage = `Aucune activité finalisée/validée trouvée pour invalider pour l'utilisateur ${targetUserId} pour ${format(
+            new Date(year, month - 1),
+            "MMMM",
+            { locale: fr }
+          )}.`;
+        } else {
+          return handleError("Statut de mise à jour non pris en charge.", 400);
+        }
+
+        const [result] = await db.execute(updateSql, updateValues);
+
+        if (result.affectedRows === 0) {
+          return handleError(errorMessage, 404);
+        }
+        console.log(successMessage);
+        return NextResponse.json({ message: successMessage });
+      }
+
       case "send-cra": {
         const { userId, year, month, userName } = body;
         if (!userId || !year || !month || !userName) {
@@ -287,18 +387,17 @@ export async function PUT(request) {
         console.log(
           `Simulation de la soumission du CRA pour ${userName} (ID : ${userId}) pour le mois ${month}/${year}.`
         );
-
         return NextResponse.json({
           message: "CRA envoyé avec succès (simulation).",
         });
       }
 
       default:
-        return handleError("Action non reconnue.", 400);
+        return handleError("Action non valide.", 400);
     }
   } catch (error) {
     return handleError(
-      `Erreur lors de la mise à jour/action de l'activité CRA : ${error.message}`
+      `Erreur lors de la mise à jour de l'activité CRA : ${error.message}`
     );
   }
 }
@@ -308,39 +407,56 @@ export async function DELETE(request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const userId = searchParams.get("userId");
+  const bypassAuth = searchParams.get("bypassAuth") === "true";
 
-  if (!id || !userId) {
-    return handleError(
-      "ID d'activité ou ID utilisateur manquant pour la suppression.",
-      400
-    );
+  if (!id) {
+    return handleError("ID d'activité manquant.", 400);
+  }
+  if (!userId) {
+    return handleError("ID utilisateur manquant pour la suppression.", 400);
   }
 
   try {
-    const [existingActivity] = await db.execute(
-      "SELECT user_id, status FROM cra_activities WHERE id = ?",
+    const [existingActivityResult] = await db.execute(
+      "SELECT COALESCE(user_id, '') AS user_id, status FROM cra_activities WHERE id = ?",
       [id]
     );
+    const existingActivity = existingActivityResult[0];
+
     if (!existingActivity) {
       return handleError("Activité non trouvée.", 404);
     }
-    if (existingActivity.status === "finalized") {
-      return handleError(
-        "L'activité finalisée ne peut pas être supprimée.",
-        403
-      );
-    }
-    if (existingActivity.user_id !== userId) {
+
+    console.log(`Debug User ID Check (DELETE) - Activity ID: ${id}`);
+    console.log(`  Request User ID (from URL): '${userId}'`);
+    console.log(
+      `  DB User ID (from cra_activities table): '${existingActivity.user_id}'`
+    );
+    console.log(`  IDs Match: ${existingActivity.user_id === userId}`);
+    console.log(`  Bypass Auth (for reset month): ${bypassAuth}`);
+
+    if (!bypassAuth && existingActivity.user_id !== userId) {
       return handleError(
         "Accès non autorisé à cette activité (discordance d'ID utilisateur).",
         403
       );
     }
+    if (
+      existingActivity.status === "finalized" ||
+      existingActivity.status === "validated"
+    ) {
+      return handleError(
+        "L'activité finalisée ou validée ne peut pas être supprimée.",
+        403
+      );
+    }
 
-    const sql = `DELETE FROM cra_activities WHERE id = ?`;
+    const sql = "DELETE FROM cra_activities WHERE id = ?";
     await db.execute(sql, [id]);
 
-    return NextResponse.json({ message: "Activité supprimée avec succès." });
+    return NextResponse.json({
+      message: "Activité CRA supprimée avec succès.",
+    });
   } catch (error) {
     return handleError(
       `Erreur lors de la suppression de l'activité CRA : ${error.message}`

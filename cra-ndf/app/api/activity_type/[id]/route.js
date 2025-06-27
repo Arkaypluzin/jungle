@@ -1,113 +1,92 @@
 // app/api/activity_type/[id]/route.js
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db"; // Importation de 'db' nommée
+import { db } from "@/lib/db";
 
-// Fonction utilitaire pour gérer les réponses d'erreur
 const handleError = (message, status = 500) => {
-  console.error("Erreur API :", message);
+  console.error("API Error:", message);
   return NextResponse.json({ message }, { status });
 };
 
+// GET handler (récupérer un type d'activité par ID)
 export async function GET(request, { params }) {
-  const { id } = params;
+  const { id } = await params; // Await params as suggested by Next.js error
+
+  if (!id) {
+    return handleError("Activity type ID is required.", 400);
+  }
+
   try {
-    // Correction du nom de la table : activity_types -> activity_type
-    const [activityType] = await db.execute(
-      "SELECT id, name FROM activity_type WHERE id = ?",
+    const [rows] = await db.execute(
+      "SELECT id, name, is_billable FROM activity_type WHERE id = ?",
       [id]
     );
-    if (activityType.length === 0) {
-      return handleError("Type d'activité non trouvé.", 404);
+    if (rows.length === 0) {
+      return handleError("Activity type not found.", 404);
     }
-    return NextResponse.json(activityType[0]);
+    return NextResponse.json(rows[0]);
   } catch (error) {
-    return handleError(
-      `Impossible de récupérer le type d'activité : ${error.message}`
-    );
+    return handleError(`Error fetching activity type: ${error.message}`);
   }
 }
 
+// PUT handler (mettre à jour un type d'activité par ID)
 export async function PUT(request, { params }) {
-  const { id } = params;
-  try {
-    const { name } = await request.json();
+  const { id } = await params; // Await params as suggested by Next.js error
 
-    if (!name || name.trim() === "") {
-      return handleError("Le nom du type d'activité est requis.", 400);
+  try {
+    const { name, is_billable } = await request.json();
+
+    if (!id) {
+      return handleError("Activity type ID is required for update.", 400);
+    }
+    if (!name) {
+      return handleError("Activity type name is required.", 400);
     }
 
-    // Correction du nom de la table : activity_types -> activity_type
     const [result] = await db.execute(
-      "UPDATE activity_type SET name = ? WHERE id = ?",
-      [name.trim(), id]
+      "UPDATE activity_type SET name = ?, is_billable = ? WHERE id = ?",
+      [name, is_billable ? 1 : 0, id]
     );
 
     if (result.affectedRows === 0) {
-      // Correction du nom de la table : activity_types -> activity_type
-      const [existingType] = await db.execute(
-        "SELECT id FROM activity_type WHERE id = ?",
-        [id]
-      );
-      if (existingType) {
-        return NextResponse.json(
-          {
-            message:
-              "Type d'activité mis à jour avec succès (aucune modification nécessaire).",
-          },
-          { status: 200 }
-        );
-      } else {
-        return handleError("Type d'activité non trouvé.", 404);
-      }
+      return handleError("Activity type not found or no changes made.", 404);
     }
 
-    return NextResponse.json({
-      message: "Type d'activité mis à jour avec succès.",
-    });
-  } catch (error) {
-    if (
-      error.message.includes("Duplicate entry") ||
-      error.code === "ER_DUP_ENTRY"
-    ) {
-      return handleError(
-        "Un autre type d'activité avec ce nom existe déjà.",
-        409
-      ); // Conflit
-    }
-    return handleError(
-      `Impossible de mettre à jour le type d'activité : ${error.message}`
+    // Récupérer le type d'activité mis à jour pour le renvoyer
+    const [updatedTypeResult] = await db.execute(
+      "SELECT id, name, is_billable FROM activity_type WHERE id = ?",
+      [id]
     );
+    const updatedType = updatedTypeResult[0];
+
+    return NextResponse.json(updatedType);
+  } catch (error) {
+    return handleError(`Error updating activity type: ${error.message}`);
   }
 }
 
+// DELETE handler (supprimer un type d'activité par ID)
 export async function DELETE(request, { params }) {
-  const { id } = params;
+  const { id } = await params; // Await params as suggested by Next.js error
+
+  if (!id) {
+    return handleError("Activity type ID is required for deletion.", 400);
+  }
+
   try {
-    // Correction du nom de la table : activity_types -> activity_type
     const [result] = await db.execute(
       "DELETE FROM activity_type WHERE id = ?",
       [id]
     );
 
     if (result.affectedRows === 0) {
-      return handleError("Type d'activité non trouvé.", 404);
+      return handleError("Activity type not found.", 404);
     }
 
     return NextResponse.json({
-      message: "Type d'activité supprimé avec succès.",
+      message: "Activity type deleted successfully.",
     });
   } catch (error) {
-    if (
-      error.message.includes("foreign key constraint fails") ||
-      error.code === "ER_ROW_IS_REFERENCED_2"
-    ) {
-      return handleError(
-        "Impossible de supprimer ce type d'activité car il est associé à une ou plusieurs activités CRA. Veuillez d'abord supprimer ou modifier les activités CRA associées.",
-        409
-      );
-    }
-    return handleError(
-      `Impossible de supprimer le type d'activité : ${error.message}`
-    );
+    return handleError(`Error deleting activity type: ${error.message}`);
   }
 }
