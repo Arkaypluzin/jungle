@@ -24,7 +24,7 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut, mon
 
     const refresh = async () => window.location.reload();
 
-    const exportToPDF = () => {
+    const exportToPDF = async () => {
         const doc = new jsPDF();
 
         let titre = "Note de frais";
@@ -85,6 +85,41 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut, mon
             theme: 'plain',
             margin: { top: doc.lastAutoTable.finalY + 2 }
         });
+
+        async function toDataUrl(url) {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        for (const detail of filteredDetails) {
+            if (detail.img_url) {
+                try {
+                    const dataUrl = await toDataUrl(detail.img_url);
+                    doc.addPage();
+                    doc.setFontSize(14);
+                    doc.text(`Justificatif pour la dépense du ${detail.date_str} (${detail.nature})`, 14, 15);
+
+                    const imgProps = doc.getImageProperties(dataUrl);
+                    const pageWidth = doc.internal.pageSize.getWidth();
+                    const pageHeight = doc.internal.pageSize.getHeight();
+                    let imgWidth = pageWidth - 40;
+                    let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+                    if (imgHeight > pageHeight - 40) {
+                        imgHeight = pageHeight - 40;
+                        imgWidth = (imgProps.width * imgHeight) / imgProps.height;
+                    }
+                    doc.addImage(dataUrl, 'JPEG', 20, 30, imgWidth, imgHeight);
+                } catch (e) {
+                    doc.addPage();
+                    doc.text("Erreur lors du chargement du justificatif.", 14, 20);
+                }
+            }
+        }
 
         const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`;
         doc.save(fileName);
