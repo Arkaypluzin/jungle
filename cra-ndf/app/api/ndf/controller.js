@@ -88,8 +88,9 @@ export async function handlePut(req, { params }) {
 
     if (isAdmin) {
         if (
-            ndf.statut === "Déclaré" && statut === "Validé" ||
-            ndf.statut === "Validé" && statut === "Remboursé"
+            (ndf.statut === "Déclaré" && statut === "Validé") ||
+            (ndf.statut === "Validé" && statut === "Remboursé") ||
+            (ndf.statut === "Déclaré" && statut === "Provisoire")
         ) {
             const updated = await updateNdf(params.id, {
                 month: ndf.month,
@@ -98,7 +99,6 @@ export async function handlePut(req, { params }) {
             });
             return Response.json(updated);
         }
-
         return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
     }
 
