@@ -1,22 +1,26 @@
-// app/api/reports/monthly-detailed/route.js
+// app/api/reports/client-monthly/route.js
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db } from "../../../../lib/db"; // Chemin relatif vers lib/db.js
 import { format, startOfMonth, endOfMonth, isValid, parseISO } from "date-fns";
 
 const handleError = (message, status = 500) => {
-  console.error("API Report Error:", message);
+  console.error("API Client Monthly Report Error:", message);
   return NextResponse.json({ message }, { status });
 };
 
-// GET handler pour récupérer les activités détaillées par mois
+// GET handler pour récupérer les activités détaillées par client et par mois
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
   const year = parseInt(searchParams.get("year"));
   const month = parseInt(searchParams.get("month")); // Mois 1-indexé
+  const clientId = searchParams.get("clientId"); // NOUVEAU : Récupération du clientId
 
-  if (!userId || isNaN(year) || isNaN(month)) {
-    return handleError("User ID, year, or month is missing or invalid.", 400);
+  if (!userId || isNaN(year) || isNaN(month) || !clientId) {
+    return handleError(
+      "User ID, year, month, or client ID is missing or invalid.",
+      400
+    );
   }
 
   try {
@@ -35,30 +39,30 @@ export async function GET(request) {
         ca.status,
         ca.client_id,
         COALESCE(c.nom_client, 'Non attribué') AS client_name,
-        COALESCE(at.name, 'Type Inconnu') AS activity_type_name_full, -- Nom complet du type d'activité
+        COALESCE(at.name, 'Type Inconnu') AS activity_type_name_full,
         COALESCE(ca.is_billable, 1) AS is_billable
       FROM cra_activities ca
       LEFT JOIN client c ON ca.client_id = c.id
-      LEFT JOIN activity_type at ON ca.type_activite = at.name -- Joindre pour le nom complet du type d'activité
+      LEFT JOIN activity_type at ON ca.type_activite = at.name
       WHERE ca.user_id = ?
+        AND ca.client_id = ? -- NOUVEAU : Filtrage par client
         AND ca.date_activite BETWEEN ? AND ?
-      ORDER BY ca.date_activite ASC, ca.type_activite ASC, ca.client_id ASC
+      ORDER BY ca.date_activite ASC, ca.type_activite ASC
     `;
-    const values = [userId, monthStart, monthEnd];
+    const values = [userId, clientId, monthStart, monthEnd]; // NOUVEAU : Ajout de clientId aux valeurs
 
     const [rows] = await db.execute(sql, values);
 
-    // Formater les dates pour s'assurer qu'elles sont des objets Date pour le regroupement
     const formattedRows = rows.map((row) => ({
       ...row,
       date_activite: row.date_activite ? parseISO(row.date_activite) : null,
-      temps_passe: parseFloat(row.temps_passe), // Assurer que temps_passe est un nombre
+      temps_passe: parseFloat(row.temps_passe),
     }));
 
     return NextResponse.json(formattedRows);
   } catch (error) {
     return handleError(
-      `Erreur lors de la récupération du rapport mensuel détaillé : ${error.message}`
+      `Erreur lors de la récupération du rapport mensuel par client : ${error.message}`
     );
   }
 }

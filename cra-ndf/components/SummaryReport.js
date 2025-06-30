@@ -4,6 +4,7 @@ import React, { useMemo, useState, useCallback } from "react";
 import { format, parseISO, startOfMonth, endOfMonth, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
 import { sumBy } from "lodash";
+import MonthlyDetailedReport from "./MonthlyDetailedReport"; // Chemin relatif
 
 export default function SummaryReport({
   craActivities,
@@ -132,19 +133,10 @@ export default function SummaryReport({
     const year = format(monthToDisplay, "yyyy");
     const month = parseInt(format(monthToDisplay, "MM"));
 
-    let reportPath = `/reports/monthly-detailed/${currentUserId}/${year}/${month}`;
+    let reportPath = `/cra-manager/reports/monthly-detailed/${currentUserId}/${year}/${month}`;
 
     const baseUrl = window.location.origin;
-    const currentPathname = window.location.pathname;
     let finalReportUrl = `${baseUrl}${reportPath}`;
-
-    if (
-      !reportPath.startsWith("/cra-manager") &&
-      currentPathname.startsWith("/cra-manager")
-    ) {
-      reportPath = `/cra-manager${reportPath}`;
-    }
-    finalReportUrl = `${baseUrl}${reportPath}`;
 
     console.log("Report parameters:", { currentUserId, year, month });
     console.log("Generated report URL (adjusted):", finalReportUrl);

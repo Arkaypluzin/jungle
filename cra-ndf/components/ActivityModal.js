@@ -285,23 +285,6 @@ export default function ActivityModal({
             ></textarea>
           </div>
 
-          {/* Champ pour définir si l'activité est facturable (désactivé) */}
-          <div>
-            <label
-              htmlFor="isBillable"
-              className="block text-sm font-medium text-gray-700 flex items-center"
-            >
-              <input
-                type="checkbox"
-                id="isBillable"
-                checked={isBillable}
-                disabled // Rendre la case à cocher désactivée
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              Activité facturable (dépend du type d'activité)
-            </label>
-          </div>
-
           {isHolidayOrWeekendSelected &&
             !isAbsence &&
             !isHeureSupp && ( // Override checkbox hidden for Absence and Heure supplémentaire

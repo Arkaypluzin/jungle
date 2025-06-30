@@ -4,8 +4,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
-import MonthlyDetailedReport from "@/components/MonthlyDetailedReport";
-import { useSession } from "next-auth/react";
+import MonthlyDetailedReport from "../../../../../../components/MonthlyDetailedReport"; // Chemin relatif
+import { useSession } from "next-auth/react"; // Garder pour la session utilisateur
 
 export default function MonthlyDetailedReportPage({ params }) {
   const { userId, year, month } = params;
@@ -13,34 +13,39 @@ export default function MonthlyDetailedReportPage({ params }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [userName, setUserName] = useState("Chargement...");
-  const { data: session } = useSession();
+  const { data: session } = useSession(); // Accès à la session NextAuth
 
   const fetchReportData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      // Tenter de récupérer le nom de l'utilisateur de la session si l'ID correspond
       if (session?.user?.id === userId) {
         setUserName(session.user.name || session.user.email || userId);
       } else {
+        // Sinon, tenter de le récupérer via une API si disponible
+        // Ceci suppose que vous avez une API comme /api/users/[id] qui renvoie le nom de l'utilisateur
+        // Si vous n'avez pas cette API, le nom de l'utilisateur affichera son ID.
         try {
           const userRes = await fetch(`/api/users/${userId}`);
           if (!userRes.ok) {
             console.warn(
               `Échec de la récupération du nom d'utilisateur pour ${userId}: ${userRes.statusText}`
             );
-            setUserName(userId);
+            setUserName(userId); // Fallback si l'API échoue
           } else {
             const userData = await userRes.json();
-            setUserName(userData.name || userData.email || userId);
+            setUserName(userData.name || userData.email || userId); // Utilise le nom ou l'email, ou l'ID
           }
         } catch (fetchError) {
           console.error(
             `Erreur lors de la tentative de récupération du nom d'utilisateur: ${fetchError.message}`
           );
-          setUserName(userId);
+          setUserName(userId); // Fallback en cas d'erreur réseau
         }
       }
 
+      // Récupérer les activités du rapport
       const reportRes = await fetch(
         `/api/reports/monthly-detailed?userId=${userId}&year=${year}&month=${month}`
       );
@@ -87,6 +92,7 @@ export default function MonthlyDetailedReportPage({ params }) {
     );
   }
 
+  // Assurez-vous que les dates sont des objets Date pour le composant MonthlyDetailedReport
   const processedReportData = reportData.map((activity) => ({
     ...activity,
     date_activite: activity.date_activite
@@ -101,7 +107,7 @@ export default function MonthlyDetailedReportPage({ params }) {
         userId={userId}
         year={year}
         month={month}
-        userName={userName}
+        userName={userName} // Passer le nom de l'utilisateur au composant du rapport
       />
     </div>
   );
