@@ -9,7 +9,7 @@ import autoTable from "jspdf-autotable";
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
-export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
+export default function NdfDetailTable({ details: initialDetails, ndfStatut, month, year, name }) {
     const [details, setDetails] = useState(initialDetails);
     const [search, setSearch] = useState("");
 
@@ -26,6 +26,20 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
 
     const exportToPDF = () => {
         const doc = new jsPDF();
+
+        let titre = "Note de frais";
+        if (month && year && name) {
+            titre += ` — ${month} ${year} — ${name}`;
+        } else if (month && year) {
+            titre += ` — ${month} ${year}`;
+        } else if (month) {
+            titre += ` — ${month}`;
+        } else if (year) {
+            titre += ` — ${year}`;
+        }
+
+        doc.setFontSize(16);
+        doc.text(titre, 14, 15);
 
         const head = [[
             "Date",
@@ -50,7 +64,7 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
         autoTable(doc, {
             head,
             body: rows,
-            margin: { top: 20 },
+            margin: { top: 22 },
             styles: { fontSize: 10 },
             headStyles: { fillColor: [254, 202, 87] },
         });
@@ -72,7 +86,8 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
             margin: { top: doc.lastAutoTable.finalY + 2 }
         });
 
-        doc.save("note-de-frais.pdf");
+        const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`;
+        doc.save(fileName);
     };
 
     function getTTC(montant, tvaStr) {
