@@ -10,13 +10,13 @@ export async function getNdfById(uuid) {
     return rows[0];
 }
 
-export async function createNdf({ uuid, month, year, user_id, statut }) {
+export async function createNdf({ uuid, month, year, user_id, name, statut }) {
     const query = `
-        INSERT INTO ndf (uuid, month, year, user_id, statut)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO ndf (uuid, month, year, user_id, name, statut)
+        VALUES (?, ?, ?, ?, ?, ?)
     `;
-    await db.execute(query, [uuid, month, year, user_id, statut]);
-    return { uuid, month, year, user_id, statut };
+    await db.execute(query, [uuid, month, year, user_id, name, statut]);
+    return { uuid, month, year, user_id, name, statut };
 }
 
 export async function updateNdf(uuid, { month, year, statut }) {
@@ -39,4 +39,13 @@ export async function getNdfByMonthYearUser(month, year, user_id) {
         [month, year, user_id]
     );
     return rows[0];
+}
+
+export async function getAllNdfsAdmin() {
+    const [rows] = await db.execute(`
+        SELECT * FROM ndf
+        WHERE statut != 'Provisoire'
+        ORDER BY year DESC, month DESC
+    `);
+    return rows;
 }

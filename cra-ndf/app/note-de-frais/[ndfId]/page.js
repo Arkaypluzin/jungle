@@ -28,7 +28,13 @@ export default async function NdfDetailsPage({ params }) {
 
             <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
             <AddNdfDetailModal ndfId={ndfId} ndfStatut={ndf.statut} />
-            <NdfDetailTable details={details} ndfStatut={ndf.statut} />
+            <NdfDetailTable
+                details={details}
+                ndfStatut={ndf.statut}
+                month={ndf.month}
+                year={ndf.year}
+                name={ndf.name}
+            />
             <BtnRetour />
         </div>
     );

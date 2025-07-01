@@ -9,7 +9,7 @@ import autoTable from "jspdf-autotable";
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
-export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
+export default function NdfDetailTable({ details: initialDetails, ndfStatut, month, year, name }) {
     const [details, setDetails] = useState(initialDetails);
     const [search, setSearch] = useState("");
 
@@ -24,8 +24,22 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
 
     const refresh = async () => window.location.reload();
 
-    const exportToPDF = () => {
+    const exportToPDF = async () => {
         const doc = new jsPDF();
+
+        let titre = "Note de frais";
+        if (month && year && name) {
+            titre += ` — ${month} ${year} — ${name}`;
+        } else if (month && year) {
+            titre += ` — ${month} ${year}`;
+        } else if (month) {
+            titre += ` — ${month}`;
+        } else if (year) {
+            titre += ` — ${year}`;
+        }
+
+        doc.setFontSize(16);
+        doc.text(titre, 14, 15);
 
         const head = [[
             "Date",
@@ -50,7 +64,7 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
         autoTable(doc, {
             head,
             body: rows,
-            margin: { top: 20 },
+            margin: { top: 22 },
             styles: { fontSize: 10 },
             headStyles: { fillColor: [254, 202, 87] },
         });
@@ -72,7 +86,43 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
             margin: { top: doc.lastAutoTable.finalY + 2 }
         });
 
-        doc.save("note-de-frais.pdf");
+        async function toDataUrl(url) {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        for (const detail of filteredDetails) {
+            if (detail.img_url) {
+                try {
+                    const dataUrl = await toDataUrl(detail.img_url);
+                    doc.addPage();
+                    doc.setFontSize(14);
+                    doc.text(`Justificatif pour la dépense du ${detail.date_str} (${detail.nature})`, 14, 15);
+
+                    const imgProps = doc.getImageProperties(dataUrl);
+                    const pageWidth = doc.internal.pageSize.getWidth();
+                    const pageHeight = doc.internal.pageSize.getHeight();
+                    let imgWidth = pageWidth - 40;
+                    let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+                    if (imgHeight > pageHeight - 40) {
+                        imgHeight = pageHeight - 40;
+                        imgWidth = (imgProps.width * imgHeight) / imgProps.height;
+                    }
+                    doc.addImage(dataUrl, 'JPEG', 20, 30, imgWidth, imgHeight);
+                } catch (e) {
+                    doc.addPage();
+                    doc.text("Erreur lors du chargement du justificatif.", 14, 20);
+                }
+            }
+        }
+
+        const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`;
+        doc.save(fileName);
     };
 
     function getTTC(montant, tvaStr) {
@@ -329,7 +379,7 @@ export default function NdfDetailTable({ details: initialDetails, ndfStatut }) {
                                     )}
                                 </td>
                                 <td className="py-2 px-4 border text-center">
-                                    {ndfStatut !== "Déclaré" && (
+                                    {ndfStatut === "Provisoire" && (
                                         <>
                                             <EditNdfDetailModal detail={detail} onEdited={refresh} />
                                             <DeleteNdfDetailButton detailId={detail.uuid} onDeleted={refresh} />

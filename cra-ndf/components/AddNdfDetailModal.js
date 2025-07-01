@@ -107,7 +107,7 @@ export default function AddNdfDetailModal({ ndfId, ndfStatut }) {
 
     return (
         <>
-            {ndfStatut !== "Déclaré" && (
+            {ndfStatut === "Provisoire" && (
                 <button
                     className="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-800 my-6"
                     onClick={() => setOpen(true)}

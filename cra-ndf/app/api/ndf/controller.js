@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAllNdf, getNdfById, createNdf, updateNdf, deleteNdf, getNdfByMonthYearUser } from "./model";
-import { getAllDetailsByNdf, deleteDetail } from "@/app/api/ndf_details/model"; 
+import { getAllDetailsByNdf, deleteDetail } from "@/app/api/ndf_details/model";
 import { auth } from "@/auth";
 import { promises as fs } from "fs";
 import path from "path";
@@ -32,6 +32,8 @@ export async function handleGetById(req, { params }) {
 export async function handlePost(req) {
     const session = await auth();
     const userId = session?.user?.id;
+    const userName = session?.user?.name;
+
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     const { month, year } = await req.json();
@@ -49,6 +51,7 @@ export async function handlePost(req) {
         month,
         year,
         user_id: userId,
+        name: userName,
         statut: "Provisoire",
     });
 
@@ -58,25 +61,48 @@ export async function handlePost(req) {
 export async function handlePut(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
-    if (!userId) {
-        return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userRoles = session?.user?.roles || [];
 
     const ndf = await getNdfById(params.id);
     if (!ndf) {
         return Response.json({ error: "Not found" }, { status: 404 });
     }
-    if (ndf.user_id !== userId) {
+
+    const isOwner = ndf.user_id === userId;
+    const isAdmin = userRoles.includes("Admin");
+    const body = await req.json();
+    const { month, year, statut } = body;
+
+    if (!isOwner && !isAdmin) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { month, year, statut } = await req.json();
-    const updated = await updateNdf(params.id, {
-        month: month ?? ndf.month,
-        year: year ?? ndf.year,
-        statut: statut ?? ndf.statut,
-    });
-    return Response.json(updated);
+    if (ndf.statut === "Provisoire" && isOwner) {
+        const updated = await updateNdf(params.id, {
+            month: month ?? ndf.month,
+            year: year ?? ndf.year,
+            statut: statut ?? ndf.statut,
+        });
+        return Response.json(updated);
+    }
+
+    if (isAdmin) {
+        if (
+            (ndf.statut === "Déclaré" && statut === "Validé") ||
+            (ndf.statut === "Validé" && statut === "Remboursé") ||
+            (ndf.statut === "Déclaré" && statut === "Provisoire")
+        ) {
+            const updated = await updateNdf(params.id, {
+                month: ndf.month,
+                year: ndf.year,
+                statut,
+            });
+            return Response.json(updated);
+        }
+        return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
+    }
+
+    return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
 }
 
 export async function handleDelete(req, { params }) {
@@ -92,6 +118,10 @@ export async function handleDelete(req, { params }) {
     }
     if (ndf.user_id !== userId) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (ndf.statut !== "Provisoire") {
+        return Response.json({ error: "Impossible de supprimer une note de frais non Provisoire" }, { status: 403 });
     }
 
     const details = await getAllDetailsByNdf(params.id);

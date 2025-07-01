@@ -6,9 +6,9 @@ import Link from "next/link";
 export default async function AdminDashboard() {
   const session = await auth();
 
-  if (!session?.user?.roles?.includes("Admin")) {
-    return redirect("/dashboard/user"); // Redirection si pas admin
-  }
+    if (!session?.user?.roles?.includes("Admin")) {
+        return redirect("/dashboard/user");
+    }
 
   return (
     <div className="p-10 text-center">

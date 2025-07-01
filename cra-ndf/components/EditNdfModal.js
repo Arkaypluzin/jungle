@@ -42,7 +42,7 @@ export default function EditNdfModal({ ndf, onEdited }) {
                 className="text-blue-600 p-2 rounded hover:bg-blue-100"
                 title="Modifier"
                 onClick={() => setOpen(true)}
-                disabled={ndf.statut === "Déclaré"}
+                disabled={ndf.statut !== "Provisoire"}
             >
                 <Pencil size={20} />
             </button>
@@ -50,9 +50,9 @@ export default function EditNdfModal({ ndf, onEdited }) {
                 <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
                     <div className="bg-white rounded-lg shadow p-6 w-full max-w-md text-black">
                         <h2 className="text-lg font-semibold mb-3">Modifier la note de frais</h2>
-                        {ndf.statut === "Déclaré" ? (
+                        {ndf.statut !== "Provisoire" ? (
                             <div className="text-red-600 font-bold my-8 text-center">
-                                Impossible de modifier une note de frais déclarée.
+                                Impossible de modifier une note de frais non Provisoire.
                             </div>
                         ) : (
                             <form onSubmit={handleSubmit} className="flex flex-col gap-3">

@@ -7,7 +7,7 @@ export default async function UserDashboard() {
     const session = await auth();
 
     if (session?.user?.roles?.includes("Admin")) {
-        return redirect("/dashboard/admin"); // Redirection si Admin
+        return redirect("/dashboard/admin");
     }
 
     return (
