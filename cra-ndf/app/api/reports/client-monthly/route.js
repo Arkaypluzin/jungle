@@ -55,7 +55,10 @@ export async function GET(request) {
 
     const formattedRows = rows.map((row) => ({
       ...row,
-      date_activite: row.date_activite ? parseISO(row.date_activite) : null,
+      // CORRECTION ICI : Assurez-vous que date_activite est une chaîne formatée
+      date_activite: row.date_activite
+        ? format(new Date(row.date_activite), "yyyy-MM-dd")
+        : null,
       temps_passe: parseFloat(row.temps_passe),
     }));
 

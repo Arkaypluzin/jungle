@@ -103,9 +103,9 @@ export default function SummaryReport({
       (a) => a.status === "draft"
     ).length;
 
-    if (validatedCount === totalCount) return "validated";
-    if (finalizedCount === totalCount) return "finalized";
-    if (draftCount === totalCount) return "draft";
+    if (validatedCount === totalCount && totalCount > 0) return "validated";
+    if (finalizedCount === totalCount && totalCount > 0) return "finalized";
+    if (draftCount === totalCount && totalCount > 0) return "draft";
 
     if (validatedCount > 0 || finalizedCount > 0) return "mixed";
 
@@ -117,32 +117,20 @@ export default function SummaryReport({
     [calculateMonthStatus]
   );
 
-  const handleDownloadMonthlyDetailedReport = () => {
-    console.log("Attempting to download monthly detailed report.");
-    console.log("Current monthStatus:", monthStatus);
-
-    if (monthStatus !== "validated") {
-      showMessage(
-        "Le rapport mensuel détaillé n'est disponible que pour les mois validés.",
-        "warning"
-      );
-      console.log("Download blocked: Month is not validated.");
-      return;
-    }
+  // Fonction pour générer l'URL du rapport
+  const getReportUrl = useCallback(() => {
+    if (!monthToDisplay || !currentUserId) return "#";
 
     const year = format(monthToDisplay, "yyyy");
     const month = parseInt(format(monthToDisplay, "MM"));
 
-    let reportPath = `/cra-manager/reports/monthly-detailed/${currentUserId}/${year}/${month}`;
-
     const baseUrl = window.location.origin;
-    let finalReportUrl = `${baseUrl}${reportPath}`;
+    const url = `${baseUrl}/cra-manager/reports/monthly-detailed/${currentUserId}/${year}/${month}`;
+    console.log("Generated Report URL (on render):", url);
+    return url;
+  }, [monthToDisplay, currentUserId]);
 
-    console.log("Report parameters:", { currentUserId, year, month });
-    console.log("Generated report URL (adjusted):", finalReportUrl);
-
-    window.open(finalReportUrl, "_blank");
-  };
+  console.log("SummaryReport: Current monthStatus for button:", monthStatus);
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
@@ -171,28 +159,32 @@ export default function SummaryReport({
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 text-center">
               <div className="bg-gray-100 p-4 rounded-lg shadow-sm">
                 <p className="text-sm text-gray-600">Total jours travaillés</p>
+                {/* CORRECTION: toFixed(2) */}
                 <p className="text-2xl font-bold text-gray-800">
-                  {reportData.totalDays.toFixed(1)}
+                  {reportData.totalDays.toFixed(2)}
                 </p>
               </div>
               <div className="bg-green-100 p-4 rounded-lg shadow-sm">
                 <p className="text-sm text-green-700">Jours facturables</p>
+                {/* CORRECTION: toFixed(2) */}
                 <p className="text-2xl font-bold text-green-800">
-                  {reportData.totalBillableDays.toFixed(1)}
+                  {reportData.totalBillableDays.toFixed(2)}
                 </p>
               </div>
               <div className="bg-red-100 p-4 rounded-lg shadow-sm">
                 <p className="text-sm text-red-700">Jours non facturables</p>
+                {/* CORRECTION: toFixed(2) */}
                 <p className="text-2xl font-bold text-red-800">
-                  {reportData.totalNonBillableDays.toFixed(1)}
+                  {reportData.totalNonBillableDays.toFixed(2)}
                 </p>
               </div>
               <div className="bg-purple-100 p-4 rounded-lg shadow-sm">
                 <p className="text-sm text-purple-700">
                   Heures supplémentaires
                 </p>
+                {/* CORRECTION: toFixed(2) */}
                 <p className="text-2xl font-bold text-purple-800">
-                  {reportData.totalOvertimeDays.toFixed(1)}
+                  {reportData.totalOvertimeDays.toFixed(2)}
                 </p>
               </div>
             </div>
@@ -220,8 +212,9 @@ export default function SummaryReport({
                       <td className="py-2 px-4 border-b text-left text-gray-800 text-base">
                         {type}
                       </td>
+                      {/* CORRECTION: toFixed(2) */}
                       <td className="py-2 px-4 border-b text-right text-gray-800 text-base">
-                        {data.totalTime.toFixed(1)}
+                        {data.totalTime.toFixed(2)}
                       </td>
                     </tr>
                   ))}
@@ -280,8 +273,9 @@ export default function SummaryReport({
                         <td className="py-2 px-4 border-b text-gray-800 text-sm">
                           {clientName}
                         </td>
+                        {/* CORRECTION: toFixed(2) */}
                         <td className="py-2 px-4 border-b text-right text-gray-800 text-sm">
-                          {parseFloat(activity.temps_passe).toFixed(1)}
+                          {parseFloat(activity.temps_passe).toFixed(2)}
                         </td>
                         <td className="py-2 px-4 border-b text-gray-800 text-sm">
                           {activity.description_activite ||
@@ -311,18 +305,36 @@ export default function SummaryReport({
             </p>
 
             <div className="flex justify-center">
-              <button
-                onClick={handleDownloadMonthlyDetailedReport}
-                disabled={monthStatus !== "validated"}
-                className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+              <a
+                href={monthStatus === "validated" ? getReportUrl() : "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300 cursor-pointer
                   ${
                     monthStatus === "validated"
                       ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                      : "bg-gray-400 text-gray-700 cursor-not-allowed"
+                      : "bg-gray-400 text-gray-700"
                   }`}
+                onClick={(e) => {
+                  console.log("CLICK EVENT FIRED!");
+                  if (monthStatus !== "validated") {
+                    e.preventDefault();
+                    showMessage(
+                      "Le rapport mensuel détaillé n'est disponible que pour les mois validés.",
+                      "warning"
+                    );
+                    console.log(
+                      "Download blocked: Month is not validated (status was: " +
+                        monthStatus +
+                        ")."
+                    );
+                  } else {
+                    console.log("Attempting to open report via direct link.");
+                  }
+                }}
               >
                 Télécharger le rapport détaillé
-              </button>
+              </a>
             </div>
           </div>
         </>

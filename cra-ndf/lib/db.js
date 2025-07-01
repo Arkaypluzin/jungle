@@ -1,21 +1,33 @@
 // lib/db.js
 import mysql from "mysql2/promise";
 
-// TEMPORAIRE POUR DEBUG : Vérifiez ce que Next.js lit
-console.log("DB_HOST:", process.env.DB_HOST);
-console.log("DB_PORT:", process.env.DB_PORT);
-console.log("DB_USER:", process.env.DB_USER);
-console.log("DB_PASSWORD:", process.env.DB_PASSWORD ? "SET" : "NOT SET"); // Ne pas afficher le mot de passe réel
-console.log("DB_NAME:", process.env.DB_NAME);
+let dbPool = null;
 
-export const db = await mysql.createConnection({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT, // Assurez-vous que 'port' est bien utilisé ici !
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
+export async function getDbPool() {
+  if (dbPool) {
+    return dbPool;
+  }
 
-// Note: La connexion est exportée directement.
-// Les fichiers qui l'importent devront utiliser `db.execute()` ou `db.query()`
-// directement sur l'objet 'db'.
+  try {
+    dbPool = mysql.createPool({
+      host: process.env.DB_HOST,
+      port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+    });
+    console.log("Pool de connexions à la base de données créé.");
+    return dbPool;
+  } catch (error) {
+    console.error(
+      "Erreur lors de la création du pool de connexions à la base de données :",
+      error
+    );
+    throw error;
+  }
+}
+
+export const db = await getDbPool();
