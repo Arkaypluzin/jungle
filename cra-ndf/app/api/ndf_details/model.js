@@ -1,46 +1,63 @@
-import { db } from "@/lib/db";
+import { getMongoDb } from "@/lib/mongo";
+
+function cleanMongo(obj) {
+    if (Array.isArray(obj)) {
+        return obj.map(cleanMongo);
+    }
+    if (!obj || typeof obj !== "object") return obj;
+    const { _id, ...rest } = obj;
+    return rest;
+}
 
 export async function getAllDetailsByNdf(ndfId) {
-    const [rows] = await db.execute(
-        "SELECT * FROM ndf_details WHERE id_ndf = ?",
-        [ndfId]
-    );
-    return rows;
+    const db = await getMongoDb();
+    const results = await db.collection("ndf_details").find({ id_ndf: ndfId }).toArray();
+    return cleanMongo(results);
 }
 
 export async function getDetailById(uuid) {
-    const [rows] = await db.execute(
-        "SELECT * FROM ndf_details WHERE uuid = ?",
-        [uuid]
-    );
-    return rows[0];
+    const db = await getMongoDb();
+    const result = await db.collection("ndf_details").findOne({ uuid });
+    return cleanMongo(result);
 }
 
 export async function createDetail(detail) {
+    const db = await getMongoDb();
     const { uuid, id_ndf, date_str, nature, description, tva, montant, img_url } = detail;
-    await db.execute(
-        `INSERT INTO ndf_details (uuid, id_ndf, date_str, nature, description, tva, montant, img_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuid, id_ndf, date_str, nature, description, tva, montant, img_url]
-    );
+    await db.collection("ndf_details").insertOne({
+        uuid,
+        id_ndf,
+        date_str,
+        nature,
+        description,
+        tva,
+        montant,
+        img_url
+    });
     return detail;
 }
 
 export async function updateDetail(uuid, update) {
+    const db = await getMongoDb();
     const { date_str, nature, description, tva, montant, img_url } = update;
-    await db.execute(
-        `UPDATE ndf_details
-         SET date_str=?, nature=?, description=?, tva=?, montant=?, img_url=?
-         WHERE uuid=?`,
-        [date_str, nature, description, tva, montant, img_url, uuid]
+    await db.collection("ndf_details").updateOne(
+        { uuid },
+        {
+            $set: {
+                date_str,
+                nature,
+                description,
+                tva,
+                montant,
+                img_url
+            }
+        }
     );
     return { uuid, ...update };
 }
 
 export async function deleteDetail(uuid) {
-    await db.execute(
-        `DELETE FROM ndf_details WHERE uuid = ?`,
-        [uuid]
-    );
+    const db = await getMongoDb();
+    await db.collection("ndf_details").deleteOne({ uuid });
     return { deleted: true };
 }

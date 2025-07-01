@@ -1,51 +1,44 @@
-import { db } from "@/lib/db";
+import { getMongoDb } from "@/lib/mongo";
 
 export async function getAllNdf(userId) {
-    const [rows] = await db.execute("SELECT * FROM ndf WHERE user_id = ?", [userId]);
-    return rows;
+    const db = await getMongoDb();
+    return db.collection("ndf").find({ user_id: userId }).toArray();
 }
 
 export async function getNdfById(uuid) {
-    const [rows] = await db.execute("SELECT * FROM ndf WHERE uuid = ?", [uuid]);
-    return rows[0];
+    const db = await getMongoDb();
+    return db.collection("ndf").findOne({ uuid });
 }
 
 export async function createNdf({ uuid, month, year, user_id, name, statut }) {
-    const query = `
-        INSERT INTO ndf (uuid, month, year, user_id, name, statut)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    await db.execute(query, [uuid, month, year, user_id, name, statut]);
-    return { uuid, month, year, user_id, name, statut };
+    const db = await getMongoDb();
+    const doc = { uuid, month, year, user_id, name, statut };
+    await db.collection("ndf").insertOne(doc);
+    return doc;
 }
 
 export async function updateNdf(uuid, { month, year, statut }) {
-    const query = `
-        UPDATE ndf SET month = ?, year = ?, statut = ?
-        WHERE uuid = ?
-    `;
-    await db.execute(query, [month, year, statut, uuid]);
-    return { uuid, month, year, statut };
+    const db = await getMongoDb();
+    const update = { $set: { month, year, statut } };
+    await db.collection("ndf").updateOne({ uuid }, update);
+    return db.collection("ndf").findOne({ uuid });
 }
 
 export async function deleteNdf(uuid) {
-    await db.execute("DELETE FROM ndf WHERE uuid = ?", [uuid]);
+    const db = await getMongoDb();
+    await db.collection("ndf").deleteOne({ uuid });
     return { deleted: true };
 }
 
 export async function getNdfByMonthYearUser(month, year, user_id) {
-    const [rows] = await db.execute(
-        "SELECT * FROM ndf WHERE month = ? AND year = ? AND user_id = ?",
-        [month, year, user_id]
-    );
-    return rows[0];
+    const db = await getMongoDb();
+    return db.collection("ndf").findOne({ month, year, user_id });
 }
 
 export async function getAllNdfsAdmin() {
-    const [rows] = await db.execute(`
-        SELECT * FROM ndf
-        WHERE statut != 'Provisoire'
-        ORDER BY year DESC, month DESC
-    `);
-    return rows;
+    const db = await getMongoDb();
+    return db.collection("ndf")
+        .find({ statut: { $ne: "Provisoire" } })
+        .sort({ year: -1, month: -1 })
+        .toArray();
 }

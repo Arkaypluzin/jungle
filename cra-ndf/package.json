@@ -14,9 +14,11 @@
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.516.0",
+    "mongodb": "^6.17.0",
     "mysql2": "^3.14.1",
     "next": "15.3.3",
     "next-auth": "^5.0.0-beta.28",
+    "pg": "^8.16.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind": "^4.0.0"

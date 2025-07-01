@@ -21,7 +21,10 @@ export async function POST(req) {
     const ext = path.extname(file.name) || ".jpg";
     const fileName = `${uuidv4()}${ext}`;
 
-    const filePath = path.join(process.cwd(), "public", "uploads", fileName);
+    const uploadsDir = path.join(process.cwd(), "public", "uploads");
+    await fs.mkdir(uploadsDir, { recursive: true });
+
+    const filePath = path.join(uploadsDir, fileName);
     await fs.writeFile(filePath, buffer);
 
     const url = `/uploads/${fileName}`;
