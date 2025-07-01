@@ -1,121 +1,37 @@
-// app/api/activity_type/model.js
-// Modèle pour interagir avec la table 'activity_type' dans la base de données.
+import { getMongoDb } from "@/lib/mongo";
 
-import { db } from "../../../lib/db"; // Assurez-vous que ce chemin est correct
-
-/**
- * Récupère tous les types d'activité.
- * @returns {Promise<Array>} Une promesse qui résout en un tableau d'objets type d'activité.
- */
 export async function getAllActivityTypes() {
-  try {
-    const [rows] = await db.execute("SELECT id, name FROM activity_type");
-    return rows;
-  } catch (error) {
-    console.error(
-      "Erreur lors de la récupération de tous les types d'activité (modèle):",
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  return db.collection("activity_type").find({}).toArray();
 }
 
-/**
- * Récupère un type d'activité par son ID.
- * @param {number} id L'ID du type d'activité.
- * @returns {Promise<Object|null>} Une promesse qui résout en un objet type d'activité ou null si non trouvé.
- */
 export async function getActivityTypeById(id) {
-  try {
-    const [rows] = await db.execute(
-      "SELECT id, name FROM activity_type WHERE id = ?",
-      [id]
-    );
-    return rows[0] || null;
-  } catch (error) {
-    console.error(
-      `Erreur lors de la récupération du type d'activité avec l'ID ${id} (modèle):`,
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  return db.collection("activity_type").findOne({ id });
 }
 
-/**
- * Crée un nouveau type d'activité.
- * @param {Object} activityTypeData Les données du type d'activité à créer (name).
- * @returns {Promise<Object>} Une promesse qui résout en le type d'activité créé.
- */
-export async function createActivityType(activityTypeData) {
-  const { name } = activityTypeData;
-  try {
-    const [result] = await db.execute(
-      "INSERT INTO activity_type (name) VALUES (?)",
-      [name]
-    );
-    return { id: result.insertId, ...activityTypeData };
-  } catch (error) {
-    console.error(
-      "Erreur lors de la création du type d'activité (modèle):",
-      error
-    );
-    throw error;
-  }
+export async function createActivityType(data) {
+  const db = await getMongoDb();
+  const doc = {
+    id: data.id,
+    name: data.name,
+    is_billable: data.is_billable,
+  };
+  await db.collection("activity_type").insertOne(doc);
+  return doc;
 }
 
-/**
- * Met à jour un type d'activité existant.
- * @param {number} id L'ID du type d'activité à mettre à jour.
- * @param {Object} updateData Les données à mettre à jour pour le type d'activité.
- * @returns {Promise<boolean>} Une promesse qui résout en true si le type d'activité a été mis à jour, false sinon.
- */
 export async function updateActivityType(id, updateData) {
-  const fields = [];
-  const values = [];
-
-  if (updateData.name !== undefined) {
-    fields.push("name = ?");
-    values.push(updateData.name);
-  }
-
-  if (fields.length === 0) {
-    return false;
-  }
-
-  values.push(id);
-
-  try {
-    const [result] = await db.execute(
-      `UPDATE activity_type SET ${fields.join(", ")} WHERE id = ?`,
-      values
-    );
-    return result.affectedRows > 0;
-  } catch (error) {
-    console.error(
-      `Erreur lors de la mise à jour du type d'activité avec l'ID ${id} (modèle):`,
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  const update = { $set: {} };
+  if (updateData.name !== undefined) update.$set.name = updateData.name;
+  if (updateData.is_billable !== undefined) update.$set.is_billable = updateData.is_billable;
+  await db.collection("activity_type").updateOne({ id }, update);
+  return db.collection("activity_type").findOne({ id });
 }
 
-/**
- * Supprime un type d'activité par son ID.
- * @param {number} id L'ID du type d'activité à supprimer.
- * @returns {Promise<boolean>} Une promesse qui résout en true si le type d'activité a été supprimé, false sinon.
- */
 export async function deleteActivityType(id) {
-  try {
-    const [result] = await db.execute(
-      "DELETE FROM activity_type WHERE id = ?",
-      [id]
-    );
-    return result.affectedRows > 0;
-  } catch (error) {
-    console.error(
-      `Erreur lors de la suppression du type d'activité avec l'ID ${id} (modèle):`,
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  const res = await db.collection("activity_type").deleteOne({ id });
+  return { deleted: res.deletedCount > 0 };
 }

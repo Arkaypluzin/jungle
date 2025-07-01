@@ -1,129 +1,42 @@
-// app/api/client/model.js
-// Modèle pour interagir avec la table 'client' (au singulier) dans la base de données.
+import { getMongoDb } from "@/lib/mongo";
 
-import { db } from "../../../lib/db"; // Assurez-vous que ce chemin est correct vers votre fichier db.js
+function cleanMongo(obj) {
+  if (Array.isArray(obj)) return obj.map(cleanMongo);
+  if (!obj || typeof obj !== "object") return obj;
+  const { _id, ...rest } = obj;
+  return rest;
+}
 
-/**
- * Récupère tous les clients.
- * @returns {Promise<Array>} Une promesse qui résout en un tableau d'objets client.
- */
 export async function getAllClients() {
-  try {
-    const [rows] = await db.execute(
-      "SELECT id, nom_client, adresse, contact_email, telephone FROM client"
-    );
-    return rows;
-  } catch (error) {
-    console.error(
-      "Erreur lors de la récupération de tous les clients (modèle):",
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  const rows = await db.collection("client").find({}).sort({ nom_client: 1 }).toArray();
+  return cleanMongo(rows);
 }
 
-/**
- * Récupère un client par son ID.
- * @param {number} id L'ID du client.
- * @returns {Promise<Object|null>} Une promesse qui résout en un objet client ou null si non trouvé.
- */
 export async function getClientById(id) {
-  try {
-    const [rows] = await db.execute(
-      "SELECT id, nom_client, adresse, contact_email, telephone FROM client WHERE id = ?",
-      [id]
-    );
-    return rows[0] || null;
-  } catch (error) {
-    console.error(
-      `Erreur lors de la récupération du client avec l'ID ${id} (modèle):`,
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  const row = await db.collection("client").findOne({ id });
+  return cleanMongo(row);
 }
 
-/**
- * Crée un nouveau client.
- * @param {Object} clientData Les données du client à créer.
- * @returns {Promise<Object>} Une promesse qui résout en le client créé (avec son ID généré).
- */
 export async function createClient(clientData) {
-  const { nom_client, adresse, contact_email, telephone } = clientData;
-  try {
-    const [result] = await db.execute(
-      "INSERT INTO client (nom_client, adresse, contact_email, telephone) VALUES (?, ?, ?, ?)",
-      [nom_client, adresse, contact_email, telephone]
-    );
-    return { id: result.insertId, ...clientData };
-  } catch (error) {
-    console.error("Erreur lors de la création du client (modèle):", error);
-    throw error;
-  }
+  const db = await getMongoDb();
+  const doc = { ...clientData, id: clientData.id || String(Date.now()) };
+  await db.collection("client").insertOne(doc);
+  return cleanMongo(doc);
 }
 
-/**
- * Met à jour un client existant.
- * @param {number} id L'ID du client à mettre à jour.
- * @param {Object} updateData Les données à mettre à jour pour le client.
- * @returns {Promise<boolean>} Une promesse qui résout en true si le client a été mis à jour, false sinon.
- */
 export async function updateClient(id, updateData) {
-  const fields = [];
-  const values = [];
-
-  if (updateData.nom_client !== undefined) {
-    fields.push("nom_client = ?");
-    values.push(updateData.nom_client);
-  }
-  if (updateData.adresse !== undefined) {
-    fields.push("adresse = ?");
-    values.push(updateData.adresse);
-  }
-  if (updateData.contact_email !== undefined) {
-    fields.push("contact_email = ?");
-    values.push(updateData.contact_email);
-  }
-  if (updateData.telephone !== undefined) {
-    fields.push("telephone = ?");
-    values.push(updateData.telephone);
-  }
-
-  if (fields.length === 0) {
-    return false;
-  }
-
-  values.push(id);
-
-  try {
-    const [result] = await db.execute(
-      `UPDATE client SET ${fields.join(", ")} WHERE id = ?`,
-      values
-    );
-    return result.affectedRows > 0;
-  } catch (error) {
-    console.error(
-      `Erreur lors de la mise à jour du client avec l'ID ${id} (modèle):`,
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  const { matchedCount } = await db.collection("client").updateOne(
+    { id },
+    { $set: updateData }
+  );
+  return matchedCount > 0;
 }
 
-/**
- * Supprime un client par son ID.
- * @param {number} id L'ID du client à supprimer.
- * @returns {Promise<boolean>} Une promesse qui résout en true si le client a été supprimé, false sinon.
- */
 export async function deleteClient(id) {
-  try {
-    const [result] = await db.execute("DELETE FROM client WHERE id = ?", [id]);
-    return result.affectedRows > 0;
-  } catch (error) {
-    console.error(
-      `Erreur lors de la suppression du client avec l'ID ${id} (modèle):`,
-      error
-    );
-    throw error;
-  }
+  const db = await getMongoDb();
+  const { deletedCount } = await db.collection("client").deleteOne({ id });
+  return deletedCount > 0;
 }
