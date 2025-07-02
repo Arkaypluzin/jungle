@@ -26,7 +26,8 @@ export async function updateActivityType(id, updateData) {
   const update = { $set: {} };
   if (updateData.name !== undefined) update.$set.name = updateData.name;
   if (updateData.is_billable !== undefined) update.$set.is_billable = updateData.is_billable;
-  await db.collection("activity_type").updateOne({ id }, update);
+  const res = await db.collection("activity_type").updateOne({ id }, update);
+  if (res.matchedCount === 0) return null;
   return db.collection("activity_type").findOne({ id });
 }
 

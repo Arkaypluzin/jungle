@@ -57,10 +57,10 @@ export async function updateActivityTypeController(id, updateData) {
   try {
     const updated = await activityTypeModel.updateActivityType(id, updateData);
     if (updated) {
-      return NextResponse.json({ message: "Type d'activité mis à jour avec succès." }, { status: 200 });
+      return NextResponse.json(updated, { status: 200 });
     } else {
       return NextResponse.json(
-        { message: "Type d'activité non trouvé ou aucune modification effectuée." },
+        { message: "Type d'activité non trouvé." },
         { status: 404 }
       );
     }

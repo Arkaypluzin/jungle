@@ -171,7 +171,7 @@ export default function UnifiedManager({
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
       <h2 className="text-3xl font-extrabold text-center text-gray-800 mb-8">
-        Gestion Unifiée (Clients & Types d'Activités)
+        Gestion Unifiée (clients & types activités)
       </h2>
 
       {/* Section Gestion des Clients */}
@@ -274,7 +274,7 @@ export default function UnifiedManager({
       {/* Section Gestion des Types d'Activité */}
       <div className="p-6 border border-gray-200 rounded-lg shadow-sm">
         <h3 className="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">
-          Gestion des Types d'Activité
+          Gestion types activité
         </h3>
         <form
           onSubmit={
@@ -345,15 +345,15 @@ export default function UnifiedManager({
         </form>
 
         <h4 className="text-xl font-semibold text-gray-700 mb-4">
-          Types d'activité existants :
+          types activité existants :
         </h4>
         {activityTypeDefinitions.length === 0 ? (
-          <p className="text-gray-500">Aucun type d'activité défini.</p>
+          <p className="text-gray-500">Aucun type activité défini.</p>
         ) : (
           <ul className="space-y-2">
-            {activityTypeDefinitions.map((type) => (
+            {activityTypeDefinitions.map((type, idx) => (
               <li
-                key={type.id}
+                key={type.id ?? `activity-type-${idx}`}
                 className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
               >
                 <span className="text-gray-800 font-medium">
