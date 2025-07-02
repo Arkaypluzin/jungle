@@ -64,9 +64,8 @@ export default function CRAPage() {
         rawText = await res.text();
         try {
           const errorData = JSON.parse(rawText);
-          errorInfo += ` - Message API: ${
-            errorData.message || JSON.stringify(errorData)
-          }`;
+          errorInfo += ` - Message API: ${errorData.message || JSON.stringify(errorData)
+            }`;
         } catch (jsonParseError) {
           errorInfo += ` - Réponse non-JSON ou invalide (début): "${rawText.substring(
             0,
@@ -264,28 +263,24 @@ export default function CRAPage() {
           body: JSON.stringify(activityTypeData),
         });
         if (!response.ok) {
-          if (response.status === 204) {
-            console.log(
-              "Type d'activité mis à jour avec succès (204 No Content)."
-            );
-          } else {
-            const errorData = await response.json();
-            throw new Error(
-              errorData.message || "Échec de la mise à jour du type d'activité"
-            );
-          }
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || "Échec de la mise à jour du type d'activité"
+          );
         }
+        
+        const updatedType = await response.json();
+
         setActivityTypeDefinitions((prevTypes) =>
           prevTypes.map((type) =>
-            type.id === id ? { ...type, ...activityTypeData } : type
+            (type._id ?? type.id) === (updatedType._id ?? updatedType.id)
+              ? { ...type, ...updatedType }
+              : type
           )
         );
         showMessage("Type d'activité mis à jour avec succès !", "success");
       } catch (error) {
-        console.error(
-          "Erreur lors de la mise à jour du type d'activité:",
-          error
-        );
+        console.error("Erreur lors de la mise à jour du type d'activité:", error);
         showMessage(
           `Erreur de mise à jour de type d'activité: ${error.message}`,
           "error"
@@ -319,7 +314,7 @@ export default function CRAPage() {
         setCraActivities((prevActivities) =>
           prevActivities.map((activity) =>
             activity.type_activite ===
-            activityTypeDefinitions.find((t) => t.id === id)?.name
+              activityTypeDefinitions.find((t) => t.id === id)?.name
               ? { ...activity, type_activite: "Type Inconnu" }
               : activity
           )
@@ -546,7 +541,7 @@ export default function CRAPage() {
           if (response.status === 403) {
             throw new Error(
               errorData.message ||
-                "Cette activité est finalisée et ne peut pas être modifiée."
+              "Cette activité est finalisée et ne peut pas être modifiée."
             );
           }
           throw new Error(
@@ -599,9 +594,8 @@ export default function CRAPage() {
         return;
       }
       try {
-        const url = `/api/cra_activities?id=${id}&userId=${currentUserId}${
-          bypassAuth ? "&bypassAuth=true" : ""
-        }`;
+        const url = `/api/cra_activities?id=${id}&userId=${currentUserId}${bypassAuth ? "&bypassAuth=true" : ""
+          }`;
         const response = await fetch(url, {
           method: "DELETE",
         });
@@ -610,7 +604,7 @@ export default function CRAPage() {
           if (response.status === 403) {
             throw new Error(
               errorData.message ||
-                "Cette activité est finalisée et ne peut pas être supprimée."
+              "Cette activité est finalisée et ne peut pas être supprimée."
             );
           }
           throw new Error(
@@ -669,9 +663,9 @@ export default function CRAPage() {
         const result = await response.json();
         showMessage(
           result.message ||
-            `Mois ${format(new Date(year, month - 1), "MMMM yyyy", {
-              locale: fr,
-            })} finalisé avec succès !`,
+          `Mois ${format(new Date(year, month - 1), "MMMM yyyy", {
+            locale: fr,
+          })} finalisé avec succès !`,
           "success"
         );
         fetchData();
@@ -815,21 +809,19 @@ export default function CRAPage() {
       <div className="flex justify-center mb-6">
         <button
           onClick={() => setActiveTab("craManager")}
-          className={`px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
-            activeTab === "craManager"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
+          className={`px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${activeTab === "craManager"
+            ? "bg-blue-600 text-white shadow-md"
+            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
         >
           Mon CRA
         </button>
         <button
           onClick={() => setActiveTab("sentCraHistory")}
-          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
-            activeTab === "sentCraHistory"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
+          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${activeTab === "sentCraHistory"
+            ? "bg-blue-600 text-white shadow-md"
+            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
         >
           Historique des CRAs envoyés
         </button>
