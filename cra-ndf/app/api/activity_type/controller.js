@@ -45,10 +45,7 @@ export async function createActivityTypeController(activityTypeData) {
   }
   try {
     const newActivityType = await activityTypeModel.createActivityType(activityTypeData);
-    return NextResponse.json({
-      ...newActivityType,
-      id: newActivityType._id?.toString(),
-    }, { status: 201 });
+    return NextResponse.json(newActivityType, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { message: "Erreur lors de la création du type d'activité.", error: error.message },
