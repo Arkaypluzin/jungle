@@ -4,7 +4,11 @@ import { NextResponse } from "next/server";
 export async function getAllActivityTypesController() {
   try {
     const activityTypes = await activityTypeModel.getAllActivityTypes();
-    return NextResponse.json(activityTypes);
+    const result = activityTypes.map((type) => ({
+      ...type,
+      id: type._id?.toString(),
+    }));
+    return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
       { message: "Erreur lors de la récupération des types d'activité.", error: error.message },
@@ -17,7 +21,10 @@ export async function getActivityTypeByIdController(id) {
   try {
     const activityType = await activityTypeModel.getActivityTypeById(id);
     if (activityType) {
-      return NextResponse.json(activityType);
+      return NextResponse.json({
+        ...activityType,
+        id: activityType._id?.toString(),
+      });
     } else {
       return NextResponse.json({ message: "Type d'activité non trouvé." }, { status: 404 });
     }
@@ -38,7 +45,10 @@ export async function createActivityTypeController(activityTypeData) {
   }
   try {
     const newActivityType = await activityTypeModel.createActivityType(activityTypeData);
-    return NextResponse.json(newActivityType, { status: 201 });
+    return NextResponse.json({
+      ...newActivityType,
+      id: newActivityType._id?.toString(),
+    }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { message: "Erreur lors de la création du type d'activité.", error: error.message },
@@ -57,10 +67,13 @@ export async function updateActivityTypeController(id, updateData) {
   try {
     const updated = await activityTypeModel.updateActivityType(id, updateData);
     if (updated) {
-      return NextResponse.json({ message: "Type d'activité mis à jour avec succès." }, { status: 200 });
+      return NextResponse.json({
+        ...updated,
+        id: updated._id?.toString(),
+      }, { status: 200 });
     } else {
       return NextResponse.json(
-        { message: "Type d'activité non trouvé ou aucune modification effectuée." },
+        { message: "Type d'activité non trouvé." },
         { status: 404 }
       );
     }

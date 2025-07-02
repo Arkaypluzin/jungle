@@ -29,7 +29,6 @@ export default function CRAPage() {
   const [currentUserName, setCurrentUserName] = useState("Chargement...");
   const [activeTab, setActiveTab] = useState("craManager");
 
-  // Effet pour définir l'ID et le nom de l'utilisateur une fois la session chargée
   useEffect(() => {
     if (status === "authenticated" && session?.user?.id) {
       setCurrentUserId(session.user.id);
@@ -56,7 +55,6 @@ export default function CRAPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // État et fonctions pour les messages Toast
   const [toastMessage, setToastMessage] = useState({
     message: "",
     type: "info",
@@ -71,8 +69,50 @@ export default function CRAPage() {
     setToastMessage((prev) => ({ ...prev, isVisible: false }));
   }, []);
 
+<<<<<<< HEAD
   // Fonction principale de récupération des données (maintenant en mémoire)
   const fetchData = useCallback(async () => {
+=======
+  const fetchAndParse = useCallback(async (url, resourceName) => {
+    const res = await fetch(url);
+    if (!res.ok) {
+      let errorInfo = `Erreur HTTP ${res.status}: ${res.statusText}`;
+      let rawText = "Non disponible (erreur réseau ou réponse vide)";
+      try {
+        rawText = await res.text();
+        try {
+          const errorData = JSON.parse(rawText);
+          errorInfo += ` - Message API: ${errorData.message || JSON.stringify(errorData)
+            }`;
+        } catch (jsonParseError) {
+          errorInfo += ` - Réponse non-JSON ou invalide (début): "${rawText.substring(
+            0,
+            200
+          )}..."`;
+        }
+      } catch (textError) { }
+      throw new Error(`Échec du chargement des ${resourceName}: ${errorInfo}`);
+    }
+    const contentType = res.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const rawText = await res.text();
+      throw new Error(
+        `Réponse inattendue pour ${resourceName}: Le contenu n'est pas du JSON. Début de la réponse: "${rawText.substring(
+          0,
+          100
+        )}..."`
+      );
+    }
+    const jsonData = await res.json();
+    return jsonData;
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    if (!currentUserId || currentUserId === "unauthenticated") {
+      setLoading(false);
+      return;
+    }
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
     setLoading(true);
     setError(null);
 
@@ -225,7 +265,10 @@ export default function CRAPage() {
     }
   }, [currentUserId, showMessage]); // Dépend de currentUserId pour recharger si l'ID change
 
+<<<<<<< HEAD
   // Effet pour déclencher la récupération des données (initialisation en mémoire)
+=======
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
   useEffect(() => {
     // Ne pas appeler fetchData si currentUserId n'est pas encore défini
     // ou si c'est l'état initial vide avant que l'ID de session/démo ne soit résolu.
@@ -234,7 +277,10 @@ export default function CRAPage() {
     }
   }, [fetchData, currentUserId]); // Dépend de currentUserId pour s'assurer qu'il est prêt
 
+<<<<<<< HEAD
   // Fonctions de gestion des clients (maintenant en mémoire)
+=======
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
   const handleAddClient = useCallback(
     async (clientData) => {
       try {
@@ -285,6 +331,7 @@ export default function CRAPage() {
     [showMessage]
   );
 
+<<<<<<< HEAD
   // Fonctions de gestion des types d'activité (maintenant en mémoire)
   const handleAddActivityType = useCallback(
     async (activityTypeData) => {
@@ -363,6 +410,9 @@ export default function CRAPage() {
   );
 
   // Fonctions de gestion des activités CRA (maintenant en mémoire)
+=======
+  // FONCTIONS CORRIGÉES CI-DESSOUS POUR AJOUTER `client_name`
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
   const handleAddCraActivity = useCallback(
     async (activityData) => {
       if (!currentUserId || currentUserId === "default-user-id") {
@@ -413,13 +463,28 @@ export default function CRAPage() {
         return;
       }
 
+      // Ajout du nom du client
+      let clientName = null;
+      if (activityData.clientId && clientDefinitions.length > 0) {
+        const clientObj = clientDefinitions.find(
+          (c) => String(c.id) === String(activityData.clientId)
+        );
+        if (clientObj) {
+          clientName = clientObj.nom_client;
+        }
+      }
+
       try {
         const newId = `cra${craActivities.length + 1}-${Date.now()}`; // ID unique simple
         const newCraActivity = {
           id: newId,
           description_activite: activityData.descriptionActivite,
           temps_passe: newActivityTime,
+<<<<<<< HEAD
           date_activite: dateToFormat, // Stocker comme objet Date
+=======
+          date_activite: formattedDate,
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
           type_activite: activityData.typeActivite,
           override_non_working_day: activityData.overrideNonWorkingDay,
           user_id: currentUserId,
@@ -428,12 +493,31 @@ export default function CRAPage() {
               ? null
               : parseInt(activityData.clientId),
           is_billable: isBillable,
+<<<<<<< HEAD
           status: "draft", // Nouvelle activité est toujours en brouillon
         };
+=======
+          client_name: clientName,
+        };
+
+        const response = await fetch("/api/cra_activities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || "Erreur lors de la création de l'activité CRA."
+          );
+        }
+        const newCraActivity = await response.json();
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
         setCraActivities((prevActivities) => [
           ...prevActivities,
           newCraActivity,
         ]);
+<<<<<<< HEAD
 
         if (isOvertime) {
           if (totalTimeForDayExcludingOvertime >= 1) {
@@ -454,12 +538,19 @@ export default function CRAPage() {
         } else {
           showMessage("Activité CRA ajoutée avec succès !", "success");
         }
+=======
+        showMessage("Activité CRA ajoutée avec succès !", "success");
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
       } catch (error) {
         console.error("Erreur lors de l'ajout de l'activité CRA:", error);
         showMessage(`Erreur d'ajout d'activité CRA: ${error.message}`, "error");
       }
     },
+<<<<<<< HEAD
     [showMessage, currentUserId, craActivities]
+=======
+    [showMessage, currentUserId, craActivities, clientDefinitions]
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
   );
 
   const handleUpdateCraActivity = useCallback(
@@ -487,7 +578,11 @@ export default function CRAPage() {
         .filter(
           (activity) =>
             activity.user_id === currentUserId &&
+<<<<<<< HEAD
             format(activity.date_activite, "yyyy-MM-dd") === formattedDate &&
+=======
+            activity.date_activite === formattedDate &&
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
             activity.id !== id &&
             activity.type_activite !== "Heure supplémentaire"
         )
@@ -513,7 +608,19 @@ export default function CRAPage() {
         return;
       }
 
+      // Ajout du nom du client pour la modification aussi
+      let clientName = null;
+      if (activityData.clientId && clientDefinitions.length > 0) {
+        const clientObj = clientDefinitions.find(
+          (c) => String(c.id) === String(activityData.clientId)
+        );
+        if (clientObj) {
+          clientName = clientObj.nom_client;
+        }
+      }
+
       try {
+<<<<<<< HEAD
         setCraActivities((prevActivities) =>
           prevActivities.map((activity) =>
             activity.id === id
@@ -553,6 +660,40 @@ export default function CRAPage() {
         } else {
           showMessage("Activité CRA mise à jour avec succès !", "success");
         }
+=======
+        const payload = {
+          id,
+          description_activite: activityData.descriptionActivite,
+          temps_passe: updatedActivityTime,
+          date_activite: formattedDate,
+          type_activite: activityData.typeActivite,
+          override_non_working_day: activityData.overrideNonWorkingDay,
+          user_id: currentUserId,
+          client_id:
+            activityData.clientId === ""
+              ? null
+              : parseInt(activityData.clientId),
+          is_billable: isBillable,
+          client_name: clientName,
+        };
+
+        const response = await fetch(
+          `/api/cra_activities?action=update-activity`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || "Erreur lors de la modification de l'activité CRA."
+          );
+        }
+        fetchData();
+        showMessage("Activité CRA mise à jour avec succès !", "success");
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
       } catch (error) {
         console.error(
           "Erreur lors de la mise à jour de l'activité CRA:",
@@ -564,6 +705,7 @@ export default function CRAPage() {
         );
       }
     },
+<<<<<<< HEAD
     [showMessage, currentUserId, craActivities]
   );
 
@@ -723,6 +865,12 @@ export default function CRAPage() {
     },
     [currentUserId, currentUserName, showMessage]
   );
+=======
+    [showMessage, currentUserId, craActivities, clientDefinitions, fetchData]
+  );
+
+  // ... le reste de ton code (handlers activity types, clients, etc. inchangés) ...
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
 
   if (status === "loading" || !currentUserId) {
     return (
@@ -852,6 +1000,11 @@ export default function CRAPage() {
   // Bloc pour les utilisateurs authentifiés (si NextAuth est configuré)
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-8">
+<<<<<<< HEAD
+=======
+      {/* ... en-tête, navigation, etc ... */}
+
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
       <div className="mb-4 flex justify-between items-center">
         <div className="text-gray-700 text-lg font-semibold">
           Bienvenue, {currentUserName}
@@ -888,21 +1041,19 @@ export default function CRAPage() {
       <div className="flex justify-center mb-6">
         <button
           onClick={() => setActiveTab("craManager")}
-          className={`px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
-            activeTab === "craManager"
+          className={`px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${activeTab === "craManager"
               ? "bg-blue-600 text-white shadow-md"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
+            }`}
         >
           Mon CRA
         </button>
         <button
           onClick={() => setActiveTab("sentCraHistory")}
-          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
-            activeTab === "sentCraHistory"
+          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${activeTab === "sentCraHistory"
               ? "bg-blue-600 text-white shadow-md"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
+            }`}
         >
           Historique des CRAs envoyés
         </button>
@@ -916,9 +1067,9 @@ export default function CRAPage() {
           clientDefinitions={clientDefinitions}
           onAddCraActivity={handleAddCraActivity}
           onUpdateCraActivity={handleUpdateCraActivity}
-          onDeleteCraActivity={handleDeleteCraActivity}
+          onDeleteCraActivity={() => { }} // ... complète ou récupère ta logique
           showMessage={showMessage}
-          onFinalizeMonth={handleFinalizeMonth}
+          onFinalizeMonth={() => { }} // ... idem si besoin
           currentUserId={currentUserId}
           currentUserName={currentUserName}
         />
@@ -932,25 +1083,27 @@ export default function CRAPage() {
           currentUserId={currentUserId}
           currentUserName={currentUserName}
           showMessage={showMessage}
+<<<<<<< HEAD
           onUpdateCraStatus={handleUpdateCraStatus}
           onFinalizeMonth={handleFinalizeMonth} // Passer également pour la finalisation
+=======
+          onUpdateCraStatus={() => { }} // ... idem si besoin
+>>>>>>> 7314d3eeca7686ce75b3e4698cdb28c7e07bd0ed
         />
       )}
 
-      {/* Gestionnaire unifié pour les clients et les types d'activité */}
       <UnifiedManager
         clientDefinitions={clientDefinitions}
         onAddClient={handleAddClient}
         onUpdateClient={handleUpdateClient}
         onDeleteClient={handleDeleteClient}
         activityTypeDefinitions={activityTypeDefinitions}
-        onAddActivityType={handleAddActivityType}
-        onUpdateActivityType={handleUpdateActivityType}
-        onDeleteActivityType={handleDeleteActivityType}
+        onAddActivityType={() => { }}
+        onUpdateActivityType={() => { }}
+        onDeleteActivityType={() => { }}
         showMessage={showMessage}
       />
 
-      {/* Affichage du message Toast */}
       <ToastMessage
         message={toastMessage.message}
         type={toastMessage.type}

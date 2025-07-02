@@ -132,27 +132,18 @@ export default function UnifiedManager({
   const confirmDeleteActivityType = async () => {
     setShowActivityTypeConfirmModal(false);
     if (activityTypeToDelete) {
-      // Appel mis à jour pour la route dynamique
       try {
-        const response = await fetch(
-          `/api/activity_type/${activityTypeToDelete}`,
-          {
-            method: "DELETE",
-          }
-        );
-        if (!response.ok) {
+        const response = await fetch(`/api/activity_type/${activityTypeToDelete}`, {
+          method: "DELETE",
+        });
+        if (!response.ok && response.status !== 204) {
           const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Échec de la suppression du type d'activité"
-          );
+          throw new Error(errorData.message || "Échec de la suppression du type d'activité");
         }
+
         onDeleteActivityType(activityTypeToDelete);
         showMessage("Type d'activité supprimé avec succès !", "success");
       } catch (error) {
-        console.error(
-          "Erreur lors de la suppression du type d'activité:",
-          error
-        );
         showMessage(
           `Erreur de suppression de type d'activité: ${error.message}`,
           "error"
@@ -171,7 +162,7 @@ export default function UnifiedManager({
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
       <h2 className="text-3xl font-extrabold text-center text-gray-800 mb-8">
-        Gestion Unifiée (Clients & Types d'Activités)
+        Gestion Unifiée (clients & types activités)
       </h2>
 
       {/* Section Gestion des Clients */}
@@ -192,9 +183,9 @@ export default function UnifiedManager({
             onChange={(e) =>
               editingClient
                 ? setEditingClient({
-                    ...editingClient,
-                    nom_client: e.target.value,
-                  })
+                  ...editingClient,
+                  nom_client: e.target.value,
+                })
                 : setNewClientName(e.target.value)
             }
             className="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
@@ -274,7 +265,7 @@ export default function UnifiedManager({
       {/* Section Gestion des Types d'Activité */}
       <div className="p-6 border border-gray-200 rounded-lg shadow-sm">
         <h3 className="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">
-          Gestion des Types d'Activité
+          Gestion types activité
         </h3>
         <form
           onSubmit={
@@ -295,9 +286,9 @@ export default function UnifiedManager({
             onChange={(e) =>
               editingActivityType
                 ? setEditingActivityType({
-                    ...editingActivityType,
-                    name: e.target.value,
-                  })
+                  ...editingActivityType,
+                  name: e.target.value,
+                })
                 : setNewActivityTypeName(e.target.value)
             }
             className="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
@@ -318,9 +309,9 @@ export default function UnifiedManager({
               onChange={(e) =>
                 editingActivityType
                   ? setEditingActivityType({
-                      ...editingActivityType,
-                      is_billable: e.target.checked ? 1 : 0,
-                    })
+                    ...editingActivityType,
+                    is_billable: e.target.checked ? 1 : 0,
+                  })
                   : setNewActivityTypeIsBillable(e.target.checked)
               }
               className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
@@ -345,15 +336,15 @@ export default function UnifiedManager({
         </form>
 
         <h4 className="text-xl font-semibold text-gray-700 mb-4">
-          Types d'activité existants :
+          types activité existants :
         </h4>
         {activityTypeDefinitions.length === 0 ? (
-          <p className="text-gray-500">Aucun type d'activité défini.</p>
+          <p className="text-gray-500">Aucun type activité défini.</p>
         ) : (
           <ul className="space-y-2">
-            {activityTypeDefinitions.map((type) => (
+            {activityTypeDefinitions.map((type, idx) => (
               <li
-                key={type.id}
+                key={type._id ?? type.id ?? `activity-type-${idx}`}
                 className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
               >
                 <span className="text-gray-800 font-medium">
