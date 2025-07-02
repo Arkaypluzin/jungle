@@ -1,4 +1,4 @@
-'use client';
+"use client";
 import { useEffect, useState } from "react";
 import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
@@ -6,229 +6,670 @@ import EditNdfModal from "@/components/EditNdfModal";
 import DeleteNdfButton from "@/components/DeleteNdfButton";
 import ValidateNdfButton from "@/components/ValidateNdfButton";
 
+// Constante pour les noms des mois
 const MONTHS = [
-    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
+  "Octobre",
+  "Novembre",
+  "Décembre",
 ];
 
 export default function ClientAdminNdf() {
-    // Mes NDF
-    const [ndfList, setNdfList] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filterYearPerso, setFilterYearPerso] = useState("");
-    const [sortYearPerso, setSortYearPerso] = useState("desc");
-    const [filterMonthPerso, setFilterMonthPerso] = useState("");
-    const [sortMonthPerso, setSortMonthPerso] = useState("asc");
-    const [filterStatutPerso, setFilterStatutPerso] = useState("");
+  // États pour "Mes notes de frais"
+  const [ndfList, setNdfList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterYearPerso, setFilterYearPerso] = useState("");
+  const [sortYearPerso, setSortYearPerso] = useState("desc"); // 'asc' ou 'desc'
+  const [filterMonthPerso, setFilterMonthPerso] = useState("");
+  const [sortMonthPerso, setSortMonthPerso] = useState("asc"); // 'asc' ou 'desc'
+  const [filterStatutPerso, setFilterStatutPerso] = useState("");
 
-    // Toutes NDF
-    const [allNdfs, setAllNdfs] = useState([]);
-    const [loadingAll, setLoadingAll] = useState(true);
-    const [filterYear, setFilterYear] = useState("");
-    const [sortYear, setSortYear] = useState("desc");
-    const [filterMonth, setFilterMonth] = useState("");
-    const [sortMonth, setSortMonth] = useState("asc");
-    const [filterUser, setFilterUser] = useState("");
-    const [filterStatut, setFilterStatut] = useState("");
+  // États pour "Toutes les notes de frais"
+  const [allNdfs, setAllNdfs] = useState([]);
+  const [loadingAll, setLoadingAll] = useState(true);
+  const [filterYear, setFilterYear] = useState("");
+  const [sortYear, setSortYear] = useState("desc");
+  const [filterMonth, setFilterMonth] = useState("");
+  const [sortMonth, setSortMonth] = useState("asc");
+  const [filterUser, setFilterUser] = useState("");
+  const [filterStatut, setFilterStatut] = useState("");
 
-    async function fetchNdfs() {
-        setLoading(true);
-        const res = await fetch("/api/ndf", { cache: "no-store" });
-        const data = await res.json();
-        setNdfList(Array.isArray(data) ? data : []);
-        setLoading(false);
+  // Fonction pour récupérer les notes de frais de l'utilisateur connecté
+  async function fetchNdfs() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/ndf", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      setNdfList(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error(
+        "Erreur lors de la récupération de mes notes de frais :",
+        error
+      );
+      // Optionally set an error state here
+    } finally {
+      setLoading(false);
     }
-    async function fetchAllNdfs() {
-        setLoadingAll(true);
-        const res = await fetch("/api/ndf/all", { cache: "no-store" });
-        const data = await res.json();
-        setAllNdfs(Array.isArray(data) ? data : []);
-        setLoadingAll(false);
+  }
+
+  // Fonction pour récupérer toutes les notes de frais (pour l'admin)
+  async function fetchAllNdfs() {
+    setLoadingAll(true);
+    try {
+      const res = await fetch("/api/ndf/all", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      setAllNdfs(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error(
+        "Erreur lors de la récupération de toutes les notes de frais :",
+        error
+      );
+      // Optionally set an error state here
+    } finally {
+      setLoadingAll(false);
     }
-    useEffect(() => { fetchNdfs(); fetchAllNdfs(); }, []);
+  }
 
-    // ------ Filtres MES notes ------
-    const yearOptionsPerso = Array.from(new Set(ndfList.map(n => n.year))).sort((a, b) => b - a);
-    const monthOptionsPerso = MONTHS.filter(m => ndfList.some(ndf => ndf.month === m));
-    const statutOptionsPerso = ["Provisoire", "Déclaré", "Validé", "Remboursé"];
-    let filteredNdfList = ndfList
-        .filter(ndf => !filterYearPerso || String(ndf.year) === String(filterYearPerso))
-        .filter(ndf => !filterMonthPerso || ndf.month === filterMonthPerso)
-        .filter(ndf => !filterStatutPerso || ndf.statut === filterStatutPerso);
-    filteredNdfList = filteredNdfList.sort((a, b) => {
-        if (sortYearPerso === "asc") {
-            if (a.year !== b.year) return a.year - b.year;
-        } else {
-            if (a.year !== b.year) return b.year - a.year;
-        }
-        const idxA = MONTHS.indexOf(a.month);
-        const idxB = MONTHS.indexOf(b.month);
-        return sortMonthPerso === "asc" ? idxA - idxB : idxB - idxA;
-    });
+  // Effet pour charger les données au montage du composant
+  useEffect(() => {
+    fetchNdfs();
+    fetchAllNdfs();
+  }, []);
 
-    // ------ Filtres TOUTES notes ------
-    const yearOptions = Array.from(new Set(allNdfs.map(n => n.year))).sort((a, b) => b - a);
-    const monthOptions = MONTHS.filter(m => allNdfs.some(ndf => ndf.month === m));
-    const userOptions = Array.from(new Set(allNdfs.map(n => n.name))).filter(Boolean).sort();
-    const statutOptions = ["Déclaré", "Validé", "Remboursé"];
-    let filteredNdfs = allNdfs
-        .filter(ndf => !filterYear || String(ndf.year) === String(filterYear))
-        .filter(ndf => !filterMonth || ndf.month === filterMonth)
-        .filter(ndf => !filterUser || ndf.name === filterUser)
-        .filter(ndf => !filterStatut || ndf.statut === filterStatut);
-    filteredNdfs = filteredNdfs.sort((a, b) => {
-        if (sortYear === "asc") {
-            if (a.year !== b.year) return a.year - b.year;
-        } else {
-            if (a.year !== b.year) return b.year - a.year;
-        }
-        const idxA = MONTHS.indexOf(a.month);
-        const idxB = MONTHS.indexOf(b.month);
-        return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
-    });
+  // --- Logique de filtrage et de tri pour "Mes notes de frais" ---
+  const yearOptionsPerso = Array.from(new Set(ndfList.map((n) => n.year))).sort(
+    (a, b) => b - a
+  );
+  const monthOptionsPerso = MONTHS.filter((m) =>
+    ndfList.some((ndf) => ndf.month === m)
+  );
+  const statutOptionsPerso = ["Provisoire", "Déclaré", "Validé", "Remboursé"];
 
-    return (
-        <div className="max-w-3xl mx-auto mt-10">
-            <h1 className="text-xl font-bold mb-4">Mes notes de frais</h1>
+  let filteredNdfList = ndfList
+    .filter(
+      (ndf) => !filterYearPerso || String(ndf.year) === String(filterYearPerso)
+    )
+    .filter((ndf) => !filterMonthPerso || ndf.month === filterMonthPerso)
+    .filter((ndf) => !filterStatutPerso || ndf.statut === filterStatutPerso);
 
-            {/* Filtres MES notes */}
-            <div className="mb-6 flex flex-wrap gap-4">
-                <div>
-                    <label className="block text-xs font-semibold">Année</label>
-                    <select className="border px-2 py-1 rounded" value={filterYearPerso} onChange={e => setFilterYearPerso(e.target.value)}>
-                        <option className="text-black" value="">Toutes</option>
-                        {yearOptionsPerso.map(y => <option className="text-black" key={y} value={y}>{y}</option>)}
-                    </select>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortYearPerso === "asc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortYearPerso("asc")}>↑</button>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortYearPerso === "desc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortYearPerso("desc")}>↓</button>
-                </div>
-                <div>
-                    <label className="block text-xs font-semibold">Mois</label>
-                    <select className="border px-2 py-1 rounded" value={filterMonthPerso} onChange={e => setFilterMonthPerso(e.target.value)}>
-                        <option className="text-black" value="">Tous</option>
-                        {monthOptionsPerso.map(m => <option className="text-black" key={m} value={m}>{m}</option>)}
-                    </select>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortMonthPerso === "asc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortMonthPerso("asc")}>↑</button>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortMonthPerso === "desc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortMonthPerso("desc")}>↓</button>
-                </div>
-                <div>
-                    <label className="block text-xs font-semibold">Statut</label>
-                    <select className="border px-2 py-1 rounded" value={filterStatutPerso} onChange={e => setFilterStatutPerso(e.target.value)}>
-                        <option className="text-black" value="">Tous</option>
-                        {statutOptionsPerso.map(s => <option className="text-black" key={s} value={s}>{s}</option>)}
-                    </select>
-                </div>
-                <button className="ml-2 px-3 py-1 rounded bg-gray-300 text-black"
-                    onClick={() => {
-                        setFilterYearPerso(""); setSortYearPerso("desc");
-                        setFilterMonthPerso(""); setSortMonthPerso("asc");
-                        setFilterStatutPerso("");
-                    }}>
-                    Réinitialiser
-                </button>
-            </div>
+  // Tri pour "Mes notes de frais"
+  filteredNdfList = filteredNdfList.sort((a, b) => {
+    // Tri par année
+    if (sortYearPerso === "asc") {
+      if (a.year !== b.year) return a.year - b.year;
+    } else {
+      // desc
+      if (a.year !== b.year) return b.year - a.year;
+    }
+    // Si les années sont égales, tri par mois
+    const idxA = MONTHS.indexOf(a.month);
+    const idxB = MONTHS.indexOf(b.month);
+    return sortMonthPerso === "asc" ? idxA - idxB : idxB - idxA;
+  });
 
-            <CreateNdfModal onNdfCreated={fetchNdfs} />
-            {loading && <p>Chargement…</p>}
-            {!loading && filteredNdfList.length === 0 && <p>Aucune note de frais créée.</p>}
-            <ul>
-                {filteredNdfList.map(ndf => (
-                    <li key={ndf.uuid} className="mb-4 p-4 border rounded flex items-center justify-between">
-                        <span>
-                            {ndf.month} {ndf.year} — <span className="italic">{ndf.statut}</span>
-                        </span>
-                        <div className="flex gap-2">
-                            <a href={`/note-de-frais/${ndf.uuid}`}
-                                className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">Détails</a>
-                            {ndf.statut === "Provisoire" && (
-                                <>
-                                    <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
-                                    <DeleteNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onDeleted={fetchNdfs} />
-                                </>
-                            )}
-                        </div>
-                    </li>
+  // --- Logique de filtrage et de tri pour "Toutes les notes de frais" ---
+  const yearOptions = Array.from(new Set(allNdfs.map((n) => n.year))).sort(
+    (a, b) => b - a
+  );
+  const monthOptions = MONTHS.filter((m) =>
+    allNdfs.some((ndf) => ndf.month === m)
+  );
+  const userOptions = Array.from(
+    new Set(allNdfs.map((n) => n.name || n.user_id))
+  )
+    .filter(Boolean)
+    .sort(); // Utilise name si dispo, sinon user_id
+  const statutOptions = ["Déclaré", "Validé", "Remboursé"];
+
+  let filteredNdfs = allNdfs
+    .filter((ndf) => !filterYear || String(ndf.year) === String(filterYear))
+    .filter((ndf) => !filterMonth || ndf.month === filterMonth)
+    .filter(
+      (ndf) =>
+        !filterUser || ndf.name === filterUser || ndf.user_id === filterUser
+    ) // Filtrer par name ou user_id
+    .filter((ndf) => !filterStatut || ndf.statut === filterStatut);
+
+  // Tri pour "Toutes les notes de frais"
+  filteredNdfs = filteredNdfs.sort((a, b) => {
+    // Tri par année
+    if (sortYear === "asc") {
+      if (a.year !== b.year) return a.year - b.year;
+    } else {
+      // desc
+      if (a.year !== b.year) return b.year - a.year;
+    }
+    // Si les années sont égales, tri par mois
+    const idxA = MONTHS.indexOf(a.month);
+    const idxB = MONTHS.indexOf(b.month);
+    return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+      <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-lg">
+        <h1 className="text-3xl font-extrabold text-gray-900 mb-6 text-center">
+          Gestion des notes de frais
+        </h1>
+
+        {/* Section Mes notes de frais */}
+        <h2 className="text-2xl font-bold text-gray-800 mb-5 border-b pb-3">
+          Mes notes de frais
+        </h2>
+        <div className="mb-6 flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-md border border-gray-200">
+          <div className="flex-grow">
+            <label
+              htmlFor="filterYearPerso"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Année
+            </label>
+            <div className="flex items-center">
+              <select
+                id="filterYearPerso"
+                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                value={filterYearPerso}
+                onChange={(e) => setFilterYearPerso(e.target.value)}
+              >
+                <option value="">Toutes</option>
+                {yearOptionsPerso.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
                 ))}
-            </ul>
-
-            <h2 className="text-lg font-bold mb-2 mt-12">Toutes les notes de frais</h2>
-            <div className="mb-6 flex flex-wrap gap-4">
-                <div>
-                    <label className="block text-xs font-semibold">Année</label>
-                    <select className="border px-2 py-1 rounded" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
-                        <option className="text-black" value="">Toutes</option>
-                        {yearOptions.map(y => <option className="text-black" key={y} value={y}>{y}</option>)}
-                    </select>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortYear === "asc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortYear("asc")}>↑</button>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortYear === "desc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortYear("desc")}>↓</button>
-                </div>
-                <div>
-                    <label className="block text-xs font-semibold">Mois</label>
-                    <select className="border px-2 py-1 rounded" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
-                        <option className="text-black" value="">Tous</option>
-                        {monthOptions.map(m => <option className="text-black" key={m} value={m}>{m}</option>)}
-                    </select>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortMonth === "asc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortMonth("asc")}>↑</button>
-                    <button className={`ml-1 text-xs text-black px-2 py-1 rounded ${sortMonth === "desc" ? "bg-blue-400 text-white" : "bg-gray-200"}`}
-                        onClick={() => setSortMonth("desc")}>↓</button>
-                </div>
-                <div>
-                    <label className="block text-xs font-semibold">Utilisateur</label>
-                    <select className="border px-2 py-1 rounded" value={filterUser} onChange={e => setFilterUser(e.target.value)}>
-                        <option className="text-black" value="">Tous</option>
-                        {userOptions.map(n => <option className="text-black" key={n} value={n}>{n}</option>)}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-xs font-semibold">Statut</label>
-                    <select className="border px-2 py-1 rounded" value={filterStatut} onChange={e => setFilterStatut(e.target.value)}>
-                        <option className="text-black" value="">Tous</option>
-                        {statutOptions.map(s => <option className="text-black" key={s} value={s}>{s}</option>)}
-                    </select>
-                </div>
-                <button className="ml-2 px-3 py-1 rounded bg-gray-300 text-black"
-                    onClick={() => {
-                        setFilterYear(""); setSortYear("desc");
-                        setFilterMonth(""); setSortMonth("asc");
-                        setFilterUser(""); setFilterStatut("");
-                    }}>
-                    Réinitialiser
-                </button>
+              </select>
+              <button
+                className={`ml-2 p-2 rounded-full transition-colors duration-200 ${
+                  sortYearPerso === "asc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortYearPerso("asc")}
+                title="Trier par année croissante"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8 7l4-4m0 0l4 4m-4-4v18"
+                  />
+                </svg>
+              </button>
+              <button
+                className={`ml-1 p-2 rounded-full transition-colors duration-200 ${
+                  sortYearPerso === "desc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortYearPerso("desc")}
+                title="Trier par année décroissante"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16 17l-4 4m0 0l-4-4m4 4V3"
+                  />
+                </svg>
+              </button>
             </div>
-
-            {loadingAll && <p>Chargement…</p>}
-            {!loadingAll && filteredNdfs.length === 0 && <p>Aucune note de frais avec ces critères.</p>}
-            <ul>
-                {filteredNdfs.map(ndf => (
-                    <li key={ndf.uuid} className="mb-3 p-4 border rounded flex flex-col md:flex-row md:items-center md:justify-between">
-                        <span>
-                            <b>{ndf.month} {ndf.year}</b> — <span className="italic">{ndf.statut}</span>
-                            <span className="ml-2 text-white">par <b>{ndf.name || ndf.user_id}</b></span>
-                        </span>
-                        <div className="flex gap-2 mt-2 md:mt-0">
-                            <a
-                                href={`/note-de-frais/${ndf.uuid}`}
-                                className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm"
-                            >
-                                Voir
-                            </a>
-                            <ValidateNdfButton
-                                ndfId={ndf.uuid}
-                                ndfStatut={ndf.statut}
-                                onValidated={fetchAllNdfs}
-                            />
-                        </div>
-                    </li>
+          </div>
+          <div className="flex-grow">
+            <label
+              htmlFor="filterMonthPerso"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Mois
+            </label>
+            <div className="flex items-center">
+              <select
+                id="filterMonthPerso"
+                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                value={filterMonthPerso}
+                onChange={(e) => setFilterMonthPerso(e.target.value)}
+              >
+                <option value="">Tous</option>
+                {monthOptionsPerso.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
                 ))}
-            </ul>
-            <BtnRetour fallback="/dashboard" />
+              </select>
+              <button
+                className={`ml-2 p-2 rounded-full transition-colors duration-200 ${
+                  sortMonthPerso === "asc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortMonthPerso("asc")}
+                title="Trier par mois croissant"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8 7l4-4m0 0l4 4m-4-4v18"
+                  />
+                </svg>
+              </button>
+              <button
+                className={`ml-1 p-2 rounded-full transition-colors duration-200 ${
+                  sortMonthPerso === "desc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortMonthPerso("desc")}
+                title="Trier par mois décroissant"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16 17l-4 4m0 0l-4-4m4 4V3"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="flex-grow">
+            <label
+              htmlFor="filterStatutPerso"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Statut
+            </label>
+            <select
+              id="filterStatutPerso"
+              className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              value={filterStatutPerso}
+              onChange={(e) => setFilterStatutPerso(e.target.value)}
+            >
+              <option value="">Tous</option>
+              {statutOptionsPerso.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md shadow-sm hover:bg-gray-400 transition-colors duration-200 self-end"
+            onClick={() => {
+              setFilterYearPerso("");
+              setSortYearPerso("desc");
+              setFilterMonthPerso("");
+              setSortMonthPerso("asc");
+              setFilterStatutPerso("");
+            }}
+          >
+            Réinitialiser
+          </button>
         </div>
-    );
+
+        <CreateNdfModal onNdfCreated={fetchNdfs} />
+
+        {loading && (
+          <div className="text-center py-4">
+            <p className="text-gray-600">Chargement de vos notes de frais...</p>
+          </div>
+        )}
+        {!loading && filteredNdfList.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-gray-600">
+              Aucune note de frais trouvée avec ces critères.
+            </p>
+          </div>
+        )}
+
+        <ul className="space-y-4 mt-6">
+          {filteredNdfList.map((ndf) => (
+            <li
+              key={ndf.uuid}
+              className="bg-gray-50 p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+            >
+              <div className="flex-grow">
+                <span className="font-semibold text-lg text-gray-900">
+                  {ndf.month} {ndf.year}
+                </span>
+                <span
+                  className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${
+                    ndf.statut === "Provisoire"
+                      ? "bg-blue-100 text-blue-800"
+                      : ndf.statut === "Déclaré"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : ndf.statut === "Validé"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-purple-100 text-purple-800" // Remboursé
+                  }`}
+                >
+                  {ndf.statut}
+                </span>
+              </div>
+              <div className="flex gap-3 flex-wrap justify-end">
+                <a
+                  href={`/note-de-frais/${ndf.uuid}`}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
+                >
+                  Détails
+                </a>
+                {ndf.statut === "Provisoire" && (
+                  <>
+                    <EditNdfModal ndf={ndf} onEdited={fetchNdfs} />
+                    <DeleteNdfButton
+                      ndfId={ndf.uuid}
+                      ndfStatut={ndf.statut}
+                      onDeleted={fetchNdfs}
+                    />
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {/* Section Toutes les notes de frais */}
+        <h2 className="text-2xl font-bold text-gray-800 mb-5 border-b pb-3 mt-12">
+          Toutes les notes de frais (Admin)
+        </h2>
+        <div className="mb-6 flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-md border border-gray-200">
+          <div className="flex-grow">
+            <label
+              htmlFor="filterYear"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Année
+            </label>
+            <div className="flex items-center">
+              <select
+                id="filterYear"
+                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+              >
+                <option value="">Toutes</option>
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <button
+                className={`ml-2 p-2 rounded-full transition-colors duration-200 ${
+                  sortYear === "asc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortYear("asc")}
+                title="Trier par année croissante"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8 7l4-4m0 0l4 4m-4-4v18"
+                  />
+                </svg>
+              </button>
+              <button
+                className={`ml-1 p-2 rounded-full transition-colors duration-200 ${
+                  sortYear === "desc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortYear("desc")}
+                title="Trier par année décroissante"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16 17l-4 4m0 0l-4-4m4 4V3"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="flex-grow">
+            <label
+              htmlFor="filterMonth"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Mois
+            </label>
+            <div className="flex items-center">
+              <select
+                id="filterMonth"
+                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+              >
+                <option value="">Tous</option>
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <button
+                className={`ml-2 p-2 rounded-full transition-colors duration-200 ${
+                  sortMonth === "asc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortMonth("asc")}
+                title="Trier par mois croissant"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8 7l4-4m0 0l4 4m-4-4v18"
+                  />
+                </svg>
+              </button>
+              <button
+                className={`ml-1 p-2 rounded-full transition-colors duration-200 ${
+                  sortMonth === "desc"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                onClick={() => setSortMonth("desc")}
+                title="Trier par mois décroissant"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16 17l-4 4m0 0l-4-4m4 4V3"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="flex-grow">
+            <label
+              htmlFor="filterUser"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Utilisateur
+            </label>
+            <select
+              id="filterUser"
+              className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              value={filterUser}
+              onChange={(e) => setFilterUser(e.target.value)}
+            >
+              <option value="">Tous</option>
+              {userOptions.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-grow">
+            <label
+              htmlFor="filterStatut"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Statut
+            </label>
+            <select
+              id="filterStatut"
+              className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              value={filterStatut}
+              onChange={(e) => setFilterStatut(e.target.value)}
+            >
+              <option value="">Tous</option>
+              {statutOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md shadow-sm hover:bg-gray-400 transition-colors duration-200 self-end"
+            onClick={() => {
+              setFilterYear("");
+              setSortYear("desc");
+              setFilterMonth("");
+              setSortMonth("asc");
+              setFilterUser("");
+              setFilterStatut("");
+            }}
+          >
+            Réinitialiser
+          </button>
+        </div>
+
+        {loadingAll && (
+          <div className="text-center py-4">
+            <p className="text-gray-600">
+              Chargement de toutes les notes de frais...
+            </p>
+          </div>
+        )}
+        {!loadingAll && filteredNdfs.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-gray-600">
+              Aucune note de frais trouvée avec ces critères.
+            </p>
+          </div>
+        )}
+
+        <ul className="space-y-4 mt-6">
+          {filteredNdfs.map((ndf) => (
+            <li
+              key={ndf.uuid}
+              className="bg-gray-50 p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+            >
+              <div className="flex-grow">
+                <span className="font-semibold text-lg text-gray-900">
+                  {ndf.month} {ndf.year}
+                </span>
+                <span
+                  className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${
+                    ndf.statut === "Déclaré"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : ndf.statut === "Validé"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-purple-100 text-purple-800" // Remboursé
+                  }`}
+                >
+                  {ndf.statut}
+                </span>
+                <span className="ml-3 text-sm text-gray-600">
+                  par <b className="text-gray-800">{ndf.name || ndf.user_id}</b>
+                </span>
+              </div>
+              <div className="flex gap-3 flex-wrap justify-end">
+                <a
+                  href={`/note-de-frais/${ndf.uuid}`}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
+                >
+                  Voir
+                </a>
+                <ValidateNdfButton
+                  ndfId={ndf.uuid}
+                  ndfStatut={ndf.statut}
+                  onValidated={fetchAllNdfs}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-10">
+          <BtnRetour fallback="/dashboard" />
+        </div>
+      </div>
+    </div>
+  );
 }

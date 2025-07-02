@@ -1,6 +1,7 @@
+// components/CraBoard.js
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react"; // Ajout de useMemo
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   format,
   addMonths,
@@ -13,13 +14,24 @@ import {
   isSameMonth,
   isSameDay,
   isWeekend,
-  parseISO,
+  parseISO, // Gardé pour l'input type="date" value
   isValid,
+  getDay,
 } from "date-fns";
 import { fr } from "date-fns/locale";
 import ActivityModal from "./ActivityModal";
 import SummaryReport from "./SummaryReport";
 import ConfirmationModal from "./ConfirmationModal";
+
+const dayNames = [
+  "Dimanche",
+  "Lundi",
+  "Mardi",
+  "Mercredi",
+  "Jeudi",
+  "Vendredi",
+  "Samedi",
+];
 
 export default function CraBoard({
   craActivities = [],
@@ -33,13 +45,23 @@ export default function CraBoard({
   currentUserId,
   currentUserName,
 }) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [showActivityModal, setShowActivityModal] = useState(false);
-  const [selectedDateForModal, setSelectedDateForModal] = useState(null);
-  const [editingActivity, setEditingActivity] = useState(null);
-  const [publicHolidays, setPublicHolidays] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(new Date()); // Cette variable gère la date affichée dans le calendrier
+  const [descriptionActivite, setDescriptionActivite] = useState("");
+  const [tempsPasse, setTempsPasse] = useState("");
+  const [typeActivite, setTypeActivite] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [isBillable, setIsBillable] = useState(true);
+  const [overrideNonWorkingDay, setOverrideNonWorkingDay] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState(null);
+
+  const [editingActivity, setEditingActivity] = useState(null); // <-- AJOUTÉ ICI
+
+  const [publicHolidays, setPublicHolidays] = useState([]); // Pour les jours fériés
   const [isHolidayOrWeekendSelected, setIsHolidayOrWeekendSelected] =
     useState(false);
+
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [selectedDateForModal, setSelectedDateForModal] = useState(null);
   const [showSummaryReport, setShowSummaryReport] = useState(false);
   const [summaryReportMonth, setSummaryReportMonth] = useState(null);
 
@@ -50,20 +72,66 @@ export default function CraBoard({
     useState(false);
   const [showFinalizeMonthConfirmModal, setShowFinalizeMonthConfirmModal] =
     useState(false);
-
   const [showSendConfirmModal, setShowSendConfirmModal] = useState(false);
 
-  // Nouvelle fonction pour calculer le statut global du mois
+  const currentMonth = useMemo(
+    () => startOfMonth(selectedDate),
+    [selectedDate]
+  );
+  const currentMonthName = useMemo(
+    () => format(currentMonth, "MMMM", { locale: fr }),
+    [currentMonth]
+  );
+
+  const activitiesForSelectedDate = useMemo(() => {
+    return craActivities
+      .filter(
+        (activity) =>
+          activity.user_id === currentUserId &&
+          activity.date_activite && // S'assurer que la date existe
+          isValid(activity.date_activite) && // S'assurer que c'est un objet Date valide
+          isSameDay(activity.date_activite, selectedDate)
+      )
+      .sort((a, b) => {
+        // Tri par type d'activité puis par client
+        if (a.type_activite < b.type_activite) return -1;
+        if (a.type_activite > b.type_activite) return 1;
+        const clientA =
+          clientDefinitions.find((c) => c.id === a.client_id)?.nom_client || "";
+        const clientB =
+          clientDefinitions.find((c) => c.id === b.client_id)?.nom_client || "";
+        if (clientA < clientB) return -1;
+        if (clientA > clientB) return 1;
+        return 0;
+      });
+  }, [craActivities, selectedDate, currentUserId, clientDefinitions]);
+
+  const totalTimeForSelectedDate = useMemo(() => {
+    return activitiesForSelectedDate
+      .reduce(
+        (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+        0
+      )
+      .toFixed(2);
+  }, [activitiesForSelectedDate]);
+
+  const isWeekendDay = useMemo(() => isWeekend(selectedDate), [selectedDate]);
+  const dayOfWeekName = useMemo(
+    () => dayNames[getDay(selectedDate)],
+    [selectedDate]
+  );
+
   const calculateCurrentMonthStatus = useCallback(() => {
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(currentDate);
+    const monthStart = startOfMonth(selectedDate);
+    const monthEnd = endOfMonth(selectedDate);
+
     const userActivitiesInMonth = craActivities.filter(
       (activity) =>
         activity.user_id === currentUserId &&
         activity.date_activite &&
-        isValid(parseISO(activity.date_activite)) &&
-        parseISO(activity.date_activite) >= monthStart &&
-        parseISO(activity.date_activite) <= monthEnd
+        isValid(activity.date_activite) && // activity.date_activite est déjà un objet Date
+        activity.date_activite >= monthStart &&
+        activity.date_activite <= monthEnd
     );
 
     const totalCount = userActivitiesInMonth.length;
@@ -78,75 +146,54 @@ export default function CraBoard({
     const draftCount = userActivitiesInMonth.filter(
       (a) => a.status === "draft"
     ).length;
+    const rejectedCount = userActivitiesInMonth.filter(
+      (a) => a.status === "rejected"
+    ).length;
 
     if (validatedCount === totalCount) return "validated";
     if (finalizedCount === totalCount) return "finalized";
     if (draftCount === totalCount) return "draft";
+    if (rejectedCount === totalCount) return "rejected";
 
-    // If there's a mix of statuses
-    if (validatedCount > 0 || finalizedCount > 0) return "mixed";
+    // Si un mélange de statuts
+    if (validatedCount > 0 || finalizedCount > 0 || rejectedCount > 0)
+      return "mixed";
 
     return "draft"; // Fallback
-  }, [currentDate, craActivities, currentUserId]);
+  }, [craActivities, selectedDate, currentUserId]);
 
   const currentMonthStatus = useMemo(
     () => calculateCurrentMonthStatus(),
     [calculateCurrentMonthStatus]
   );
 
-  // Les fonctions isCurrentMonthFinalized et isCurrentMonthPartiallyFinalized peuvent être simplifiées
-  // ou remplacées par l'utilisation directe de currentMonthStatus
-  const isCurrentMonthFinalized = useCallback(
-    () =>
-      currentMonthStatus === "finalized" || currentMonthStatus === "validated",
-    [currentMonthStatus]
-  );
-  const isCurrentMonthPartiallyFinalized = useCallback(
-    () => currentMonthStatus === "mixed",
-    [currentMonthStatus]
-  );
-
+  // Fetch Public Holidays (remis en place)
   const fetchPublicHolidays = useCallback(async () => {
     try {
-      const currentYear = format(currentDate, "yyyy");
-      const nextYear = format(addMonths(currentDate, 12), "yyyy");
-
-      const resCurrent = await fetch(
-        `/api/public_holidays?year=${currentYear}&countryCode=FR`
-      );
-      if (!resCurrent.ok) {
-        const errorText = await resCurrent.text();
-        throw new Error(
-          `Erreur HTTP ${resCurrent.status}: ${
-            res.statusText
-          } - Détails: ${errorText.substring(0, 100)}...`
-        );
-      }
-      const holidaysCurrent = await resCurrent.json();
-
-      const resNext = await fetch(
-        `/api/public_holidays?year=${nextYear}&countryCode=FR`
-      );
-      if (!resNext.ok) {
-        const errorText = await resNext.text();
-        throw new Error(
-          `Erreur HTTP ${resNext.status}: ${
-            res.statusText
-          } - Détails: ${errorText.substring(0, 100)}...`
-        );
-      }
-      const holidaysNext = await resNext.json();
-
-      const allHolidays = [...holidaysCurrent, ...holidaysNext];
-      setPublicHolidays(allHolidays.map((h) => h.date));
+      // Données de jours fériés simulées sans API
+      const mockHolidays = [
+        format(new Date(selectedDate.getFullYear(), 0, 1), "yyyy-MM-dd"), // 1er janvier
+        format(new Date(selectedDate.getFullYear(), 3, 1), "yyyy-MM-dd"), // Exemple: 1er avril
+        format(new Date(selectedDate.getFullYear(), 4, 1), "yyyy-MM-dd"), // 1er mai
+        format(new Date(selectedDate.getFullYear(), 4, 8), "yyyy-MM-dd"), // 8 mai
+        format(new Date(selectedDate.getFullYear(), 6, 14), "yyyy-MM-dd"), // 14 juillet
+        format(new Date(selectedDate.getFullYear(), 7, 15), "yyyy-MM-dd"), // 15 août
+        format(new Date(selectedDate.getFullYear(), 10, 1), "yyyy-MM-dd"), // 1er novembre
+        format(new Date(selectedDate.getFullYear(), 10, 11), "yyyy-MM-dd"), // 11 novembre
+        format(new Date(selectedDate.getFullYear(), 11, 25), "yyyy-MM-dd"), // 25 décembre
+      ];
+      setPublicHolidays(mockHolidays);
     } catch (error) {
-      console.error("Erreur lors de la récupération des jours fériés :", error);
+      console.error(
+        "Erreur lors de la récupération des jours fériés (simulée) :",
+        error
+      );
       showMessage(
         `Impossible de charger les jours fériés. Veuillez réessayer. (${error.message})`,
         "warning"
       );
     }
-  }, [currentDate, showMessage]);
+  }, [selectedDate, showMessage]); // <-- Utilise selectedDate
 
   useEffect(() => {
     fetchPublicHolidays();
@@ -160,6 +207,109 @@ export default function CraBoard({
     },
     [publicHolidays]
   );
+
+  useEffect(() => {
+    // Pré-remplir le formulaire si une activité est en cours d'édition
+    if (editingActivityId) {
+      const activityToEdit = activitiesForSelectedDate.find(
+        (a) => a.id === editingActivityId
+      );
+      if (activityToEdit) {
+        setDescriptionActivite(activityToEdit.description_activite || "");
+        setTempsPasse(activityToEdit.temps_passe.toString());
+        setTypeActivite(activityToEdit.type_activite || "");
+        setClientId(
+          activityToEdit.client_id ? activityToEdit.client_id.toString() : ""
+        );
+        setIsBillable(activityToEdit.is_billable === 1);
+        setOverrideNonWorkingDay(activityToEdit.override_non_working_day === 1);
+      }
+    } else {
+      // Réinitialiser le formulaire si aucune activité n'est en édition
+      resetForm();
+    }
+  }, [editingActivityId, activitiesForSelectedDate]);
+
+  const resetForm = useCallback(() => {
+    setDescriptionActivite("");
+    setTempsPasse("");
+    setTypeActivite("");
+    setClientId("");
+    setIsBillable(true);
+    setOverrideNonWorkingDay(false);
+    setEditingActivityId(null);
+  }, []);
+
+  const handleSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+
+      if (!descriptionActivite || !tempsPasse || !typeActivite) {
+        showMessage("Veuillez remplir tous les champs obligatoires.", "error");
+        return;
+      }
+
+      const activityData = {
+        date: format(selectedDate, "yyyy-MM-dd"), // Envoyer la date formatée
+        descriptionActivite,
+        tempsPasse: parseFloat(tempsPasse),
+        typeActivite,
+        clientId: clientId || null,
+        isBillable,
+        overrideNonWorkingDay,
+      };
+
+      if (editingActivityId) {
+        await onUpdateCraActivity(editingActivityId, activityData);
+      } else {
+        await onAddCraActivity(activityData);
+      }
+      resetForm();
+    },
+    [
+      descriptionActivite,
+      tempsPasse,
+      typeActivite,
+      clientId,
+      isBillable,
+      overrideNonWorkingDay,
+      selectedDate,
+      editingActivityId,
+      onAddCraActivity,
+      onUpdateCraActivity,
+      showMessage,
+      resetForm,
+    ]
+  );
+
+  const handleEdit = useCallback((activity) => {
+    setEditingActivityId(activity.id);
+    setSelectedDate(activity.date_activite); // S'assurer que la date sélectionnée correspond à l'activité (est déjà un objet Date)
+  }, []);
+
+  const handleDelete = useCallback(
+    async (id) => {
+      await onDeleteCraActivity(id);
+    },
+    [onDeleteCraActivity]
+  );
+
+  const handleFinalize = useCallback(async () => {
+    const year = selectedDate.getFullYear();
+    const month = selectedDate.getMonth() + 1;
+    console.log(
+      "handleFinalize: Appel de onFinalizeMonth depuis CraBoard pour",
+      year,
+      month
+    );
+    await onFinalizeMonth(currentUserId, year, month); // Passer currentUserId
+  }, [selectedDate, onFinalizeMonth, currentUserId]);
+
+  const isCurrentMonthFinalized = useMemo(() => {
+    return (
+      currentMonthStatus === "finalized" || currentMonthStatus === "validated"
+    );
+  }, [currentMonthStatus]);
 
   const handleDayClick = (dayDate) => {
     if (!isValid(dayDate)) {
@@ -175,7 +325,6 @@ export default function CraBoard({
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated"
     ) {
-      // Utilisation de currentMonthStatus
       showMessage(
         "Ce mois est finalisé ou validé. Vous ne pouvez pas ajouter de nouvelles activités.",
         "info"
@@ -187,7 +336,7 @@ export default function CraBoard({
     const isPublicHolidayDay = isPublicHoliday(dayDate);
     const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
 
-    setSelectedDateForModal(new Date(dayDate.getTime()));
+    setSelectedDateForModal(new Date(dayDate.getTime())); // Passe un objet Date
     setEditingActivity(null);
     setIsHolidayOrWeekendSelected(isNonWorkingDay);
     setShowActivityModal(true);
@@ -210,9 +359,7 @@ export default function CraBoard({
       return;
     }
 
-    const activityDate = activity.date_activite
-      ? parseISO(activity.date_activite)
-      : null;
+    const activityDate = activity.date_activite; // Est déjà un objet Date
     if (!activityDate || !isValid(activityDate)) {
       console.error(
         "handleActivityClick: Date d'activité invalide de la base de données",
@@ -228,7 +375,7 @@ export default function CraBoard({
     const isWeekendDay = isWeekend(activityDate, { weekStartsOn: 1 });
     const isPublicHolidayDay = isPublicHoliday(activityDate);
 
-    setSelectedDateForModal(activityDate);
+    setSelectedDateForModal(activityDate); // Passe un objet Date
     setEditingActivity(activity);
     setIsHolidayOrWeekendSelected(isWeekendDay || isPublicHolidayDay);
     setShowActivityModal(true);
@@ -291,34 +438,33 @@ export default function CraBoard({
   }, []);
 
   const goToPreviousMonth = useCallback(() => {
-    setCurrentDate((prevDate) => subMonths(prevDate, 1));
+    setSelectedDate((prevDate) => subMonths(prevDate, 1));
   }, []);
 
   const goToNextMonth = useCallback(() => {
-    setCurrentDate((prevDate) => addMonths(prevDate, 1));
+    setSelectedDate((prevDate) => addMonths(prevDate, 1));
   }, []);
 
   const handleToggleSummaryReport = useCallback(() => {
     setShowSummaryReport((prev) => !prev);
     if (!showSummaryReport) {
-      setSummaryReportMonth(currentDate);
+      setSummaryReportMonth(selectedDate);
     } else {
       setSummaryReportMonth(null);
     }
-  }, [showSummaryReport, currentDate]);
+  }, [showSummaryReport, selectedDate]);
 
   useEffect(() => {
     if (showSummaryReport) {
-      setSummaryReportMonth(currentDate);
+      setSummaryReportMonth(selectedDate);
     }
-  }, [currentDate, showSummaryReport]);
+  }, [selectedDate, showSummaryReport]);
 
   const requestResetMonth = useCallback(() => {
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated"
     ) {
-      // Utilisation de currentMonthStatus
       showMessage(
         "Ce mois est finalisé ou validé et ne peut pas être réinitialisé. Seul un administrateur peut annuler la finalisation.",
         "info"
@@ -330,23 +476,23 @@ export default function CraBoard({
 
   const confirmResetMonth = useCallback(async () => {
     setShowResetMonthConfirmModal(false);
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(currentDate);
+    const monthStart = startOfMonth(selectedDate);
+    const monthEnd = endOfMonth(selectedDate);
 
     const activitiesInMonth = craActivities.filter(
       (activity) =>
         activity.user_id === currentUserId &&
         activity.date_activite &&
-        isValid(parseISO(activity.date_activite)) &&
-        parseISO(activity.date_activite) >= monthStart &&
-        parseISO(activity.date_activite) <= monthEnd &&
+        isValid(activity.date_activite) && // activity.date_activite est déjà un objet Date
+        activity.date_activite >= monthStart &&
+        activity.date_activite <= monthEnd &&
         activity.status === "draft"
     );
 
     if (activitiesInMonth.length === 0) {
       showMessage(
         `Aucune activité brouillon à réinitialiser pour ${format(
-          currentDate,
+          selectedDate,
           "MMMM",
           { locale: fr }
         )}.`,
@@ -360,7 +506,7 @@ export default function CraBoard({
 
     for (const activity of activitiesInMonth) {
       try {
-        await onDeleteCraActivity(activity.id, true);
+        await onDeleteCraActivity(activity.id, true); // bypassAuth peut être géré par l'API ou les règles Firestore
         successCount++;
       } catch (error) {
         console.error(
@@ -374,7 +520,7 @@ export default function CraBoard({
     if (errorCount === 0) {
       showMessage(
         `${successCount} activités brouillon supprimées pour ${format(
-          currentDate,
+          selectedDate,
           "MMMM",
           { locale: fr }
         )}.`,
@@ -392,7 +538,7 @@ export default function CraBoard({
       );
     }
   }, [
-    currentDate,
+    selectedDate,
     craActivities,
     onDeleteCraActivity,
     showMessage,
@@ -404,11 +550,14 @@ export default function CraBoard({
   }, []);
 
   const requestFinalizeMonth = useCallback(() => {
+    console.log(
+      "requestFinalizeMonth: Statut actuel du mois:",
+      currentMonthStatus
+    );
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated"
     ) {
-      // Utilisation de currentMonthStatus
       showMessage("Ce mois est déjà finalisé ou validé.", "info");
       return;
     }
@@ -417,23 +566,28 @@ export default function CraBoard({
 
   const confirmFinalizeMonth = useCallback(async () => {
     setShowFinalizeMonthConfirmModal(false);
-    const year = format(currentDate, "yyyy");
-    const month = parseInt(format(currentDate, "MM"));
-
-    await onFinalizeMonth(year, month);
-  }, [currentDate, onFinalizeMonth]);
+    const year = selectedDate.getFullYear();
+    const month = selectedDate.getMonth() + 1;
+    console.log(
+      "confirmFinalizeMonth: Appel de onFinalizeMonth avec",
+      currentUserId,
+      year,
+      month
+    );
+    await onFinalizeMonth(currentUserId, year, month); // Passer currentUserId
+  }, [selectedDate, onFinalizeMonth, currentUserId]);
 
   const cancelFinalizeMonth = useCallback(() => {
     setShowFinalizeMonthConfirmModal(false);
   }, []);
 
   const requestSendCra = useCallback(() => {
+    console.log("requestSendCra: Statut actuel du mois:", currentMonthStatus);
     // Peut envoyer seulement si le mois est finalisé ou validé
     if (
       currentMonthStatus !== "finalized" &&
       currentMonthStatus !== "validated"
     ) {
-      // Utilisation de currentMonthStatus
       showMessage(
         "Seuls les mois finalisés ou validés peuvent être envoyés.",
         "info"
@@ -445,37 +599,30 @@ export default function CraBoard({
 
   const confirmSendCra = useCallback(async () => {
     setShowSendConfirmModal(false);
-    const year = format(currentDate, "yyyy");
-    const month = parseInt(format(currentDate, "MM"));
+    const year = format(selectedDate, "yyyy");
+    const month = parseInt(format(selectedDate, "MM"));
 
     try {
-      const response = await fetch(`/api/cra_activities?action=send-cra`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          year,
-          month,
-          userId: currentUserId,
-          userName: currentUserName,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Échec de l'envoi du CRA.");
-      }
-
-      showMessage(
-        `Le CRA pour ${currentUserName} pour ${format(currentDate, "MMMM", {
+      // Simulation de l'envoi du CRA sans API externe
+      console.log(
+        `CRA pour ${currentUserName} pour ${format(selectedDate, "MMMM", {
           locale: fr,
-        })} a été envoyé avec succès !`,
+        })} envoyé (simulé).`
+      );
+      showMessage(
+        `Le CRA pour ${currentUserName} pour ${format(selectedDate, "MMMM", {
+          locale: fr,
+        })} a été envoyé avec succès (simulé) !`,
         "success"
       );
     } catch (error) {
-      console.error("Erreur lors de l'envoi du CRA :", error);
-      showMessage(`Erreur lors de l'envoi du CRA : ${error.message}`, "error");
+      console.error("Erreur lors de l'envoi du CRA (simulé) :", error);
+      showMessage(
+        `Erreur lors de l'envoi du CRA (simulé) : ${error.message}`,
+        "error"
+      );
     }
-  }, [currentDate, currentUserId, currentUserName, showMessage]);
+  }, [selectedDate, currentUserId, currentUserName, showMessage]);
 
   const cancelSendCra = useCallback(() => {
     setShowSendConfirmModal(false);
@@ -499,6 +646,12 @@ export default function CraBoard({
       statusBadge = (
         <span className="ml-3 text-sm font-bold text-purple-700 bg-purple-100 px-2 py-1 rounded-full">
           PARTIELLEMENT FINALISÉ
+        </span>
+      );
+    } else if (currentMonthStatus === "rejected") {
+      statusBadge = (
+        <span className="ml-3 text-sm font-bold text-red-700 bg-red-100 px-2 py-1 rounded-full">
+          REJETÉ
         </span>
       );
     }
@@ -526,7 +679,7 @@ export default function CraBoard({
           </svg>
         </button>
         <h2 className="text-2xl font-semibold text-blue-800">
-          {format(currentDate, "MMMM", { locale: fr })}
+          {format(selectedDate, "MMMM", { locale: fr })}
           {statusBadge}
         </h2>
         <button
@@ -574,8 +727,8 @@ export default function CraBoard({
   };
 
   const renderCells = () => {
-    const monthStart = startOfMonth(currentDate);
-    const numDaysInMonth = getDaysInMonth(currentDate);
+    const monthStart = startOfMonth(selectedDate);
+    const numDaysInMonth = getDaysInMonth(selectedDate);
     const startCalendarDay = startOfWeek(monthStart, {
       locale: fr,
       weekStartsOn: 1,
@@ -606,8 +759,8 @@ export default function CraBoard({
           (activity) =>
             activity.user_id === currentUserId &&
             activity.date_activite &&
-            isValid(parseISO(activity.date_activite)) &&
-            isSameDay(parseISO(activity.date_activite), cloneDay)
+            isValid(activity.date_activite) && // activity.date_activite est déjà un objet Date
+            isSameDay(activity.date_activite, cloneDay)
         )
         .sort((a, b) => {
           if ((a.type_activite || "") < (b.type_activite || "")) return -1;
@@ -932,7 +1085,7 @@ export default function CraBoard({
         onConfirm={confirmResetMonth}
         title="Confirmer la réinitialisation du mois"
         message={`Êtes-vous sûr de vouloir supprimer TOUTES les activités brouillon pour ${format(
-          currentDate,
+          selectedDate,
           "MMMM",
           { locale: fr }
         )} ?`}
@@ -944,7 +1097,7 @@ export default function CraBoard({
         onConfirm={confirmFinalizeMonth}
         title="Confirmer la finalisation du mois"
         message={`Êtes-vous sûr de vouloir finaliser toutes les activités brouillon pour ${format(
-          currentDate,
+          selectedDate,
           "MMMM",
           { locale: fr }
         )} ? Une fois finalisées, les activités ne peuvent pas être modifiées ou supprimées (sauf par un administrateur).`}
@@ -955,8 +1108,8 @@ export default function CraBoard({
         onClose={cancelSendCra}
         onConfirm={confirmSendCra}
         title="Confirmer l'envoi du CRA"
-        message={`Êtes-vous sûr de vouloir envoyer le CRA pour ${currentUserName} pour ${format(
-          currentDate,
+        message={`Voulez-vous envoyer le CRA pour ${format(
+          selectedDate,
           "MMMM",
           { locale: fr }
         )} ?`}

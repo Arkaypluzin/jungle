@@ -1,4 +1,6 @@
 // components/MonthlyDetailedReport.js
+"use client"; // Assurez-vous que c'est un Client Component
+
 import React, {
   useMemo,
   useRef,
@@ -22,7 +24,7 @@ import { fr } from "date-fns/locale";
 const dayInitials = ["D", "L", "M", "M", "J", "V", "S"];
 
 // Liste des jours fériés (À PERSONNALISER SELON VOS BESOINS)
-// Exemple pour 2025 :
+// Exemple pour 2025 (simulé sans API externe) :
 const publicHolidays = [
   new Date(2025, 0, 1), // 1er janvier
   new Date(2025, 3, 21), // Lundi de Pâques (à adapter chaque année)
@@ -68,15 +70,21 @@ export default function MonthlyDetailedReport({
     });
 
     reportData.forEach((activity) => {
-      if (activity.date_activite && isValid(activity.date_activite)) {
-        const dateKey = format(activity.date_activite, "yyyy-MM-dd");
-        const activityTypeName =
-          activity.activity_type_name_full ||
-          activity.type_activite ||
-          "Type Inconnu";
+      // Assurez-vous que activity.date_activite est un objet Date valide
+      const activityDate = activity.date_activite; // Est déjà un objet Date
+
+      if (isValid(activityDate)) {
+        const dateKey = format(activityDate, "yyyy-MM-dd");
+        let activityTypeName =
+          activity.activity_type_name_full || activity.type_activite;
+
+        // Reclassification de "Type Inconnu" ici
+        if (!activityTypeName || activityTypeName === "Type Inconnu") {
+          activityTypeName = "Heure supplémentaire";
+        }
         const timeSpent = parseFloat(activity.temps_passe) || 0;
 
-        uniqueActivityTypes.add(activityTypeName);
+        uniqueActivityTypes.add(activityTypeName); // S'assure que seul le nom reclassé est ajouté
 
         // Ajouter le temps à la structure journalière
         if (!dailyData[dateKey][activityTypeName]) {
@@ -109,77 +117,67 @@ export default function MonthlyDetailedReport({
   // Logique pour la signature électronique
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [signatureImage, setSignatureImage] = useState(null); // Stocke l'image base64 de la signature
+  const [signatureImage, setSignatureImage] = useState(null);
 
-  // Fonction utilitaire pour obtenir les coordonnées de l'événement (souris ou toucher)
   const getEventCoords = (event, canvas) => {
     const rect = canvas.getBoundingClientRect();
     if (event.touches && event.touches.length > 0) {
-      // Pour les événements tactiles
       return {
         offsetX: event.touches[0].clientX - rect.left,
         offsetY: event.touches[0].clientY - rect.top,
       };
     }
-    // Pour les événements de souris
     return {
-      offsetX: event.nativeEvent.offsetX, // Utilisez nativeEvent pour offsetX/offsetY dans React
+      offsetX: event.nativeEvent.offsetX,
       offsetY: event.nativeEvent.offsetY,
     };
   };
 
-  // Démarre le dessin
   const startDrawing = (event) => {
     setIsDrawing(true);
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     const { offsetX, offsetY } = getEventCoords(event, canvas);
-    ctx.beginPath(); // Commence un nouveau chemin
-    ctx.moveTo(offsetX, offsetY); // Déplace le point de départ
+    ctx.beginPath();
+    ctx.moveTo(offsetX, offsetY);
   };
 
-  // Dessine au fur et à mesure que la souris/le doigt bouge
   const draw = (event) => {
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     const { offsetX, offsetY } = getEventCoords(event, canvas);
-    ctx.lineTo(offsetX, offsetY); // Dessine une ligne jusqu'au point actuel
-    ctx.stroke(); // Applique le tracé
+    ctx.lineTo(offsetX, offsetY);
+    ctx.stroke();
   };
 
-  // Arrête le dessin et sauvegarde la signature
   const endDrawing = () => {
     setIsDrawing(false);
     const canvas = canvasRef.current;
     if (canvas) {
-      // Sauvegarde la signature en tant qu'image base64 lorsque le dessin est terminé
       setSignatureImage(canvas.toDataURL("image/png"));
     }
   };
 
-  // Efface la signature du canvas
   const clearSignature = () => {
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // Efface tout le canvas
-      setSignatureImage(null); // Efface l'image sauvegardée
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureImage(null);
     }
   };
 
-  // Initialisation du contexte du canvas et de ses propriétés
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext("2d");
-      ctx.lineWidth = 2; // Épaisseur du trait
-      ctx.lineCap = "round"; // Extrémités arrondies
-      ctx.strokeStyle = "#000"; // Couleur du trait (noir)
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#000";
     }
   }, []);
 
-  // Rend le canvas réactif et redessine la signature si nécessaire
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -187,42 +185,37 @@ export default function MonthlyDetailedReport({
     const setCanvasDimensions = () => {
       const parent = canvas.parentElement;
       if (parent) {
-        // Obtenir le Device Pixel Ratio pour une meilleure qualité sur les écrans Retina
         const dpr = window.devicePixelRatio || 1;
         const rect = parent.getBoundingClientRect();
 
-        // Définir les dimensions réelles du canvas en fonction du DPR
         canvas.width = rect.width * dpr;
-        canvas.height = 150 * dpr; // Hauteur fixe pour le pad de signature
+        canvas.height = 150 * dpr;
 
-        // Définir les dimensions CSS pour l'affichage (sans DPR)
         canvas.style.width = `${rect.width}px`;
         canvas.style.height = `150px`;
 
         const ctx = canvas.getContext("2d");
         ctx.clearRect(0, 0, canvas.width, canvas.height); // EFFACER LE CANVAS AVANT DE REDESSINER
-        ctx.scale(dpr, dpr); // Appliquer le scale pour le DPR
+        ctx.scale(dpr, dpr);
         ctx.lineWidth = 2;
         ctx.lineCap = "round";
         ctx.strokeStyle = "#000";
 
-        // Redessiner la signature si elle existe après un redimensionnement
         if (signatureImage) {
           const img = new Image();
           img.onload = () => {
-            // Dessine l'image sur le canvas après l'avoir effacé
-            ctx.drawImage(img, 0, 0, rect.width, 150); // Redessine l'image à la taille CSS
+            ctx.drawImage(img, 0, 0, rect.width, 150);
           };
           img.src = signatureImage;
         }
       }
     };
 
-    setCanvasDimensions(); // Définir les dimensions initiales
-    window.addEventListener("resize", setCanvasDimensions); // Écouteur pour le redimensionnement
+    setCanvasDimensions();
+    window.addEventListener("resize", setCanvasDimensions);
 
-    return () => window.removeEventListener("resize", setCanvasDimensions); // Nettoyage de l'écouteur
-  }, [signatureImage]); // Dépend de signatureImage pour redessiner après resize si une signature est présente
+    return () => window.removeEventListener("resize", setCanvasDimensions);
+  }, [signatureImage]);
 
   // Fonction pour vérifier si un jour est un jour férié
   const isPublicHoliday = useCallback((date) => {
@@ -253,15 +246,19 @@ export default function MonthlyDetailedReport({
             <thead className="bg-gray-50 print:bg-white">
               <tr>
                 <th
-                  className="sticky left-0 bg-gray-50 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider print:bg-white print:text-sm"
+                  className="sticky left-0 bg-gray-50 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider print:bg-white print:text-sm border-r border-gray-200"
                   style={{ minWidth: "80px" }}
                 >
                   Jour
                 </th>
-                {allActivityTypes.map((type) => (
+                {allActivityTypes.map((type, colIndex) => (
                   <th
                     key={type}
-                    className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider print:text-sm"
+                    className={`px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider print:text-sm ${
+                      colIndex < allActivityTypes.length - 1
+                        ? "border-r border-gray-200"
+                        : ""
+                    }`}
                   >
                     {type}
                   </th>
@@ -293,7 +290,7 @@ export default function MonthlyDetailedReport({
                     className={`${rowClass} hover:bg-gray-100 print:hover:bg-white`}
                   >
                     <td
-                      className={`sticky left-0 px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-medium print:text-xs ${
+                      className={`sticky left-0 px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-medium print:text-xs border-r border-gray-200 ${
                         isWeekendDay || isHoliday
                           ? isWeekendDay
                             ? "bg-yellow-100 print:bg-yellow-50"
@@ -305,14 +302,12 @@ export default function MonthlyDetailedReport({
                     >
                       {dayInitials[getDay(day)]} {format(day, "dd")}
                     </td>
-                    {allActivityTypes.map((type) => {
+                    {allActivityTypes.map((type, colIndex) => {
                       const time = dailyActivityData[dateKey]?.[type] || 0;
                       dailyTotal += time; // Accumuler le total journalier
-                      // NOUVEAU : Vérifier si c'est une heure sup ou un "Type Inconnu" qui est considéré comme heure sup
+                      // Vérifier si c'est une heure sup
                       const isOvertime =
-                        (type === "Heure supplémentaire" ||
-                          type === "Type Inconnu") &&
-                        time > 0;
+                        type === "Heure supplémentaire" && time > 0;
 
                       return (
                         <td
@@ -321,7 +316,11 @@ export default function MonthlyDetailedReport({
                             isOvertime
                               ? "bg-purple-100 font-semibold print:bg-purple-50"
                               : ""
-                          }`} // Couleur pour les heures sup
+                          } ${
+                            colIndex < allActivityTypes.length - 1
+                              ? "border-r border-gray-200"
+                              : ""
+                          }`}
                         >
                           {time > 0 ? time.toFixed(2) : ""}{" "}
                           {/* Affiche vide si 0 */}
@@ -336,13 +335,17 @@ export default function MonthlyDetailedReport({
               })}
               {/* Ligne Total par Type d'Activité */}
               <tr className="bg-gray-200 font-bold print:bg-gray-100">
-                <td className="sticky left-0 bg-gray-200 px-4 py-2 whitespace-nowrap text-sm text-gray-900 print:bg-gray-100 print:text-xs">
+                <td className="sticky left-0 bg-gray-200 px-4 py-2 whitespace-nowrap text-sm text-gray-900 print:bg-gray-100 print:text-xs border-r border-gray-200">
                   Total Type
                 </td>
-                {allActivityTypes.map((type) => (
+                {allActivityTypes.map((type, colIndex) => (
                   <td
                     key={`total-type-${type}`}
-                    className="px-2 py-2 whitespace-nowrap text-center text-sm text-gray-900 print:text-xs"
+                    className={`px-2 py-2 whitespace-nowrap text-center text-sm text-gray-900 print:text-xs ${
+                      colIndex < allActivityTypes.length - 1
+                        ? "border-r border-gray-200"
+                        : ""
+                    }`}
                   >
                     {(activityTypeTotals[type] || 0).toFixed(2)}
                   </td>
@@ -381,7 +384,6 @@ export default function MonthlyDetailedReport({
             onTouchEnd={endDrawing}
             style={{ touchAction: "none" }}
           ></canvas>
-          {/* ANCIENNE BALISE IMG SUPPRIMÉE POUR ÉVITER LA SIGNATURE EN DOUBLE */}
         </div>
         <div className="flex justify-center mt-4 space-x-4 print:hidden">
           <button
@@ -396,7 +398,6 @@ export default function MonthlyDetailedReport({
             <h4 className="text-md font-semibold text-gray-700 mb-2">
               Signature :
             </h4>
-            {/* L'image est maintenant dessinée sur le canvas, pas via cette balise img */}
             <img
               src={signatureImage}
               alt="Signature pour impression"
