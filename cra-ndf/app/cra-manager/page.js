@@ -222,7 +222,6 @@ export default function CRAPage() {
     [showMessage]
   );
 
-  // Fonctions de gestion des types d'activité
   const handleAddActivityType = useCallback(
     async (activityTypeData) => {
       try {
@@ -233,25 +232,15 @@ export default function CRAPage() {
         });
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Échec de l'ajout du type d'activité"
-          );
+          throw new Error(errorData.message || "Échec de l'ajout du type d'activité");
         }
-        const newActivityType = await response.json();
-        setActivityTypeDefinitions((prevTypes) => [
-          ...prevTypes,
-          newActivityType,
-        ]);
+        await fetchData();
         showMessage("Type d'activité ajouté avec succès !", "success");
       } catch (error) {
-        console.error("Erreur lors de l'ajout du type d'activité:", error);
-        showMessage(
-          `Erreur d'ajout de type d'activité: ${error.message}`,
-          "error"
-        );
+        showMessage(`Erreur d'ajout de type d'activité: ${error.message}`, "error");
       }
     },
-    [showMessage]
+    [showMessage, fetchData]
   );
 
   const handleUpdateActivityType = useCallback(
@@ -268,7 +257,7 @@ export default function CRAPage() {
             errorData.message || "Échec de la mise à jour du type d'activité"
           );
         }
-        
+
         const updatedType = await response.json();
 
         setActivityTypeDefinitions((prevTypes) =>
@@ -296,42 +285,17 @@ export default function CRAPage() {
         const response = await fetch(`/api/activity_type/${id}`, {
           method: "DELETE",
         });
-        if (!response.ok) {
-          if (response.status === 204) {
-            console.log(
-              "Type d'activité supprimé avec succès (204 No Content)."
-            );
-          } else {
-            const errorData = await response.json();
-            throw new Error(
-              errorData.message || "Échec de la suppression du type d'activité"
-            );
-          }
+        if (!response.ok && response.status !== 204) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Échec de la suppression du type d'activité");
         }
-        setActivityTypeDefinitions((prevTypes) =>
-          prevTypes.filter((type) => type.id !== id)
-        );
-        setCraActivities((prevActivities) =>
-          prevActivities.map((activity) =>
-            activity.type_activite ===
-              activityTypeDefinitions.find((t) => t.id === id)?.name
-              ? { ...activity, type_activite: "Type Inconnu" }
-              : activity
-          )
-        );
+        await fetchData();
         showMessage("Type d'activité supprimé avec succès !", "success");
       } catch (error) {
-        console.error(
-          "Erreur lors de la suppression du type d'activité:",
-          error
-        );
-        showMessage(
-          `Erreur de suppression de type d'activité: ${error.message}`,
-          "error"
-        );
+        showMessage(`Erreur de suppression de type d'activité: ${error.message}`, "error");
       }
     },
-    [activityTypeDefinitions, showMessage]
+    [showMessage, fetchData]
   );
 
   // Fonctions de gestion des activités CRA

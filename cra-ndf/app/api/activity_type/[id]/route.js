@@ -13,5 +13,9 @@ export async function PUT(request, context) {
 
 export async function DELETE(request, context) {
   const id = context?.params?.id;
-  return deleteActivityTypeController(id);
+  const res = await deleteActivityTypeController(id);
+  if (res.status === 204) {
+    console.log(`Suppression du type d'activité ${id} réussie`);
+  }
+  return res;
 }
