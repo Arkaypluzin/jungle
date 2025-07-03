@@ -1,4 +1,3 @@
-// app/dashboard/cra/page.js
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -20,29 +19,6 @@ export default function CRAPage() {
   const [currentUserName, setCurrentUserName] = useState("Chargement...");
   const [activeTab, setActiveTab] = useState("craManager");
 
-  const [craActivities, setCraActivities] = useState([]);
-  const [clientDefinitions, setClientDefinitions] = useState([]);
-  const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const [toastMessage, setToastMessage] = useState({
-    message: "",
-    type: "info",
-    isVisible: false,
-  });
-
-  const showMessage = useCallback((message, type = "success") => {
-    setToastMessage({ message, type, isVisible: true });
-    setTimeout(() => {
-      setToastMessage((prev) => ({ ...prev, isVisible: false }));
-    }, 5000);
-  }, []);
-
-  const hideMessage = useCallback(() => {
-    setToastMessage((prev) => ({ ...prev, isVisible: false }));
-  }, []);
-
   useEffect(() => {
     if (status === "authenticated" && session?.user?.id) {
       setCurrentUserId(session.user.id);
@@ -54,6 +30,26 @@ export default function CRAPage() {
       setCurrentUserName("Non connecté");
     }
   }, [session, status]);
+
+  const [craActivities, setCraActivities] = useState([]);
+  const [clientDefinitions, setClientDefinitions] = useState([]);
+  const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null); // <-- FIX : Correction ici
+
+  const [toastMessage, setToastMessage] = useState({
+    message: "",
+    type: "info",
+    isVisible: false,
+  });
+
+  const showMessage = useCallback((message, type = "success") => {
+    setToastMessage({ message, type, isVisible: true });
+  }, []);
+
+  const hideMessage = useCallback(() => {
+    setToastMessage((prev) => ({ ...prev, isVisible: false }));
+  }, []);
 
   const fetchAndParse = useCallback(async (url, resourceName) => {
     const res = await fetch(url);
@@ -101,28 +97,22 @@ export default function CRAPage() {
     try {
       const clientsData = await fetchAndParse("/api/client", "clients");
       setClientDefinitions(clientsData);
-      console.log("Clients chargés (frontend):", clientsData); // Debug log
 
       const activityTypesData = await fetchAndParse(
         "/api/activity_type",
         "types d'activité"
       );
       setActivityTypeDefinitions(activityTypesData);
-      console.log("Types d'activité chargés (frontend):", activityTypesData); // Debug log
+      console.log(
+        "CRAPage: >>> Définitions de types d'activité chargées (fetchData):",
+        JSON.stringify(activityTypesData, null, 2)
+      );
 
       const craActivitiesData = await fetchAndParse(
         `/api/cra_activities?userId=${currentUserId}`,
         "activités CRA"
       );
-      const parsedCraActivities = craActivitiesData.map((activity) => ({
-        ...activity,
-        date_activite:
-          activity.date_activite instanceof Date
-            ? activity.date_activite
-            : parseISO(activity.date_activite),
-      }));
-      setCraActivities(parsedCraActivities);
-      console.log("Activités CRA chargées (frontend):", parsedCraActivities);
+      setCraActivities(craActivitiesData);
     } catch (err) {
       console.error("Erreur lors du chargement des données:", err);
       setError(`Erreur de chargement: ${err.message}`);
@@ -158,6 +148,7 @@ export default function CRAPage() {
         setClientDefinitions((prevClients) => [...prevClients, newClient]);
         showMessage("Client ajouté avec succès !", "success");
       } catch (error) {
+        console.error("Erreur lors de l'ajout du client:", error);
         showMessage(`Erreur d'ajout de client: ${error.message}`, "error");
       }
     },
@@ -174,6 +165,7 @@ export default function CRAPage() {
         });
         if (!response.ok) {
           if (response.status === 204) {
+            console.log("Client mis à jour avec succès (204 No Content).");
           } else {
             const errorData = await response.json();
             throw new Error(
@@ -188,6 +180,7 @@ export default function CRAPage() {
         );
         showMessage("Client mis à jour avec succès !", "success");
       } catch (error) {
+        console.error("Erreur lors de la mise à jour du client:", error);
         showMessage(`Erreur de mise à jour client: ${error.message}`, "error");
       }
     },
@@ -202,6 +195,7 @@ export default function CRAPage() {
         });
         if (!response.ok) {
           if (response.status === 204) {
+            console.log("Client supprimé avec succès (204 No Content).");
           } else {
             const errorData = await response.json();
             throw new Error(
@@ -214,83 +208,8 @@ export default function CRAPage() {
         );
         showMessage("Client supprimé avec succès !", "success");
       } catch (error) {
+        console.error("Erreur lors de la suppression du client:", error);
         showMessage(`Erreur de suppression client: ${error.message}`, "error");
-      }
-    },
-    [showMessage]
-  );
-
-  const handleAddActivityType = useCallback(
-    async (activityTypeData) => {
-      try {
-        const response = await fetch("/api/activity_type", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(activityTypeData),
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Échec de l'ajout du type d'activité"
-          );
-        }
-        const newType = await response.json();
-        setActivityTypeDefinitions((prev) => [...prev, newType]);
-        showMessage("Type d'activité ajouté avec succès !", "success");
-      } catch (error) {
-        showMessage(
-          `Erreur d'ajout de type d'activité: ${error.message}`,
-          "error"
-        );
-      }
-    },
-    [showMessage]
-  );
-
-  const handleUpdateActivityType = useCallback(
-    async (id, updateData) => {
-      try {
-        const response = await fetch(`/api/activity_type/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateData),
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Échec de la modification du type d'activité"
-          );
-        }
-        const updatedType = await response.json();
-        setActivityTypeDefinitions((prev) =>
-          prev.map((type) => (type.id === id ? updatedType : type))
-        );
-        showMessage("Type d'activité modifié avec succès !", "success");
-      } catch (error) {
-        showMessage(`Erreur de modification: ${error.message}`, "error");
-      }
-    },
-    [showMessage]
-  );
-
-  const handleDeleteActivityType = useCallback(
-    async (id) => {
-      try {
-        const response = await fetch(`/api/activity_type/${id}`, {
-          method: "DELETE",
-        });
-        if (!response.ok && response.status !== 204) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Échec de la suppression du type d'activité"
-          );
-        }
-        setActivityTypeDefinitions((prev) =>
-          prev.filter((type) => type.id !== id)
-        );
-        showMessage("Type d'activité supprimé avec succès !", "success");
-      } catch (error) {
-        showMessage(`Erreur de suppression: ${error.message}`, "error");
       }
     },
     [showMessage]
@@ -298,11 +217,6 @@ export default function CRAPage() {
 
   const handleAddCraActivity = useCallback(
     async (activityData) => {
-      console.log(
-        "handleAddCraActivity appelée avec raw activityData:",
-        activityData
-      ); // Debug log
-
       if (!currentUserId || currentUserId === "unauthenticated") {
         showMessage(
           "Veuillez vous connecter pour ajouter des activités.",
@@ -320,55 +234,37 @@ export default function CRAPage() {
 
       const newActivityTime = parseFloat(activityData.temps_passe) || 0;
 
-      // Find the activity type by name
-      const selectedActivityType = activityTypeDefinitions.find(
-        (type) => type.name === activityData.type_activite
+      const activityTypeId = String(activityData.type_activite);
+      console.log(
+        "CRAPage: handleAddCraActivity - ID de type d'activité reçu (string):",
+        activityTypeId
+      );
+      console.log(
+        "CRAPage: handleAddCraActivity - Définitions de types d'activité disponibles:",
+        JSON.stringify(activityTypeDefinitions, null, 2)
       );
 
-      if (!selectedActivityType) {
-        showMessage(
-          "Type d'activité sélectionné non valide ou manquant. Veuillez sélectionner un type existant.",
-          "error"
-        );
+      const selectedActivityTypeDef = activityTypeDefinitions.find(
+        (def) => String(def.id) === activityTypeId
+      );
+
+      let activityTypeName = "";
+      let isActivityBillable = false;
+      let isOvertime = false;
+
+      if (selectedActivityTypeDef) {
+        activityTypeName =
+          selectedActivityTypeDef.name || selectedActivityTypeDef.libelle;
+        isActivityBillable = selectedActivityTypeDef.is_billable === 1;
+        isOvertime = activityTypeName === "Heure supplémentaire";
+      } else {
         console.error(
           "Type d'activité introuvable (frontend):",
-          activityData.type_activite,
+          activityTypeId,
           "Définitions disponibles (frontend):",
           activityTypeDefinitions
         );
-        return;
-      }
-
-      const isOvertime = selectedActivityType.is_overtime;
-      const isBillable = selectedActivityType.is_billable;
-      const requiresClient = selectedActivityType.requires_client;
-
-      // Log clientDefinitions to see if it's populated
-      console.log(
-        "Client Definitions in handleAddCraActivity:",
-        clientDefinitions
-      ); // Debug log
-
-      // Find the client name if client_id is provided
-      const selectedClient = activityData.client_id
-        ? clientDefinitions.find(
-            (client) => client.id === parseInt(activityData.client_id)
-          )
-        : null;
-      const clientNameForPayload = selectedClient ? selectedClient.name : null;
-
-      console.log("ActivityData client_id from modal:", activityData.client_id); // Debug log
-      console.log("Derived clientNameForPayload:", clientNameForPayload); // Debug log
-
-      // VALIDATION LOGIC FOR CLIENT (frontend)
-      if (
-        requiresClient &&
-        (!activityData.client_id || !clientNameForPayload)
-      ) {
-        showMessage(
-          "Le client est requis pour ce type d'activité. Veuillez sélectionner un client.",
-          "error"
-        );
+        showMessage("Type d'activité non valide ou inconnu.", "error");
         return;
       }
 
@@ -376,10 +272,8 @@ export default function CRAPage() {
         .filter(
           (activity) =>
             activity.user_id === currentUserId &&
-            format(activity.date_activite, "yyyy-MM-dd") === formattedDate &&
-            !activityTypeDefinitions.find(
-              (type) => type.name === activity.type_activite
-            )?.is_overtime
+            activity.date_activite === formattedDate &&
+            activity.type_activite !== "Heure supplémentaire"
         )
         .reduce(
           (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
@@ -403,23 +297,37 @@ export default function CRAPage() {
         return;
       }
 
+      let clientName = null;
+      if (activityData.client_id && clientDefinitions.length > 0) {
+        const clientObj = clientDefinitions.find(
+          (c) => String(c.id) === String(activityData.client_id)
+        );
+        if (clientObj) {
+          clientName = clientObj.nom_client;
+        }
+      }
+
       try {
         const payload = {
           description_activite: activityData.description_activite,
           temps_passe: newActivityTime,
           date_activite: formattedDate,
-          type_activite: activityData.type_activite, // The name of the activity type
+          type_activite: activityTypeId, // ENVOIE L'ID STRING AU BACKEND
           override_non_working_day: activityData.override_non_working_day,
           user_id: currentUserId,
-          client_id: activityData.client_id
-            ? parseInt(activityData.client_id)
-            : null,
-          is_billable: isBillable, // Derived from activity type
-          client_name: clientNameForPayload, // The derived client name
+          client_id:
+            activityData.client_id === ""
+              ? null
+              : String(activityData.client_id),
+          is_billable: isActivityBillable,
+          client_name: clientName,
           status: activityData.status || "draft",
         };
 
-        console.log("Payload sent to API:", payload); // Debug log
+        console.log(
+          "CRAPage: Payload envoyé à l'API (POST /api/cra_activities):",
+          JSON.stringify(payload, null, 2)
+        );
 
         const response = await fetch("/api/cra_activities", {
           method: "POST",
@@ -427,30 +335,40 @@ export default function CRAPage() {
           body: JSON.stringify(payload),
         });
 
+        const responseText = await response.text();
+        console.log(
+          "CRAPage: Réponse API brute (POST /api/cra_activities):",
+          responseText
+        );
+
         if (!response.ok) {
-          const errorData = await response.json();
+          let errorData = {};
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (e) {
+            console.error(
+              "CRAPage: Impossible de parser la réponse d'erreur comme JSON:",
+              e
+            );
+          }
           throw new Error(
-            errorData.message || "Erreur lors de la création de l'activité CRA."
+            errorData.message ||
+              `Erreur serveur: ${response.statusText}` ||
+              "Erreur lors de la création de l'activité CRA."
           );
         }
-
-        const newCraActivity = await response.json();
-        newCraActivity.date_activite = parseISO(newCraActivity.date_activite);
-
-        setCraActivities((prevActivities) => {
-          const updatedActivities = [...prevActivities, newCraActivity];
-          console.log(
-            "Nouvelle activité ajoutée à l'état local:",
-            newCraActivity
-          );
-          console.log("Nouvel état des activités CRA:", updatedActivities);
-          return updatedActivities;
-        });
-
+        const newCraActivity = JSON.parse(responseText);
+        setCraActivities((prevActivities) => [
+          ...prevActivities,
+          newCraActivity,
+        ]);
         showMessage("Activité CRA ajoutée avec succès !", "success");
       } catch (error) {
+        console.error(
+          "CRAPage: Erreur lors de l'ajout de l'activité CRA:",
+          error
+        );
         showMessage(`Erreur d'ajout d'activité CRA: ${error.message}`, "error");
-        console.error("Détail de l'erreur d'ajout:", error);
       }
     },
     [
@@ -463,114 +381,157 @@ export default function CRAPage() {
   );
 
   const handleUpdateCraActivity = useCallback(
-    async (id, updateData) => {
+    async (id, activityData) => {
+      if (!currentUserId || currentUserId === "unauthenticated") {
+        showMessage(
+          "Veuillez vous connecter pour modifier des activités.",
+          "error"
+        );
+        return;
+      }
+
+      const dateToFormat = parseISO(activityData.date_activite);
+      if (!isValid(dateToFormat)) {
+        showMessage("Erreur : Date d'activité invalide.", "error");
+        return;
+      }
+      const formattedDate = format(dateToFormat, "yyyy-MM-dd");
+
+      const updatedActivityTime = parseFloat(activityData.temps_passe) || 0;
+      const activityTypeId = String(activityData.type_activite);
+      const selectedActivityTypeDef = activityTypeDefinitions.find(
+        (def) => String(def.id) === activityTypeId
+      );
+
+      let activityTypeName = "";
+      let isActivityBillable = false;
+      let isOvertime = false;
+
+      if (selectedActivityTypeDef) {
+        activityTypeName =
+          selectedActivityTypeDef.name || selectedActivityTypeDef.libelle;
+        isActivityBillable = selectedActivityTypeDef.is_billable === 1;
+        isOvertime = activityTypeName === "Heure supplémentaire";
+      } else {
+        console.error(
+          "Type d'activité introuvable (frontend) lors de la mise à jour:",
+          activityTypeId,
+          "Définitions disponibles (frontend):",
+          activityTypeDefinitions
+        );
+        showMessage(
+          "Type d'activité non valide ou inconnu lors de la mise à jour.",
+          "error"
+        );
+        return;
+      }
+
+      const totalTimeForDayExcludingCurrentAndOvertime = craActivities
+        .filter(
+          (activity) =>
+            activity.user_id === currentUserId &&
+            activity.date_activite === formattedDate &&
+            activity.id !== id &&
+            activity.type_activite !== "Heure supplémentaire"
+        )
+        .reduce(
+          (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+          0
+        );
+
+      if (
+        !isOvertime &&
+        totalTimeForDayExcludingCurrentAndOvertime + updatedActivityTime > 1
+      ) {
+        showMessage(
+          `Le temps total pour le ${format(dateToFormat, "dd MMMM", {
+            locale: fr,
+          })} dépassera 1 jour (${(
+            totalTimeForDayExcludingCurrentAndOvertime + updatedActivityTime
+          ).toFixed(
+            2
+          )}j). Maximum autorisé pour les activités régulières : 1 jour.`,
+          "error"
+        );
+        return;
+      }
+
+      let clientName = null;
+      if (activityData.client_id && clientDefinitions.length > 0) {
+        const clientObj = clientDefinitions.find(
+          (c) => String(c.id) === String(activityData.client_id)
+        );
+        if (clientObj) {
+          clientName = clientObj.nom_client;
+        }
+      }
+
       try {
-        if (updateData.date_activite instanceof Date) {
-          updateData.date_activite = format(
-            updateData.date_activite,
-            "yyyy-MM-dd"
-          );
-        }
+        const payload = {
+          id,
+          description_activite: activityData.description_activite,
+          temps_passe: updatedActivityTime,
+          date_activite: formattedDate,
+          type_activite: activityTypeId, // ENVOIE L'ID STRING AU BACKEND
+          override_non_working_day: activityData.override_non_working_day,
+          user_id: currentUserId,
+          client_id:
+            activityData.client_id === ""
+              ? null
+              : String(activityData.client_id),
+          is_billable: isActivityBillable,
+          client_name: clientName,
+          status: activityData.status || "draft",
+        };
 
-        if (typeof updateData.type_activite !== "string") {
-          const typeDef = activityTypeDefinitions.find(
-            (t) => t.id === updateData.type_activite
-          );
-          if (typeDef) {
-            updateData.type_activite = typeDef.name;
+        console.log(
+          "CRAPage: Payload envoyé à l'API pour la mise à jour:",
+          JSON.stringify(payload, null, 2)
+        );
+
+        const response = await fetch(
+          `/api/cra_activities?action=update-activity`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           }
-        }
+        );
 
-        let derivedClientName = null;
-        if (updateData.client_id) {
-          const clientDef = clientDefinitions.find(
-            (c) => c.id === parseInt(updateData.client_id)
-          );
-          if (clientDef) {
-            derivedClientName = clientDef.name;
-          }
-        }
-        updateData.client_name = derivedClientName;
-
-        updateData.temps_passe = parseFloat(updateData.temps_passe);
-
-        console.log("Updating CRA Activity:", id, updateData);
-        const response = await fetch(`/api/cra_activities/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateData),
-        });
+        const responseText = await response.text();
+        console.log(
+          "CRAPage: Réponse API brute pour la mise à jour:",
+          responseText
+        );
 
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(
             errorData.message ||
-              "Erreur lors de la mise à jour de l'activité CRA."
+              "Erreur lors de la modification de l'activité CRA."
           );
         }
-
-        const updatedActivity =
-          response.status === 200 ? await response.json() : null;
-
-        setCraActivities((prevActivities) =>
-          prevActivities.map((activity) => {
-            if (activity.id === id) {
-              return {
-                ...activity,
-                ...updateData,
-                date_activite: parseISO(updateData.date_activite),
-                ...(updatedActivity
-                  ? {
-                      is_billable: updatedActivity.is_billable,
-                      is_overtime: updatedActivity.is_overtime,
-                    }
-                  : {}),
-              };
-            }
-            return activity;
-          })
-        );
+        fetchData();
         showMessage("Activité CRA mise à jour avec succès !", "success");
       } catch (error) {
+        console.error(
+          "CRAPage: Erreur lors de la mise à jour de l'activité CRA:",
+          error
+        );
         showMessage(
           `Erreur de mise à jour d'activité CRA: ${error.message}`,
           "error"
         );
-        console.error("Détail de l'erreur de mise à jour:", error);
       }
     },
-    [showMessage, clientDefinitions, activityTypeDefinitions]
-  );
-
-  const handleDeleteCraActivity = useCallback(
-    async (id) => {
-      try {
-        console.log("Deleting CRA Activity:", id);
-        const response = await fetch(`/api/cra_activities/${id}`, {
-          method: "DELETE",
-        });
-
-        if (!response.ok && response.status !== 204) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message ||
-              "Erreur lors de la suppression de l'activité CRA."
-          );
-        }
-
-        setCraActivities((prevActivities) =>
-          prevActivities.filter((activity) => activity.id !== id)
-        );
-        showMessage("Activité CRA supprimée avec succès !", "success");
-      } catch (error) {
-        showMessage(
-          `Erreur de suppression d'activité CRA: ${error.message}`,
-          "error"
-        );
-        console.error("Détail de l'erreur de suppression:", error);
-      }
-    },
-    [showMessage]
+    [
+      showMessage,
+      currentUserId,
+      craActivities,
+      clientDefinitions,
+      activityTypeDefinitions,
+      fetchData,
+    ]
   );
 
   if (status === "loading" || !currentUserId) {
@@ -675,11 +636,9 @@ export default function CRAPage() {
           clientDefinitions={clientDefinitions}
           onAddCraActivity={handleAddCraActivity}
           onUpdateCraActivity={handleUpdateCraActivity}
-          onDeleteCraActivity={handleDeleteCraActivity}
+          onDeleteCraActivity={() => {}}
           showMessage={showMessage}
-          onFinalizeMonth={() =>
-            showMessage("Fonctionnalité de finalisation à implémenter", "info")
-          }
+          onFinalizeMonth={() => {}}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
         />
@@ -690,16 +649,10 @@ export default function CRAPage() {
           craActivities={craActivities}
           clientDefinitions={clientDefinitions}
           activityTypeDefinitions={activityTypeDefinitions}
-          onAddCraActivity={handleAddCraActivity}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
           showMessage={showMessage}
-          onUpdateCraStatus={() =>
-            showMessage(
-              "Fonctionnalité de mise à jour de statut à implémenter",
-              "info"
-            )
-          }
+          onUpdateCraStatus={() => {}}
         />
       )}
 
@@ -709,9 +662,9 @@ export default function CRAPage() {
         onUpdateClient={handleUpdateClient}
         onDeleteClient={handleDeleteClient}
         activityTypeDefinitions={activityTypeDefinitions}
-        onAddActivityType={handleAddActivityType}
-        onUpdateActivityType={handleUpdateActivityType}
-        onDeleteActivityType={handleDeleteActivityType}
+        onAddActivityType={() => {}}
+        onUpdateActivityType={() => {}}
+        onDeleteActivityType={() => {}}
         showMessage={showMessage}
       />
 

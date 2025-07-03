@@ -1,41 +1,44 @@
 // app/api/cra_activities/route.js
-import { NextResponse } from "next/server";
 import {
   getAllCraActivitiesController,
   createCraActivityController,
-  getCraActivityByIdController,
   updateCraActivityController,
   deleteCraActivityController,
-} from "./controller";
+} from "./controller"; // Le chemin est relatif au dossier courant
 
+// GET /api/cra_activities?userId=...
 export async function GET(request) {
-  // Passe la requête pour que le contrôleur puisse accéder aux searchParams (userId)
+  // Dans l'App Router, la fonction GET reçoit l'objet Request.
+  // Le contrôleur doit extraire userId de request.nextUrl.searchParams.
   return getAllCraActivitiesController(request);
 }
 
+// POST /api/cra_activities
 export async function POST(request) {
-  const activity = await request.json();
-  return createCraActivityController(activity);
+  // Le contrôleur doit extraire le body via await request.json().
+  return createCraActivityController(request);
 }
 
-// Pour les routes dynamiques comme /api/cra_activities/[id]
-// Assurez-vous que vous avez un dossier [id] à côté de ce route.js
-// et un fichier route.js à l'intérieur de ce dossier [id]
-// Ex: app/api/cra_activities/[id]/route.js
-/*
-export async function GET_BY_ID(request, { params }) { // Cette fonction n'est pas appelée directement par Next.js dans route.js
-  const { id } = params;
-  return getCraActivityByIdController(id);
-}
-*/
+// Si vous avez une route dynamique pour PUT/DELETE (ex: /api/cra_activities/[id]/route.js),
+// les fonctions recevront un deuxième argument 'context' avec 'params'.
+// Pour l'instant, je suppose que l'ID est passé dans le corps ou que c'est une route non dynamique.
+// Si vous avez un fichier [id]/route.js, le code ci-dessous devrait être dans ce fichier.
 
-export async function PUT(request, { params }) {
-  const { id } = params;
-  const updateData = await request.json();
-  return updateCraActivityController(id, updateData);
-}
+// Exemple pour PUT /api/cra_activities/[id] (si vous avez un fichier app/api/cra_activities/[id]/route.js)
+// export async function PUT(request, { params }) {
+//   const id = params.id; // L'ID est dans params
+//   return updateCraActivityController(request, id);
+// }
 
-export async function DELETE(request, { params }) {
-  const { id } = params;
-  return deleteCraActivityController(id);
-}
+// Exemple pour DELETE /api/cra_activities/[id]
+// export async function DELETE(request, { params }) {
+//   const id = params.id; // L'ID est dans params
+//   return deleteCraActivityController(request, id);
+// }
+
+// Si toutes les opérations (GET, POST, PUT, DELETE) sont dans le même route.js
+// et que l'ID pour PUT/DELETE est dans le corps de la requête ou dans les query params,
+// alors les contrôleurs doivent gérer l'extraction de l'ID en interne.
+// Pour l'instant, je vais laisser les contrôleurs PUT/DELETE tels quels,
+// en supposant que l'ID leur est passé par le fichier de route dynamique [id]/route.js
+// ou qu'ils l'extraient du body/query si la route est statique.

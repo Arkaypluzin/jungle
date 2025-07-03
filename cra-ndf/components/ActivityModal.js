@@ -1,6 +1,4 @@
 // components/ActivityModal.js
-"use client";
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { format, parseISO, isValid, isWeekend } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -11,16 +9,16 @@ export default function ActivityModal({
   date, // This is a Date object from CraBoard
   editingActivity,
   clientDefinitions,
-  activityTypeDefinitions,
+  activityTypeDefinitions, // This prop is crucial
   onSaveActivity, // This prop now receives the full activity object
   showMessage,
   isHolidayOrWeekend,
   currentUserId,
 }) {
   const [formData, setFormData] = useState({
-    date_activite: "", // Initialize as string or null
+    date_activite: "",
     client_id: "",
-    activityType: "", // Stores the name of the activity type
+    activityTypeId: "", // Stocke l'ID du type d'activité (DOIT ÊTRE UNE CHAÎNE HEXADÉCIMALE)
     temps_passe: "",
     description_activite: "",
     is_billable: 0,
@@ -31,14 +29,32 @@ export default function ActivityModal({
 
   const [validationErrors, setValidationErrors] = useState({});
 
+  // Détermine si le champ client doit être masqué
+  const selectedActivityType = useMemo(() => {
+    // Comparaison par chaîne pour les IDs hexadécimaux
+    return activityTypeDefinitions.find(
+      (t) => String(t.id) === String(formData.activityTypeId)
+    );
+  }, [formData.activityTypeId, activityTypeDefinitions]);
+
+  const hideClientField =
+    selectedActivityType?.name?.includes("Absence") ||
+    selectedActivityType?.name === "Heure supplémentaire";
+
+  const isWeekendDay =
+    formData.date_activite &&
+    isWeekend(formData.date_activite, { weekStartsOn: 1 });
+  const isHoliday = isHolidayOrWeekend && !isWeekendDay;
+
+  useEffect(() => {
+    console.log(
+      "ActivityModal: >>> Définitions de types d'activité reçues (prop):",
+      JSON.stringify(activityTypeDefinitions, null, 2)
+    );
+  }, [activityTypeDefinitions]);
+
   useEffect(() => {
     if (editingActivity) {
-      // When editing, parse date and find the activity type name
-      const typeName =
-        activityTypeDefinitions.find(
-          (type) => type.id === editingActivity.type_activite // Assuming DB stores type_activite as ID
-        )?.name || editingActivity.type_activite; // Fallback to existing value if name not found or if it's already a name
-
       setFormData({
         ...editingActivity,
         date_activite: editingActivity.date_activite
@@ -48,15 +64,17 @@ export default function ActivityModal({
         override_non_working_day:
           editingActivity.override_non_working_day === 1 ? 1 : 0,
         user_id: editingActivity.user_id || currentUserId,
-        activityType: typeName, // Set the name of the activity type
-        client_id: editingActivity.client_id || "", // Ensure client_id is correctly set
+        // Assurez-vous que editingActivity.type_activite est l'ID STRING ici
+        activityTypeId: String(editingActivity.type_activite) || "", // <-- Assure que c'est une chaîne
+        client_id: editingActivity.client_id
+          ? String(editingActivity.client_id)
+          : "", // Assure que client_id est une chaîne
       });
     } else if (date) {
-      // When adding a new activity
       setFormData({
-        date_activite: date, // Pass the Date object directly for internal form state
+        date_activite: date,
         client_id: "",
-        activityType: "", // Reset activityType to empty for new entries
+        activityTypeId: "",
         temps_passe: "",
         description_activite: "",
         is_billable: 0,
@@ -65,11 +83,10 @@ export default function ActivityModal({
         status: "draft",
       });
     } else {
-      // Reset form if no activity or date is provided
       setFormData({
         date_activite: null,
         client_id: "",
-        activityType: "",
+        activityTypeId: "",
         temps_passe: "",
         description_activite: "",
         is_billable: 0,
@@ -78,7 +95,7 @@ export default function ActivityModal({
         status: "draft",
       });
     }
-    setValidationErrors({}); // Clear errors on modal open/activity change
+    setValidationErrors({});
   }, [isOpen, editingActivity, date, currentUserId, activityTypeDefinitions]);
 
   const handleChange = useCallback((e) => {
@@ -89,24 +106,41 @@ export default function ActivityModal({
     }));
   }, []);
 
+  useEffect(() => {
+    const selectedTypeDef = activityTypeDefinitions.find(
+      (def) => String(def.id) === String(formData.activityTypeId)
+    );
+    if (selectedTypeDef) {
+      setFormData((prev) => ({
+        ...prev,
+        is_billable: selectedTypeDef.is_billable === 1 ? 1 : 0,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        is_billable: 1,
+      }));
+    }
+  }, [formData.activityTypeId, activityTypeDefinitions]);
+
   const validateForm = useCallback(() => {
     const errors = {};
     if (!formData.date_activite || !isValid(formData.date_activite)) {
       errors.date_activite = "La date d'activité est requise.";
     }
-    // Validation for client_id should check if it's required based on activity type
-    // This requires having `activityTypeDefinitions` and `formData.activityType` in scope here
-    const selectedType = activityTypeDefinitions.find(
-      (t) => t.name === formData.activityType
-    );
-    if (selectedType?.requires_client && !formData.client_id) {
-      errors.client_id = "Le client est requis pour ce type d'activité.";
-    } else if (!selectedType?.requires_client && formData.client_id) {
-      // Optional: If client is provided but not required
-      // errors.client_id = "Le client ne doit pas être défini pour ce type d'activité.";
+
+    if (
+      selectedActivityType &&
+      (selectedActivityType.name?.includes("Absence") ||
+        selectedActivityType.name === "Heure supplémentaire")
+    ) {
+      if (formData.client_id) {
+        errors.client_id =
+          "Le client ne doit pas être défini pour ce type d'activité.";
+      }
     }
 
-    if (!formData.activityType) {
+    if (!formData.activityTypeId) {
       errors.activityType = "Le type d'activité est requis.";
     }
     if (!formData.temps_passe || parseFloat(formData.temps_passe) <= 0) {
@@ -118,7 +152,12 @@ export default function ActivityModal({
     }
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
-  }, [formData, isHolidayOrWeekend, activityTypeDefinitions]);
+  }, [
+    formData,
+    isHolidayOrWeekend,
+    activityTypeDefinitions,
+    selectedActivityType,
+  ]);
 
   const handleSubmit = useCallback(
     async (e) => {
@@ -132,30 +171,28 @@ export default function ActivityModal({
         return;
       }
 
-      // Prepare data for saving - ensure names match page.js's handleAddCraActivity
       const dataToSave = {
-        ...formData,
-        // Convert Date object to ISO string for API
         date_activite: format(formData.date_activite, "yyyy-MM-dd"),
         temps_passe: parseFloat(formData.temps_passe),
-        user_id: currentUserId, // Ensure user ID is always explicitly set on save
-        // Pass activityType as type_activite for the API payload
-        type_activite: formData.activityType, // This sends the NAME of the activity type
+        description_activite: formData.description_activite,
+        user_id: currentUserId,
+        // client_id doit rester une chaîne ou null pour le moment, le backend le parse si besoin
+        client_id: formData.client_id === "" ? null : formData.client_id, // <-- Conserve client_id comme chaîne ou null
+        is_billable: formData.is_billable,
+        override_non_working_day: formData.override_non_working_day,
+        type_activite: formData.activityTypeId, // <-- CHANGEMENT CRITIQUE: Envoie l'ID comme CHAÎNE
+        status: formData.status,
       };
 
-      // Remove the original 'activityType' from dataToSave if it's no longer needed in the final payload
-      delete dataToSave.activityType; // This cleans up the property name for the API
-
       console.log(
-        "ActivityModal dataToSave before onSaveActivity:",
+        "ActivityModal: >>> Payload envoyé à onSaveActivity (vers CRAPage):",
         dataToSave
-      ); // Debug log
+      );
 
       try {
-        await onSaveActivity(dataToSave); // Call the parent's function with the prepared data
-        onClose(); // Close modal on success
+        await onSaveActivity(dataToSave);
+        onClose();
       } catch (error) {
-        // showMessage will be handled by the parent component's onSaveActivity
         console.error("Failed to save activity:", error);
       }
     },
@@ -208,49 +245,23 @@ export default function ActivityModal({
 
           <div className="mb-4">
             <label
-              htmlFor="client_id"
-              className="block text-gray-700 text-sm font-bold mb-2"
-            >
-              Client
-            </label>
-            <select
-              id="client_id"
-              name="client_id"
-              value={formData.client_id}
-              onChange={handleChange}
-              className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-            >
-              <option value="">Sélectionner un client</option>
-              {clientDefinitions.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name || client.nom_client}
-                </option>
-              ))}
-            </select>
-            {validationErrors.client_id && (
-              <p className="text-red-500 text-xs italic">
-                {validationErrors.client_id}
-              </p>
-            )}
-          </div>
-
-          <div className="mb-4">
-            <label
-              htmlFor="activityType" // Use "activityType"
+              htmlFor="activityTypeId"
               className="block text-gray-700 text-sm font-bold mb-2"
             >
               Type d'activité
             </label>
             <select
-              id="activityType" // Use "activityType"
-              name="activityType" // Use "activityType"
-              value={formData.activityType}
+              id="activityTypeId"
+              name="activityTypeId"
+              value={formData.activityTypeId}
               onChange={handleChange}
               className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
             >
               <option value="">Sélectionner un type</option>
               {activityTypeDefinitions.map((type) => (
-                <option key={type.id} value={type.name || type.libelle}>
+                <option key={type.id} value={type.id}>
+                  {" "}
+                  {/* value est déjà type.id (string) */}
                   {type.name || type.libelle}
                 </option>
               ))}
@@ -261,6 +272,36 @@ export default function ActivityModal({
               </p>
             )}
           </div>
+
+          {!hideClientField && (
+            <div className="mb-4">
+              <label
+                htmlFor="client_id"
+                className="block text-gray-700 text-sm font-bold mb-2"
+              >
+                Client
+              </label>
+              <select
+                id="client_id"
+                name="client_id"
+                value={formData.client_id}
+                onChange={handleChange}
+                className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              >
+                <option value="">Sélectionner un client</option>
+                {clientDefinitions.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name || client.nom_client}
+                  </option>
+                ))}
+              </select>
+              {validationErrors.client_id && (
+                <p className="text-red-500 text-xs italic">
+                  {validationErrors.client_id}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mb-4">
             <label

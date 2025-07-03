@@ -1,115 +1,79 @@
 // app/api/cra_activities/controller.js
-import { NextResponse } from "next/server";
+// Importe les modèles
+import * as craActivityModel from "./model";
+import * as activityTypeModel from "../activity_type/model";
+import * as clientModel from "../client/model";
+import { NextResponse } from "next/server"; // Importe NextResponse pour les réponses de l'App Router
 
-// Importez votre client Prisma ici ou la logique d'accès à la base de données
-// import prisma from '../../lib/prisma'; // Exemple si vous utilisez Prisma
+// Fonction utilitaire pour charger les définitions de types d'activité depuis la DB
+async function getLoadedActivityTypeDefinitions() {
+  const types = await activityTypeModel.getAllActivityTypes();
+  return types.map((type) => ({
+    ...type,
+    id: type._id ? type._id.toString() : null,
+  }));
+}
 
-// Simuler une base de données d'activités CRA (à remplacer par votre DB réelle)
-// Initialisez-la vide ou avec des données de test si vous n'avez pas de DB connectée
-let craActivitiesDB = [];
+// Fonction utilitaire pour charger les définitions de clients depuis la DB
+async function getLoadedClientDefinitions() {
+  const clients = await clientModel.getAllClients();
+  return clients.map((client) => ({
+    ...client,
+    id: client._id ? client._id.toString() : null,
+  }));
+}
 
-// Simuler des définitions de types d'activité (à remplacer par votre DB réelle)
-// *** TRÈS IMPORTANT : Les noms ici DOIVENT correspondre aux valeurs des options dans ActivityModal.js ***
-const activityTypeDefinitions = [
-  {
-    id: 1,
-    name: "Développement",
-    libelle: "Développement",
-    is_billable: true,
-    is_overtime: false,
-    requires_client: true,
-  },
-  {
-    id: 2,
-    name: "Réunion client",
-    libelle: "Réunion client",
-    is_billable: true,
-    is_overtime: false,
-    requires_client: true,
-  },
-  {
-    id: 3,
-    name: "Formation interne",
-    libelle: "Formation interne",
-    is_billable: false,
-    is_overtime: false,
-    requires_client: false,
-  },
-  {
-    id: 4,
-    name: "Absence",
-    libelle: "Absence",
-    is_billable: false,
-    is_overtime: false,
-    requires_client: false,
-  },
-  {
-    id: 5,
-    name: "Heures supplémentaires",
-    libelle: "Heures supplémentaires",
-    is_billable: true,
-    is_overtime: true,
-    requires_client: true,
-  },
-  // AJOUTÉE : La définition du type 'testing' pour correspondre à ce que le frontend envoie
-  {
-    id: 6,
-    name: "testing",
-    libelle: "Activité de test",
-    is_billable: false,
-    is_overtime: false,
-    requires_client: false,
-  },
-];
-
-// Simuler des définitions de clients (à remplacer par votre DB réelle)
-// Assurez-vous que cette liste est cohérente avec votre base de données réelle
-const clientDefinitions = [
-  { id: 101, name: "Client A", nom_client: "Client A" },
-  { id: 102, name: "Client B", nom_client: "Client B" },
-  { id: 103, name: "Client C", nom_client: "Client C" },
-];
-
+// --- Contrôleur pour GET toutes les activités CRA ---
 export async function getAllCraActivitiesController(request) {
-  const { searchParams } = new URL(request.url); // Accéder directement à request.url
-  const userId = searchParams.get("userId");
+  // Prend l'objet Request
+  const userId = request.nextUrl.searchParams.get("userId"); // <-- FIX : Accède à userId via request.nextUrl.searchParams
 
   if (!userId) {
     return NextResponse.json(
       { message: "User ID is required" },
       { status: 400 }
-    );
+    ); // <-- FIX : Utilise NextResponse
   }
 
   try {
-    // Dans une vraie application, vous feriez une requête à votre base de données
-    // const activities = await prisma.craActivity.findMany({ where: { user_id: userId } });
-
-    // Pour la simulation:
-    const activities = craActivitiesDB.filter(
+    const activities = await craActivityModel.getAllCraActivities();
+    const filteredActivities = activities.filter(
       (activity) => String(activity.user_id) === String(userId)
     );
 
-    return NextResponse.json(activities, { status: 200 });
+    const result = filteredActivities.map((activity) => ({
+      ...activity,
+      id: activity._id ? activity._id.toString() : null,
+      date_activite: activity.date_activite,
+    }));
+
+    return NextResponse.json(result, { status: 200 }); // <-- FIX : Utilise NextResponse
   } catch (error) {
     console.error("Error fetching CRA activities:", error);
     return NextResponse.json(
       { message: "Failed to fetch CRA activities", error: error.message },
       { status: 500 }
-    );
+    ); // <-- FIX : Utilise NextResponse
   }
 }
 
-export async function getCraActivityByIdController(id) {
+// --- Contrôleur pour GET une activité CRA par ID ---
+export async function getCraActivityByIdController(request, id) {
+  // Prend l'objet Request et l'ID
   try {
-    // Dans une vraie application: const craActivity = await prisma.craActivity.findUnique({ where: { id: parseInt(id) } });
-    const craActivity = craActivitiesDB.find(
-      (activity) => String(activity.id) === String(id)
-    );
+    const craActivity = await craActivityModel.getCraActivityById(id);
     if (craActivity) {
-      return NextResponse.json(craActivity);
+      return NextResponse.json(
+        {
+          // <-- FIX : Utilise NextResponse
+          ...craActivity,
+          id: craActivity._id ? craActivity._id.toString() : null,
+        },
+        { status: 200 }
+      );
     } else {
       return NextResponse.json(
+        // <-- FIX : Utilise NextResponse
         { message: "Activité CRA non trouvée." },
         { status: 404 }
       );
@@ -117,6 +81,7 @@ export async function getCraActivityByIdController(id) {
   } catch (error) {
     console.error("Error getting CRA activity by ID:", error);
     return NextResponse.json(
+      // <-- FIX : Utilise NextResponse
       {
         message: "Erreur serveur lors de la récupération de l'activité CRA.",
         error: error.message,
@@ -126,23 +91,30 @@ export async function getCraActivityByIdController(id) {
   }
 }
 
-export async function createCraActivityController(activity) {
+// --- Contrôleur pour créer une activité CRA (POST) ---
+export async function createCraActivityController(request) {
+  // Prend l'objet Request
   try {
-    console.log("Received data for new CRA activity in controller:", activity); // Debug log
+    const activity = await request.json(); // <-- FIX : Utilise request.json() pour l'App Router
+    console.log("Received data for new CRA activity in controller:", activity);
+
+    const activityTypeDefinitions = await getLoadedActivityTypeDefinitions();
+    const clientDefinitions = await getLoadedClientDefinitions();
 
     const {
       date_activite,
-      client_id, // L'ID du client (peut être null)
-      type_activite, // Le nom/libellé du type d'activité (maintenant envoyé par le frontend)
+      client_id,
+      type_activite,
       temps_passe,
       description_activite,
       override_non_working_day,
       user_id,
-      status = "draft", // Par défaut à 'draft' si non fourni
+      status = "draft",
+      is_billable,
+      client_name,
     } = activity;
 
     // --- Validation côté serveur ---
-
     if (!user_id) {
       return NextResponse.json(
         { message: "User ID est requis." },
@@ -168,31 +140,29 @@ export async function createCraActivityController(activity) {
       );
     }
 
-    // Trouver le type d'activité en fonction du NOM (type_activite)
     const selectedActivityType = activityTypeDefinitions.find(
-      (type) => type.name === type_activite
+      (type) => String(type.id) === String(type_activite)
     );
-    console.log("Type d'activité reçu du frontend:", type_activite); // Debug log
+    console.log("Type d'activité ID reçu du frontend:", type_activite);
     console.log(
-      "Définitions de types d'activité (backend):",
+      "Définitions de types d'activité (backend, chargées):",
       activityTypeDefinitions
-    ); // Debug log
-    console.log("Type d'activité sélectionné (backend):", selectedActivityType); // Debug log
+    );
+    console.log("Type d'activité sélectionné (backend):", selectedActivityType);
 
     if (!selectedActivityType) {
       return NextResponse.json(
-        { message: "Type d'activité non valide ou inconnu." },
+        { message: "Type d'activité non valide ou inconnu (backend)." },
         { status: 400 }
       );
     }
 
-    // Trouver le nom du client basé sur l'ID (client_id)
     const clientNameForDB = client_id
-      ? clientDefinitions.find((client) => client.id === parseInt(client_id))
-          ?.name || null
+      ? clientDefinitions.find(
+          (client) => String(client.id) === String(client_id)
+        )?.nom_client || null
       : null;
 
-    // Validation conditionnelle du client
     if (selectedActivityType.requires_client) {
       if (!client_id || !clientNameForDB) {
         return NextResponse.json(
@@ -204,43 +174,38 @@ export async function createCraActivityController(activity) {
         );
       }
     } else {
-      // Si le type d'activité ne requiert PAS de client, assurez-vous que client_id/client_name sont null pour la DB
       if (client_id !== null || clientNameForDB !== null) {
         console.warn(
-          `Client (ID: ${client_id}, Name: ${clientNameForDB}) provided for non-client requiring activity: ${type_activite}. Setting client_id and client_name to null in payload.`
+          `Client (ID: ${client_id}, Name: ${clientNameForDB}) provided for non-client requiring activity: ${selectedActivityType.name}. Setting client_id and client_name to null in payload.`
         );
       }
     }
 
-    // Construire le nouvel objet d'activité avec un ID unique
-    const newCraActivity = {
-      id: Date.now(), // ID unique simple pour la simulation
+    const newCraActivityData = {
       user_id,
       date_activite,
-      client_id: selectedActivityType.requires_client
-        ? parseInt(client_id) || null
-        : null,
-      client_name: selectedActivityType.requires_client
-        ? clientNameForDB || null
-        : null,
-      type_activite, // Le nom du type (ex: "Développement")
+      client_id: client_id || null,
+      client_name: client_name || null,
+      type_activite: type_activite,
+      type_activite_name: selectedActivityType.name,
       temps_passe,
       description_activite,
-      is_billable: selectedActivityType.is_billable, // Déduit du type d'activité
-      is_overtime: selectedActivityType.is_overtime, // Déduit du type d'activité
+      is_billable: is_billable,
+      is_overtime: selectedActivityType.is_overtime,
       override_non_working_day,
       status,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: new Date(),
+      updated_at: new Date(),
     };
 
-    // Dans une vraie application, vous inséreriez ceci dans votre base de données
-    // const createdActivity = await prisma.craActivity.create({ data: newCraActivity });
+    const createdActivity = await craActivityModel.createCraActivity(
+      newCraActivityData
+    );
 
-    // Pour la simulation:
-    craActivitiesDB.push(newCraActivity);
-
-    return NextResponse.json(newCraActivity, { status: 201 });
+    return NextResponse.json(
+      { ...createdActivity, id: createdActivity._id.toString() },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Error creating CRA activity:", error);
     return NextResponse.json(
@@ -250,37 +215,39 @@ export async function createCraActivityController(activity) {
   }
 }
 
-export async function updateCraActivityController(id, updateData) {
+// --- Contrôleur pour mettre à jour une activité CRA (PUT) ---
+export async function updateCraActivityController(request, id) {
+  // Prend l'objet Request et l'ID
   try {
+    const updateData = await request.json(); // <-- FIX : Utilise request.json()
     console.log(
       `Received data for updating CRA activity (ID: ${id}) in controller:`,
       updateData
-    ); // Debug log
+    );
+
+    const activityTypeDefinitions = await getLoadedActivityTypeDefinitions();
+    const clientDefinitions = await getLoadedClientDefinitions();
 
     const {
       temps_passe,
       date_activite,
-      type_activite, // This will be the name from frontend
-      client_id, // This will be the ID from frontend
+      type_activite,
+      client_id,
       description_activite,
       override_non_working_day,
       status,
-      // user_id should not be updated via PUT, it's typically fixed
+      is_billable,
+      client_name,
     } = updateData;
 
-    // Fetch current activity to merge or validate against
-    const existingActivityIndex = craActivitiesDB.findIndex(
-      (activity) => String(activity.id) === String(id)
-    );
-    if (existingActivityIndex === -1) {
+    const existingActivity = await craActivityModel.getCraActivityById(id);
+    if (!existingActivity) {
       return NextResponse.json(
         { message: "Activité CRA non trouvée." },
         { status: 404 }
       );
     }
-    let existingActivity = craActivitiesDB[existingActivityIndex];
 
-    // Basic validation
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { message: "Aucune donnée fournie pour la mise à jour." },
@@ -297,7 +264,6 @@ export async function updateCraActivityController(id, updateData) {
       );
     }
     if (date_activite !== undefined && !date_activite) {
-      // Basic check, better would be isValidDate
       return NextResponse.json(
         { message: "La date d'activité est requise pour la mise à jour." },
         { status: 400 }
@@ -310,32 +276,32 @@ export async function updateCraActivityController(id, updateData) {
       );
     }
 
-    // Find the activity type based on the name from updateData
     const selectedActivityType = type_activite
-      ? activityTypeDefinitions.find((type) => type.name === type_activite)
+      ? activityTypeDefinitions.find(
+          (type) => String(type.id) === String(type_activite)
+        )
       : activityTypeDefinitions.find(
-          (type) => type.name === existingActivity.type_activite
-        ); // Fallback to existing type
+          (type) => String(type.id) === String(existingActivity.type_activite)
+        );
 
     if (!selectedActivityType) {
       return NextResponse.json(
         {
-          message: "Type d'activité non valide ou inconnu pour la mise à jour.",
+          message:
+            "Type d'activité non valide ou inconnu pour la mise à jour (backend).",
         },
         { status: 400 }
       );
     }
 
-    // Derive client_name for database if client_id is provided in updateData
     const clientNameForDB =
       client_id !== undefined && client_id !== null
-        ? clientDefinitions.find((client) => client.id === parseInt(client_id))
-            ?.name || null
-        : existingActivity.client_name; // Keep existing client_name if client_id not provided
+        ? clientDefinitions.find(
+            (client) => String(client.id) === String(client_id)
+          )?.nom_client || null
+        : existingActivity.client_name;
 
-    // Client validation for update
     if (selectedActivityType.requires_client) {
-      // If client is required and either client_id or derived clientName is missing/null
       if (
         (client_id === undefined || client_id === null) &&
         !existingActivity.client_id
@@ -355,47 +321,62 @@ export async function updateCraActivityController(id, updateData) {
         );
       }
     } else {
-      // If client is NOT required, ensure client fields are null in the final update
       if (
         (client_id !== undefined && client_id !== null) ||
         (clientNameForDB !== undefined && clientNameForDB !== null)
       ) {
         console.warn(
-          `Client provided for non-client requiring activity: ${type_activite}. Nullifying client fields.`
+          `Client provided for non-client requiring activity: ${selectedActivityType.name}. Nullifying client fields.`
         );
         updateData.client_id = null;
         updateData.client_name = null;
       } else {
-        updateData.client_id = null; // Explicitly set to null if already null/undefined and not required
+        updateData.client_id = null;
         updateData.client_name = null;
       }
     }
 
-    // Construct the updated activity object
-    const updatedActivity = {
-      ...existingActivity, // Start with existing data
-      ...updateData, // Apply incoming updates
-      // Re-evaluate is_billable and is_overtime based on the (potentially new) type
-      is_billable: selectedActivityType.is_billable,
+    const dataToUpdateModel = {
+      description_activite:
+        description_activite !== undefined
+          ? description_activite
+          : existingActivity.description_activite,
+      temps_passe:
+        temps_passe !== undefined ? temps_passe : existingActivity.temps_passe,
+      date_activite:
+        date_activite !== undefined
+          ? date_activite
+          : existingActivity.date_activite,
+      type_activite: String(
+        type_activite !== undefined
+          ? type_activite
+          : existingActivity.type_activite
+      ),
+      type_activite_name: selectedActivityType.name,
+      override_non_working_day:
+        override_non_working_day !== undefined
+          ? override_non_working_day
+          : existingActivity.override_non_working_day,
+      client_id:
+        client_id !== undefined ? client_id : existingActivity.client_id,
+      client_name:
+        client_name !== undefined ? client_name : existingActivity.client_name,
+      is_billable:
+        is_billable !== undefined ? is_billable : existingActivity.is_billable,
       is_overtime: selectedActivityType.is_overtime,
-      // Ensure client fields are correctly set based on validation
-      client_id: selectedActivityType.requires_client
-        ? parseInt(
-            client_id !== undefined ? client_id : existingActivity.client_id
-          ) || null
-        : null,
-      client_name: selectedActivityType.requires_client
-        ? clientNameForDB !== undefined
-          ? clientNameForDB
-          : existingActivity.client_name || null
-        : null,
-      updated_at: new Date().toISOString(),
+      status: status !== undefined ? status : existingActivity.status,
+      updated_at: new Date(),
     };
 
-    // In a real application: await prisma.craActivity.update({ where: { id: parseInt(id) }, data: updatedActivity });
-    craActivitiesDB[existingActivityIndex] = updatedActivity;
+    const updatedActivity = await craActivityModel.updateCraActivity(
+      id,
+      dataToUpdateModel
+    );
 
-    return NextResponse.json(updatedActivity, { status: 200 });
+    return NextResponse.json(
+      { ...updatedActivity, id: updatedActivity._id.toString() },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("Error updating CRA activity:", error);
     return NextResponse.json(
@@ -408,17 +389,13 @@ export async function updateCraActivityController(id, updateData) {
   }
 }
 
-export async function deleteCraActivityController(id) {
+// --- Contrôleur pour supprimer une activité CRA (DELETE) ---
+export async function deleteCraActivityController(request, id) {
+  // Prend l'objet Request et l'ID
   try {
-    // Dans une vraie application: const result = await prisma.craActivity.delete({ where: { id: parseInt(id) } });
-    const initialLength = craActivitiesDB.length;
-    craActivitiesDB = craActivitiesDB.filter(
-      (activity) => String(activity.id) !== String(id)
-    );
-    const deleted = craActivitiesDB.length < initialLength;
-
+    const { deleted } = await craActivityModel.deleteCraActivity(id);
     if (deleted) {
-      return new NextResponse(null, { status: 204 });
+      return new Response(null, { status: 204 }); // <-- FIX : Utilise Response pour 204 No Content
     } else {
       return NextResponse.json(
         { message: "Activité CRA non trouvée." },

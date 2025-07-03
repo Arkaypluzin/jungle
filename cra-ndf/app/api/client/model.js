@@ -9,7 +9,11 @@ function cleanMongo(obj) {
 
 export async function getAllClients() {
   const db = await getMongoDb();
-  const rows = await db.collection("client").find({}).sort({ nom_client: 1 }).toArray();
+  const rows = await db
+    .collection("client")
+    .find({})
+    .sort({ nom_client: 1 })
+    .toArray();
   return cleanMongo(rows);
 }
 
@@ -28,10 +32,9 @@ export async function createClient(clientData) {
 
 export async function updateClient(id, updateData) {
   const db = await getMongoDb();
-  const { matchedCount } = await db.collection("client").updateOne(
-    { id },
-    { $set: updateData }
-  );
+  const { matchedCount } = await db
+    .collection("client")
+    .updateOne({ id }, { $set: updateData });
   return matchedCount > 0;
 }
 
