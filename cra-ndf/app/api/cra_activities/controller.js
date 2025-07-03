@@ -11,6 +11,9 @@ async function getLoadedActivityTypeDefinitions() {
   return types.map((type) => ({
     ...type,
     id: type._id ? type._id.toString() : null,
+    // Assurez-vous que requires_client et is_overtime sont définis pour tous les types
+    requires_client: type.requires_client ?? true, // Par défaut à true si non spécifié
+    is_overtime: type.is_overtime ?? false, // Par défaut à false si non spécifié
   }));
 }
 
@@ -26,13 +29,13 @@ async function getLoadedClientDefinitions() {
 // --- Contrôleur pour GET toutes les activités CRA ---
 export async function getAllCraActivitiesController(request) {
   // Prend l'objet Request
-  const userId = request.nextUrl.searchParams.get("userId"); // <-- FIX : Accède à userId via request.nextUrl.searchParams
+  const userId = request.nextUrl.searchParams.get("userId"); // Accède à userId via request.nextUrl.searchParams
 
   if (!userId) {
     return NextResponse.json(
-      { message: "User ID is required" },
+      { message: "User ID est requis." },
       { status: 400 }
-    ); // <-- FIX : Utilise NextResponse
+    );
   }
 
   try {
@@ -43,17 +46,20 @@ export async function getAllCraActivitiesController(request) {
 
     const result = filteredActivities.map((activity) => ({
       ...activity,
-      id: activity._id ? activity._id.toString() : null,
+      id: activity._id ? activity._id.toString() : null, // Assure que _id existe
       date_activite: activity.date_activite,
     }));
 
-    return NextResponse.json(result, { status: 200 }); // <-- FIX : Utilise NextResponse
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("Error fetching CRA activities:", error);
     return NextResponse.json(
-      { message: "Failed to fetch CRA activities", error: error.message },
+      {
+        message: "Échec de la récupération des activités CRA.",
+        error: error.message,
+      },
       { status: 500 }
-    ); // <-- FIX : Utilise NextResponse
+    );
   }
 }
 
@@ -65,7 +71,6 @@ export async function getCraActivityByIdController(request, id) {
     if (craActivity) {
       return NextResponse.json(
         {
-          // <-- FIX : Utilise NextResponse
           ...craActivity,
           id: craActivity._id ? craActivity._id.toString() : null,
         },
@@ -73,7 +78,6 @@ export async function getCraActivityByIdController(request, id) {
       );
     } else {
       return NextResponse.json(
-        // <-- FIX : Utilise NextResponse
         { message: "Activité CRA non trouvée." },
         { status: 404 }
       );
@@ -81,7 +85,6 @@ export async function getCraActivityByIdController(request, id) {
   } catch (error) {
     console.error("Error getting CRA activity by ID:", error);
     return NextResponse.json(
-      // <-- FIX : Utilise NextResponse
       {
         message: "Erreur serveur lors de la récupération de l'activité CRA.",
         error: error.message,
@@ -95,7 +98,7 @@ export async function getCraActivityByIdController(request, id) {
 export async function createCraActivityController(request) {
   // Prend l'objet Request
   try {
-    const activity = await request.json(); // <-- FIX : Utilise request.json() pour l'App Router
+    const activity = await request.json(); // Accède au corps de la requête
     console.log("Received data for new CRA activity in controller:", activity);
 
     const activityTypeDefinitions = await getLoadedActivityTypeDefinitions();
@@ -104,14 +107,13 @@ export async function createCraActivityController(request) {
     const {
       date_activite,
       client_id,
-      type_activite,
+      type_activite, // L'ID du type d'activité du frontend
       temps_passe,
       description_activite,
       override_non_working_day,
       user_id,
       status = "draft",
-      is_billable,
-      client_name,
+      // is_billable et client_name du frontend sont ignorés, car ils seront dérivés
     } = activity;
 
     // --- Validation côté serveur ---
@@ -143,13 +145,6 @@ export async function createCraActivityController(request) {
     const selectedActivityType = activityTypeDefinitions.find(
       (type) => String(type.id) === String(type_activite)
     );
-    console.log("Type d'activité ID reçu du frontend:", type_activite);
-    console.log(
-      "Définitions de types d'activité (backend, chargées):",
-      activityTypeDefinitions
-    );
-    console.log("Type d'activité sélectionné (backend):", selectedActivityType);
-
     if (!selectedActivityType) {
       return NextResponse.json(
         { message: "Type d'activité non valide ou inconnu (backend)." },
@@ -157,26 +152,32 @@ export async function createCraActivityController(request) {
       );
     }
 
-    const clientNameForDB = client_id
-      ? clientDefinitions.find(
-          (client) => String(client.id) === String(client_id)
-        )?.nom_client || null
-      : null;
+    let finalClientId = null;
+    let finalClientName = null;
 
     if (selectedActivityType.requires_client) {
-      if (!client_id || !clientNameForDB) {
+      if (!client_id) {
         return NextResponse.json(
-          {
-            message:
-              "Le client est requis pour ce type d'activité (sauf pour les absences).",
-          },
+          { message: "Le client est requis pour ce type d'activité." },
           { status: 400 }
         );
       }
+      const clientObj = clientDefinitions.find(
+        (client) => String(client.id) === String(client_id)
+      );
+      if (!clientObj) {
+        return NextResponse.json(
+          { message: "Client non trouvé pour l'ID fourni." },
+          { status: 400 }
+        );
+      }
+      finalClientId = String(client_id);
+      finalClientName = clientObj.nom_client || clientObj.name; // Utilise nom_client ou name du client
     } else {
-      if (client_id !== null || clientNameForDB !== null) {
+      // Si le type d'activité ne requiert PAS de client, assurez-vous que les champs client sont null
+      if (client_id !== null) {
         console.warn(
-          `Client (ID: ${client_id}, Name: ${clientNameForDB}) provided for non-client requiring activity: ${selectedActivityType.name}. Setting client_id and client_name to null in payload.`
+          `Client ID (${client_id}) fourni pour une activité ne nécessitant pas de client: ${selectedActivityType.name}. Les champs client_id et client_name seront mis à null.`
         );
       }
     }
@@ -184,14 +185,14 @@ export async function createCraActivityController(request) {
     const newCraActivityData = {
       user_id,
       date_activite,
-      client_id: client_id || null,
-      client_name: client_name || null,
-      type_activite: type_activite,
-      type_activite_name: selectedActivityType.name,
+      client_id: finalClientId,
+      client_name: finalClientName,
+      type_activite: String(type_activite), // Stocke l'ID du type
+      type_activite_name: selectedActivityType.name, // Stocke le NOM du type (dérivé)
       temps_passe,
       description_activite,
-      is_billable: is_billable,
-      is_overtime: selectedActivityType.is_overtime,
+      is_billable: selectedActivityType.is_billable, // Dérivé de la définition backend
+      is_overtime: selectedActivityType.is_overtime, // Dérivé de la définition backend
       override_non_working_day,
       status,
       created_at: new Date(),
@@ -201,7 +202,6 @@ export async function createCraActivityController(request) {
     const createdActivity = await craActivityModel.createCraActivity(
       newCraActivityData
     );
-
     return NextResponse.json(
       { ...createdActivity, id: createdActivity._id.toString() },
       { status: 201 }
@@ -209,7 +209,10 @@ export async function createCraActivityController(request) {
   } catch (error) {
     console.error("Error creating CRA activity:", error);
     return NextResponse.json(
-      { message: "Failed to create CRA activity", error: error.message },
+      {
+        message: "Échec de la création de l'activité CRA.",
+        error: error.message,
+      },
       { status: 500 }
     );
   }
@@ -219,7 +222,7 @@ export async function createCraActivityController(request) {
 export async function updateCraActivityController(request, id) {
   // Prend l'objet Request et l'ID
   try {
-    const updateData = await request.json(); // <-- FIX : Utilise request.json()
+    const updateData = await request.json(); // Accède au corps de la requête
     console.log(
       `Received data for updating CRA activity (ID: ${id}) in controller:`,
       updateData
@@ -227,18 +230,6 @@ export async function updateCraActivityController(request, id) {
 
     const activityTypeDefinitions = await getLoadedActivityTypeDefinitions();
     const clientDefinitions = await getLoadedClientDefinitions();
-
-    const {
-      temps_passe,
-      date_activite,
-      type_activite,
-      client_id,
-      description_activite,
-      override_non_working_day,
-      status,
-      is_billable,
-      client_name,
-    } = updateData;
 
     const existingActivity = await craActivityModel.getCraActivityById(id);
     if (!existingActivity) {
@@ -254,6 +245,17 @@ export async function updateCraActivityController(request, id) {
         { status: 400 }
       );
     }
+
+    const {
+      temps_passe,
+      date_activite,
+      type_activite, // L'ID du type d'activité du frontend
+      client_id, // L'ID du client du frontend
+      description_activite,
+      override_non_working_day,
+      status,
+    } = updateData;
+
     if (
       temps_passe !== undefined &&
       (typeof temps_passe !== "number" || temps_passe <= 0)
@@ -282,7 +284,7 @@ export async function updateCraActivityController(request, id) {
         )
       : activityTypeDefinitions.find(
           (type) => String(type.id) === String(existingActivity.type_activite)
-        );
+        ); // Fallback à l'ID existant
 
     if (!selectedActivityType) {
       return NextResponse.json(
@@ -294,46 +296,39 @@ export async function updateCraActivityController(request, id) {
       );
     }
 
-    const clientNameForDB =
-      client_id !== undefined && client_id !== null
-        ? clientDefinitions.find(
-            (client) => String(client.id) === String(client_id)
-          )?.nom_client || null
-        : existingActivity.client_name;
+    let finalClientId = existingActivity.client_id;
+    let finalClientName = existingActivity.client_name;
 
     if (selectedActivityType.requires_client) {
-      if (
-        (client_id === undefined || client_id === null) &&
-        !existingActivity.client_id
-      ) {
+      // Si client_id est explicitement fourni dans updateData, utilisez-le. Sinon, gardez l'existant.
+      const currentClientId =
+        client_id !== undefined ? client_id : existingActivity.client_id;
+      if (!currentClientId) {
         return NextResponse.json(
-          {
-            message:
-              "Le client est requis pour ce type d'activité (sauf pour les absences).",
-          },
+          { message: "Le client est requis pour ce type d'activité." },
           { status: 400 }
         );
       }
-      if (client_id !== undefined && client_id !== null && !clientNameForDB) {
+      const clientObj = clientDefinitions.find(
+        (client) => String(client.id) === String(currentClientId)
+      );
+      if (!clientObj) {
         return NextResponse.json(
           { message: "Client non trouvé pour l'ID fourni." },
           { status: 400 }
         );
       }
+      finalClientId = String(currentClientId);
+      finalClientName = clientObj.nom_client || clientObj.name;
     } else {
-      if (
-        (client_id !== undefined && client_id !== null) ||
-        (clientNameForDB !== undefined && clientNameForDB !== null)
-      ) {
+      // Si le type d'activité ne requiert PAS de client, mettez les champs client à null
+      if (client_id !== undefined && client_id !== null) {
         console.warn(
-          `Client provided for non-client requiring activity: ${selectedActivityType.name}. Nullifying client fields.`
+          `Client ID (${client_id}) fourni pour une activité ne nécessitant pas de client: ${selectedActivityType.name}. Les champs client_id et client_name seront mis à null.`
         );
-        updateData.client_id = null;
-        updateData.client_name = null;
-      } else {
-        updateData.client_id = null;
-        updateData.client_name = null;
       }
+      finalClientId = null;
+      finalClientName = null;
     }
 
     const dataToUpdateModel = {
@@ -351,19 +346,16 @@ export async function updateCraActivityController(request, id) {
         type_activite !== undefined
           ? type_activite
           : existingActivity.type_activite
-      ),
-      type_activite_name: selectedActivityType.name,
+      ), // Stocke l'ID
+      type_activite_name: selectedActivityType.name, // Stocke le NOM (dérivé)
       override_non_working_day:
         override_non_working_day !== undefined
           ? override_non_working_day
           : existingActivity.override_non_working_day,
-      client_id:
-        client_id !== undefined ? client_id : existingActivity.client_id,
-      client_name:
-        client_name !== undefined ? client_name : existingActivity.client_name,
-      is_billable:
-        is_billable !== undefined ? is_billable : existingActivity.is_billable,
-      is_overtime: selectedActivityType.is_overtime,
+      client_id: finalClientId,
+      client_name: finalClientName,
+      is_billable: selectedActivityType.is_billable, // Dérivé
+      is_overtime: selectedActivityType.is_overtime, // Dérivé
       status: status !== undefined ? status : existingActivity.status,
       updated_at: new Date(),
     };
@@ -372,7 +364,6 @@ export async function updateCraActivityController(request, id) {
       id,
       dataToUpdateModel
     );
-
     return NextResponse.json(
       { ...updatedActivity, id: updatedActivity._id.toString() },
       { status: 200 }
@@ -395,7 +386,7 @@ export async function deleteCraActivityController(request, id) {
   try {
     const { deleted } = await craActivityModel.deleteCraActivity(id);
     if (deleted) {
-      return new Response(null, { status: 204 }); // <-- FIX : Utilise Response pour 204 No Content
+      return new Response(null, { status: 204 }); // Retourne une Response vide pour 204 No Content
     } else {
       return NextResponse.json(
         { message: "Activité CRA non trouvée." },

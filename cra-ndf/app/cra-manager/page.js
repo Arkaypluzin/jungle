@@ -35,7 +35,7 @@ export default function CRAPage() {
   const [clientDefinitions, setClientDefinitions] = useState([]);
   const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null); // <-- FIX : Correction ici
+  const [error, setError] = useState(null);
 
   const [toastMessage, setToastMessage] = useState({
     message: "",
@@ -248,15 +248,10 @@ export default function CRAPage() {
         (def) => String(def.id) === activityTypeId
       );
 
-      let activityTypeName = "";
-      let isActivityBillable = false;
-      let isOvertime = false;
+      let isOvertime = false; // Dérivé du type d'activité
 
       if (selectedActivityTypeDef) {
-        activityTypeName =
-          selectedActivityTypeDef.name || selectedActivityTypeDef.libelle;
-        isActivityBillable = selectedActivityTypeDef.is_billable === 1;
-        isOvertime = activityTypeName === "Heure supplémentaire";
+        isOvertime = selectedActivityTypeDef.is_overtime; // Utilise la propriété is_overtime du backend
       } else {
         console.error(
           "Type d'activité introuvable (frontend):",
@@ -268,12 +263,13 @@ export default function CRAPage() {
         return;
       }
 
+      // Validation "1 jour maximum"
       const totalTimeForDayExcludingOvertime = craActivities
         .filter(
           (activity) =>
             activity.user_id === currentUserId &&
             activity.date_activite === formattedDate &&
-            activity.type_activite !== "Heure supplémentaire"
+            activity.is_overtime !== true // Utilise la propriété is_overtime de l'activité existante
         )
         .reduce(
           (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
@@ -281,7 +277,7 @@ export default function CRAPage() {
         );
 
       if (
-        !isOvertime &&
+        !isOvertime && // Si la nouvelle activité n'est PAS une heure supplémentaire
         totalTimeForDayExcludingOvertime + newActivityTime > 1
       ) {
         showMessage(
@@ -303,7 +299,7 @@ export default function CRAPage() {
           (c) => String(c.id) === String(activityData.client_id)
         );
         if (clientObj) {
-          clientName = clientObj.nom_client;
+          clientName = clientObj.nom_client || clientObj.name; // Utilise nom_client ou name
         }
       }
 
@@ -312,15 +308,14 @@ export default function CRAPage() {
           description_activite: activityData.description_activite,
           temps_passe: newActivityTime,
           date_activite: formattedDate,
-          type_activite: activityTypeId, // ENVOIE L'ID STRING AU BACKEND
+          type_activite: activityTypeId, // ID du type
+          // type_activite_name, is_billable, is_overtime, client_name seront dérivés par le backend
           override_non_working_day: activityData.override_non_working_day,
           user_id: currentUserId,
           client_id:
             activityData.client_id === ""
               ? null
               : String(activityData.client_id),
-          is_billable: isActivityBillable,
-          client_name: clientName,
           status: activityData.status || "draft",
         };
 
@@ -403,15 +398,10 @@ export default function CRAPage() {
         (def) => String(def.id) === activityTypeId
       );
 
-      let activityTypeName = "";
-      let isActivityBillable = false;
-      let isOvertime = false;
+      let isOvertime = false; // Dérivé du type d'activité
 
       if (selectedActivityTypeDef) {
-        activityTypeName =
-          selectedActivityTypeDef.name || selectedActivityTypeDef.libelle;
-        isActivityBillable = selectedActivityTypeDef.is_billable === 1;
-        isOvertime = activityTypeName === "Heure supplémentaire";
+        isOvertime = selectedActivityTypeDef.is_overtime; // Utilise la propriété is_overtime du backend
       } else {
         console.error(
           "Type d'activité introuvable (frontend) lors de la mise à jour:",
@@ -426,13 +416,14 @@ export default function CRAPage() {
         return;
       }
 
+      // Validation "1 jour maximum" pour la mise à jour
       const totalTimeForDayExcludingCurrentAndOvertime = craActivities
         .filter(
           (activity) =>
             activity.user_id === currentUserId &&
             activity.date_activite === formattedDate &&
-            activity.id !== id &&
-            activity.type_activite !== "Heure supplémentaire"
+            activity.id !== id && // Exclut l'activité en cours de modification
+            activity.is_overtime !== true // Utilise la propriété is_overtime de l'activité existante
         )
         .reduce(
           (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
@@ -440,7 +431,7 @@ export default function CRAPage() {
         );
 
       if (
-        !isOvertime &&
+        !isOvertime && // Si la nouvelle activité n'est PAS une heure supplémentaire
         totalTimeForDayExcludingCurrentAndOvertime + updatedActivityTime > 1
       ) {
         showMessage(
@@ -462,7 +453,7 @@ export default function CRAPage() {
           (c) => String(c.id) === String(activityData.client_id)
         );
         if (clientObj) {
-          clientName = clientObj.nom_client;
+          clientName = clientObj.nom_client || clientObj.name;
         }
       }
 
@@ -472,15 +463,14 @@ export default function CRAPage() {
           description_activite: activityData.description_activite,
           temps_passe: updatedActivityTime,
           date_activite: formattedDate,
-          type_activite: activityTypeId, // ENVOIE L'ID STRING AU BACKEND
+          type_activite: activityTypeId,
+          // type_activite_name, is_billable, is_overtime, client_name seront dérivés par le backend
           override_non_working_day: activityData.override_non_working_day,
           user_id: currentUserId,
           client_id:
             activityData.client_id === ""
               ? null
               : String(activityData.client_id),
-          is_billable: isActivityBillable,
-          client_name: clientName,
           status: activityData.status || "draft",
         };
 
@@ -490,7 +480,7 @@ export default function CRAPage() {
         );
 
         const response = await fetch(
-          `/api/cra_activities?action=update-activity`,
+          `/api/cra_activities?id=${id}`, // Passe l'ID dans l'URL pour la route PUT
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -505,13 +495,22 @@ export default function CRAPage() {
         );
 
         if (!response.ok) {
-          const errorData = await response.json();
+          let errorData = {};
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (e) {
+            console.error(
+              "CRAPage: Impossible de parser la réponse d'erreur comme JSON:",
+              e
+            );
+          }
           throw new Error(
             errorData.message ||
+              `Erreur serveur: ${response.statusText}` ||
               "Erreur lors de la modification de l'activité CRA."
           );
         }
-        fetchData();
+        fetchData(); // Re-fetch all activities to update state
         showMessage("Activité CRA mise à jour avec succès !", "success");
       } catch (error) {
         console.error(
@@ -532,6 +531,86 @@ export default function CRAPage() {
       activityTypeDefinitions,
       fetchData,
     ]
+  );
+
+  const handleDeleteCraActivity = useCallback(
+    async (id) => {
+      if (!currentUserId || currentUserId === "unauthenticated") {
+        showMessage(
+          "Veuillez vous connecter pour supprimer des activités.",
+          "error"
+        );
+        return;
+      }
+      try {
+        const response = await fetch(`/api/cra_activities?id=${id}`, {
+          // Passe l'ID dans l'URL
+          method: "DELETE",
+        });
+
+        if (response.status === 204) {
+          console.log("Activité CRA supprimée avec succès (204 No Content).");
+        } else if (!response.ok) {
+          let errorData = {};
+          try {
+            errorData = await response.json();
+          } catch (e) {
+            console.error(
+              "CRAPage: Impossible de parser la réponse d'erreur comme JSON (DELETE):",
+              e
+            );
+          }
+          throw new Error(
+            errorData.message ||
+              `Erreur serveur: ${response.statusText}` ||
+              "Échec de la suppression de l'activité CRA."
+          );
+        }
+        fetchData(); // Re-fetch all activities to update state
+        showMessage("Activité CRA supprimée avec succès !", "success");
+      } catch (error) {
+        console.error(
+          "Erreur lors de la suppression de l'activité CRA:",
+          error
+        );
+        showMessage(
+          `Erreur de suppression d'activité CRA: ${error.message}`,
+          "error"
+        );
+      }
+    },
+    [showMessage, currentUserId, fetchData]
+  );
+
+  const handleFinalizeMonth = useCallback(
+    async (userId, year, month) => {
+      try {
+        // Simule l'appel API pour la finalisation
+        console.log(
+          `Finalisation du mois ${month}/${year} pour l'utilisateur ${userId}`
+        );
+        // Ici, vous feriez un appel à votre API backend pour finaliser le mois
+        // Exemple:
+        // const response = await fetch('/api/cra_finalize_month', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify({ userId, year, month }),
+        // });
+        // if (!response.ok) {
+        //   const errorData = await response.json();
+        //   throw new Error(errorData.message || 'Échec de la finalisation du mois.');
+        // }
+        // const result = await response.json();
+        // console.log('Finalisation réussie:', result);
+
+        showMessage("Mois finalisé avec succès (simulé) !", "success");
+        fetchData(); // Re-fetch activities to update their status on the board
+      } catch (error) {
+        console.error("Erreur lors de la finalisation du mois:", error);
+        showMessage(`Échec de la finalisation: ${error.message}`, "error");
+      }
+    },
+    [showMessage, fetchData]
   );
 
   if (status === "loading" || !currentUserId) {
@@ -636,9 +715,9 @@ export default function CRAPage() {
           clientDefinitions={clientDefinitions}
           onAddCraActivity={handleAddCraActivity}
           onUpdateCraActivity={handleUpdateCraActivity}
-          onDeleteCraActivity={() => {}}
+          onDeleteCraActivity={handleDeleteCraActivity}
           showMessage={showMessage}
-          onFinalizeMonth={() => {}}
+          onFinalizeMonth={handleFinalizeMonth}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
         />

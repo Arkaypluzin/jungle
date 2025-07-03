@@ -1,7 +1,7 @@
 // components/CraBoard.js
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import {
   format,
   addMonths,
@@ -20,9 +20,9 @@ import {
   isBefore,
 } from "date-fns";
 import { fr } from "date-fns/locale";
-import ActivityModal from "./ActivityModal";
-import SummaryReport from "./SummaryReport";
-import ConfirmationModal from "./ConfirmationModal";
+import ActivityModal from "./ActivityModal"; // Assurez-vous que le chemin est correct
+import SummaryReport from "./SummaryReport"; // Assurez-vous que le chemin est correct
+import ConfirmationModal from "./ConfirmationModal"; // Assurez-vous que le chemin est correct
 
 const dayNames = [
   "Dimanche",
@@ -47,22 +47,16 @@ export default function CraBoard({
   currentUserName,
 }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
-
   const [editingActivity, setEditingActivity] = useState(null);
-
   const [publicHolidays, setPublicHolidays] = useState([]);
   const [isHolidayOrWeekendSelected, setIsHolidayOrWeekendSelected] =
     useState(false);
-
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [selectedDateForModal, setSelectedDateForModal] = useState(null);
-
   const [showSummaryReport, setShowSummaryReport] = useState(false);
   const [summaryReportMonth, setSummaryReportMonth] = useState(null);
-
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState(null);
-
   const [showResetMonthConfirmModal, setShowResetMonthConfirmModal] =
     useState(false);
   const [showFinalizeMonthConfirmModal, setShowFinalizeMonthConfirmModal] =
@@ -77,14 +71,12 @@ export default function CraBoard({
   const fetchPublicHolidays = useCallback(async () => {
     const year = selectedDate.getFullYear();
     try {
-      // Use your internal API route to fetch public holidays
       const response = await fetch(`/api/public_holidays?year=${year}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to fetch public holidays");
       }
       const data = await response.json();
-      // Format the dates as 'yyyy-MM-dd' strings
       const formattedHolidays = data.map((holiday) =>
         format(new Date(holiday.date), "yyyy-MM-dd")
       );
@@ -95,8 +87,7 @@ export default function CraBoard({
         `Impossible de charger les jours fériés : ${error.message}`,
         "error"
       );
-      // Keep mock holidays or clear them if API fails
-      setPublicHolidays([]); // Clear if API fails
+      setPublicHolidays([]);
     }
   }, [selectedDate, showMessage]);
 
@@ -118,15 +109,14 @@ export default function CraBoard({
       (activity) =>
         activity.user_id === currentUserId &&
         activity.date_activite &&
-        isValid(activity.date_activite) &&
-        isSameMonth(activity.date_activite, selectedDate)
+        isValid(parseISO(activity.date_activite)) && // Parse the string date
+        isSameMonth(parseISO(activity.date_activite), selectedDate) // Parse the string date
     );
 
     if (userActivitiesInMonth.length === 0) return "empty";
 
     const statuses = new Set(userActivitiesInMonth.map((a) => a.status));
 
-    // Determine overall status based on activity statuses
     if (statuses.has("validated")) return "validated";
     if (statuses.has("finalized")) return "finalized";
     if (statuses.has("rejected")) return "rejected";
@@ -174,7 +164,7 @@ export default function CraBoard({
       const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
 
       setSelectedDateForModal(dayDate);
-      setEditingActivity(null);
+      setEditingActivity(null); // S'assurer que nous ajoutons, pas modifions
       setIsHolidayOrWeekendSelected(isNonWorkingDay);
       setShowActivityModal(true);
     },
@@ -199,7 +189,8 @@ export default function CraBoard({
         return;
       }
 
-      const activityDate = activity.date_activite;
+      // IMPORTANT: parseISO car activity.date_activite vient de la DB en string
+      const activityDate = parseISO(activity.date_activite);
       if (!activityDate || !isValid(activityDate)) {
         console.error(
           "handleActivityClick: Date d'activité invalide de la base de données",
@@ -229,6 +220,33 @@ export default function CraBoard({
     setEditingActivity(null);
     setIsHolidayOrWeekendSelected(false);
   }, []);
+
+  const handleSaveActivity = useCallback(
+    async (activityData) => {
+      try {
+        if (editingActivity) {
+          // Appelle la fonction de mise à jour du parent avec l'ID et les données
+          await onUpdateCraActivity(editingActivity.id, activityData);
+          showMessage("Activité modifiée avec succès !", "success");
+        } else {
+          // Appelle la fonction d'ajout du parent avec les données
+          await onAddCraActivity(activityData);
+          showMessage("Activité ajoutée avec succès !", "success");
+        }
+        handleCloseActivityModal(); // Ferme le modal après sauvegarde
+      } catch (error) {
+        console.error("Erreur lors de la sauvegarde de l'activité:", error);
+        showMessage(`Échec de la sauvegarde: ${error.message}`, "error");
+      }
+    },
+    [
+      editingActivity,
+      onAddCraActivity,
+      onUpdateCraActivity,
+      showMessage,
+      handleCloseActivityModal,
+    ]
+  );
 
   const requestDeleteFromCalendar = useCallback(
     (activityId, event) => {
@@ -266,6 +284,7 @@ export default function CraBoard({
     if (activityToDelete) {
       try {
         await onDeleteCraActivity(activityToDelete);
+        showMessage("Activité supprimée avec succès !", "success"); // Message de succès ici
       } catch (error) {
         console.error("Erreur lors de la suppression du calendrier :", error);
         showMessage(`Erreur de suppression : ${error.message}`, "error");
@@ -302,8 +321,8 @@ export default function CraBoard({
       (activity) =>
         activity.user_id === currentUserId &&
         activity.date_activite &&
-        isValid(activity.date_activite) &&
-        isSameMonth(activity.date_activite, selectedDate) &&
+        isValid(parseISO(activity.date_activite)) && // Parse the string date
+        isSameMonth(parseISO(activity.date_activite), selectedDate) && // Parse the string date
         activity.status === "draft"
     );
 
@@ -519,7 +538,8 @@ export default function CraBoard({
           </svg>
         </button>
         <h2 className="text-2xl font-semibold text-blue-800 flex items-center">
-          {format(selectedDate, "MMMM", { locale: fr })}
+          {format(selectedDate, "MMMM yyyy", { locale: fr })}{" "}
+          {/* Ajout de l'année */}
           {statusBadge}
         </h2>
         <button
@@ -549,6 +569,7 @@ export default function CraBoard({
   const renderDaysOfWeek = () => {
     const days = [];
     const dateFormat = "EEEE";
+    // Start week on Monday for French locale
     const startWeekDay = startOfWeek(new Date(), {
       locale: fr,
       weekStartsOn: 1,
@@ -577,6 +598,7 @@ export default function CraBoard({
     const allCells = [];
     let day = startCalendarDay;
 
+    // Jours du mois précédent pour remplir le début du calendrier
     while (isBefore(day, monthStart)) {
       allCells.push(
         <div
@@ -587,38 +609,55 @@ export default function CraBoard({
       day = addDays(day, 1);
     }
 
+    // Jours du mois courant
     for (let i = 0; i < numDaysInMonth; i++) {
       const currentDay = addDays(monthStart, i);
       const formattedDate = format(currentDay, "d");
-      const cloneDay = currentDay;
 
+      // Filtrer les activités pour le jour courant et l'utilisateur actuel
       const activitiesForDay = craActivities
         .filter(
           (activity) =>
-            activity.user_id === currentUserId &&
+            String(activity.user_id) === String(currentUserId) && // Assurer la comparaison de chaînes
             activity.date_activite &&
-            isValid(activity.date_activite) &&
-            isSameDay(activity.date_activite, cloneDay)
+            isValid(parseISO(activity.date_activite)) && // IMPORTANT: Parse la date string de la DB
+            isSameDay(parseISO(activity.date_activite), currentDay)
         )
         .sort((a, b) => {
-          if ((a.type_activite || "") < (b.type_activite || "")) return -1;
-          if ((a.type_activite || "") > (b.type_activite || "")) return 1;
+          // Tri par type d'activité puis par client
+          const typeA =
+            activityTypeDefinitions.find(
+              (t) => String(t.id) === String(a.type_activite)
+            )?.name ||
+            a.type_activite_name ||
+            a.type_activite;
+          const typeB =
+            activityTypeDefinitions.find(
+              (t) => String(t.id) === String(b.type_activite)
+            )?.name ||
+            b.type_activite_name ||
+            b.type_activite;
+          if ((typeA || "") < (typeB || "")) return -1;
+          if ((typeA || "") > (typeB || "")) return 1;
+
           const clientA =
-            clientDefinitions.find((c) => c.id === a.client_id)?.name ||
-            clientDefinitions.find((c) => c.id === a.client_id)?.nom_client ||
+            clientDefinitions.find((c) => String(c.id) === String(a.client_id))
+              ?.name ||
+            a.client_name ||
             "";
           const clientB =
-            clientDefinitions.find((c) => c.id === b.client_id)?.name ||
-            clientDefinitions.find((c) => c.id === b.client_id)?.nom_client ||
+            clientDefinitions.find((c) => String(c.id) === String(b.client_id))
+              ?.name ||
+            b.client_name ||
             "";
           if (clientA < clientB) return -1;
           if (clientA > clientB) return 1;
           return 0;
         });
 
-      const isToday = isSameDay(cloneDay, new Date());
-      const isWeekendDay = isWeekend(cloneDay, { weekStartsOn: 1 });
-      const isPublicHolidayDay = isPublicHoliday(cloneDay);
+      const isTodayHighlight = isSameDay(currentDay, new Date());
+      const isWeekendDay = isWeekend(currentDay, { weekStartsOn: 1 });
+      const isPublicHolidayDay = isPublicHoliday(currentDay);
 
       const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
 
@@ -627,7 +666,7 @@ export default function CraBoard({
         transition duration-200 overflow-hidden relative
       `;
 
-      if (isToday) {
+      if (isTodayHighlight) {
         cellClasses += " bg-blue-100 border-blue-500 shadow-md text-blue-800";
       } else if (isNonWorkingDay) {
         cellClasses += " bg-gray-200 text-gray-500 cursor-not-allowed";
@@ -639,12 +678,12 @@ export default function CraBoard({
       allCells.push(
         <div
           className={cellClasses}
-          key={format(cloneDay, "yyyy-MM-dd")}
-          onClick={() => handleDayClick(cloneDay)}
+          key={format(currentDay, "yyyy-MM-dd")}
+          onClick={() => handleDayClick(currentDay)}
         >
           <span
             className={`text-sm font-semibold mb-1 ${
-              isToday ? "text-blue-800" : ""
+              isTodayHighlight ? "text-blue-800" : ""
             }`}
           >
             {formattedDate}
@@ -673,21 +712,22 @@ export default function CraBoard({
 
           <div className="flex-grow overflow-y-auto w-full pr-1 custom-scrollbar">
             {activitiesForDay.map((activity) => {
+              // Trouver le client et le type d'activité par leur ID
               const client = clientDefinitions.find(
-                (c) => c.id === activity.client_id
+                (c) => String(c.id) === String(activity.client_id)
               );
               const clientLabel = client
                 ? client.name || client.nom_client
-                : activity.client_name || "Non attribué";
+                : activity.client_name || "Non attribué"; // Fallback au nom stocké si ID non trouvé
 
               const activityTypeObj = activityTypeDefinitions.find(
-                (type) =>
-                  type.name === activity.type_activite ||
-                  type.id === activity.type_activite
+                (type) => String(type.id) === String(activity.type_activite) // Recherche par ID
               );
               const activityTypeLabel = activityTypeObj
                 ? activityTypeObj.name || activityTypeObj.libelle
-                : activity.type_activite || "Activité";
+                : activity.type_activite_name ||
+                  activity.type_activite ||
+                  "Activité"; // Fallback au nom stocké ou ID
 
               const timeSpentLabel = activity.temps_passe
                 ? `${parseFloat(activity.temps_passe)}j`
@@ -798,7 +838,8 @@ export default function CraBoard({
       day = addDays(day, 1);
     }
 
-    const totalCells = 6 * 7;
+    // Jours du mois suivant pour remplir la fin du calendrier
+    const totalCells = 6 * 7; // Assure 6 semaines complètes pour le calendrier
     while (allCells.length < totalCells) {
       allCells.push(
         <div
@@ -835,10 +876,10 @@ export default function CraBoard({
     return craActivities
       .filter(
         (activity) =>
-          activity.user_id === currentUserId &&
+          String(activity.user_id) === String(currentUserId) && // Assurer la comparaison de chaînes
           activity.date_activite &&
-          isValid(activity.date_activite) &&
-          isSameMonth(activity.date_activite, selectedDate)
+          isValid(parseISO(activity.date_activite)) && // Parse the string date
+          isSameMonth(parseISO(activity.date_activite), selectedDate) // Parse the string date
       )
       .reduce(
         (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
@@ -962,9 +1003,7 @@ export default function CraBoard({
         editingActivity={editingActivity}
         clientDefinitions={clientDefinitions}
         activityTypeDefinitions={activityTypeDefinitions}
-        onSaveActivity={
-          editingActivity ? onUpdateCraActivity : onAddCraActivity
-        }
+        onSaveActivity={handleSaveActivity}
         showMessage={showMessage}
         isHolidayOrWeekend={isHolidayOrWeekendSelected}
         currentUserId={currentUserId}
@@ -979,8 +1018,8 @@ export default function CraBoard({
           activityTypeDefinitions={activityTypeDefinitions}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
-          // Ensure publicHolidays passed to SummaryReport are Date objects if needed by that component
-          publicHolidays={publicHolidays.map((dateStr) => parseISO(dateStr))}
+          onClose={handleToggleSummaryReport}
+          showMessage={showMessage}
         />
       )}
 
@@ -989,43 +1028,28 @@ export default function CraBoard({
         onClose={cancelDeleteActivity}
         onConfirm={confirmDeleteActivity}
         title="Confirmer la suppression"
-        message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible."
+        message="Êtes-vous sûr de vouloir supprimer cette activité ?"
       />
-
       <ConfirmationModal
         isOpen={showResetMonthConfirmModal}
         onClose={cancelResetMonth}
         onConfirm={confirmResetMonth}
         title="Confirmer la réinitialisation du mois"
-        message={`Êtes-vous sûr de vouloir supprimer toutes les activités "Brouillon" pour ${format(
-          selectedDate,
-          "MMMM",
-          { locale: fr }
-        )} ? Les activités finalisées ou validées ne seront pas affectées.`}
+        message="Toutes les activités en brouillon de ce mois seront supprimées. Êtes-vous sûr ?"
       />
-
       <ConfirmationModal
         isOpen={showFinalizeMonthConfirmModal}
         onClose={cancelFinalizeMonth}
         onConfirm={confirmFinalizeMonth}
         title="Confirmer la finalisation du mois"
-        message={`Êtes-vous sûr de vouloir finaliser le CRA pour ${format(
-          selectedDate,
-          "MMMM",
-          { locale: fr }
-        )} ? Cette action marquera toutes les activités "Brouillon" comme "Finalisées".`}
+        message="La finalisation rendra les activités non modifiables. Êtes-vous sûr de vouloir finaliser ce mois ?"
       />
-
       <ConfirmationModal
         isOpen={showSendConfirmModal}
         onClose={cancelSendCra}
         onConfirm={confirmSendCra}
         title="Confirmer l'envoi du CRA"
-        message={`Êtes-vous sûr de vouloir envoyer le CRA pour ${format(
-          selectedDate,
-          "MMMM",
-          { locale: fr }
-        )} ? Cette action est simulée pour l'instant.`}
+        message="Ceci simulera l'envoi du CRA. Êtes-vous sûr de vouloir continuer ?"
       />
     </div>
   );
