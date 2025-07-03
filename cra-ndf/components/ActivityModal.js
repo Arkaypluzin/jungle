@@ -1,329 +1,362 @@
 // components/ActivityModal.js
-import React, { useState, useEffect } from "react";
-import { format, isWeekend } from "date-fns";
+"use client";
+
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { format, parseISO, isValid, isWeekend } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export default function ActivityModal({
   isOpen,
   onClose,
-  selectedDate,
-  activityTypeDefinitions = [],
-  clientDefinitions = [],
+  date, // This is a Date object from CraBoard
   editingActivity,
-  onSave,
-  isHolidayOrWeekendSelected,
+  clientDefinitions,
+  activityTypeDefinitions,
+  onSaveActivity, // This prop now receives the full activity object
   showMessage,
+  isHolidayOrWeekend,
+  currentUserId,
 }) {
-  const [tempsPasse, setTempsPasse] = useState("");
-  const [typeActivite, setTypeActivite] = useState("");
-  const [descriptionActivite, setDescriptionActivite] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [overrideNonWorkingDay, setOverrideNonWorkingDay] = useState(false);
-  const [isBillable, setIsBillable] = useState(true); // Réintroduit l'état local pour isBillable
+  const [formData, setFormData] = useState({
+    date_activite: "", // Initialize as string or null
+    client_id: "",
+    activityType: "", // Stores the name of the activity type
+    temps_passe: "",
+    description_activite: "",
+    is_billable: 0,
+    override_non_working_day: 0,
+    user_id: currentUserId,
+    status: "draft", // Default status for new activities
+  });
 
-  // Effet pour initialiser les champs du formulaire
+  const [validationErrors, setValidationErrors] = useState({});
+
   useEffect(() => {
     if (editingActivity) {
-      setTempsPasse(editingActivity.temps_passe || "");
-      setTypeActivite(editingActivity.type_activite || "");
-      setDescriptionActivite(editingActivity.description_activite || "");
-      setClientId(
-        editingActivity.client_id ? String(editingActivity.client_id) : ""
-      );
-      setOverrideNonWorkingDay(editingActivity.override_non_working_day === 1);
-      setIsBillable(editingActivity.is_billable === 1); // Charger la valeur existante de l'activité
-    } else {
-      setTempsPasse("");
-      setTypeActivite("");
-      setDescriptionActivite("");
-      setClientId("");
-      setOverrideNonWorkingDay(false);
-      setIsBillable(true); // Valeur par défaut pour une nouvelle activité (sera ajustée par le type)
-    }
-  }, [editingActivity]);
+      // When editing, parse date and find the activity type name
+      const typeName =
+        activityTypeDefinitions.find(
+          (type) => type.id === editingActivity.type_activite // Assuming DB stores type_activite as ID
+        )?.name || editingActivity.type_activite; // Fallback to existing value if name not found or if it's already a name
 
-  // Effet pour mettre à jour isBillable lorsque le type d'activité change
-  useEffect(() => {
-    const selectedTypeDef = activityTypeDefinitions.find(
-      (def) => def.name === typeActivite
-    );
-    if (selectedTypeDef) {
-      setIsBillable(selectedTypeDef.is_billable === 1);
-    } else if (typeActivite === "Heure supplémentaire") {
-      // Cas spécial pour "Heure supplémentaire" si non défini dans activityTypeDefinitions
-      setIsBillable(true); // Supposons que les heures supplémentaires sont facturables par défaut
+      setFormData({
+        ...editingActivity,
+        date_activite: editingActivity.date_activite
+          ? parseISO(editingActivity.date_activite)
+          : null,
+        is_billable: editingActivity.is_billable === 1 ? 1 : 0,
+        override_non_working_day:
+          editingActivity.override_non_working_day === 1 ? 1 : 0,
+        user_id: editingActivity.user_id || currentUserId,
+        activityType: typeName, // Set the name of the activity type
+        client_id: editingActivity.client_id || "", // Ensure client_id is correctly set
+      });
+    } else if (date) {
+      // When adding a new activity
+      setFormData({
+        date_activite: date, // Pass the Date object directly for internal form state
+        client_id: "",
+        activityType: "", // Reset activityType to empty for new entries
+        temps_passe: "",
+        description_activite: "",
+        is_billable: 0,
+        override_non_working_day: 0,
+        user_id: currentUserId,
+        status: "draft",
+      });
     } else {
-      setIsBillable(true); // Par défaut facturable si le type n'est pas trouvé
+      // Reset form if no activity or date is provided
+      setFormData({
+        date_activite: null,
+        client_id: "",
+        activityType: "",
+        temps_passe: "",
+        description_activite: "",
+        is_billable: 0,
+        override_non_working_day: 0,
+        user_id: currentUserId,
+        status: "draft",
+      });
     }
-  }, [typeActivite, activityTypeDefinitions]);
+    setValidationErrors({}); // Clear errors on modal open/activity change
+  }, [isOpen, editingActivity, date, currentUserId, activityTypeDefinitions]);
+
+  const handleChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? (checked ? 1 : 0) : value,
+    }));
+  }, []);
+
+  const validateForm = useCallback(() => {
+    const errors = {};
+    if (!formData.date_activite || !isValid(formData.date_activite)) {
+      errors.date_activite = "La date d'activité est requise.";
+    }
+    // Validation for client_id should check if it's required based on activity type
+    // This requires having `activityTypeDefinitions` and `formData.activityType` in scope here
+    const selectedType = activityTypeDefinitions.find(
+      (t) => t.name === formData.activityType
+    );
+    if (selectedType?.requires_client && !formData.client_id) {
+      errors.client_id = "Le client est requis pour ce type d'activité.";
+    } else if (!selectedType?.requires_client && formData.client_id) {
+      // Optional: If client is provided but not required
+      // errors.client_id = "Le client ne doit pas être défini pour ce type d'activité.";
+    }
+
+    if (!formData.activityType) {
+      errors.activityType = "Le type d'activité est requis.";
+    }
+    if (!formData.temps_passe || parseFloat(formData.temps_passe) <= 0) {
+      errors.temps_passe = "Le temps passé doit être un nombre positif.";
+    }
+    if (isHolidayOrWeekend && formData.override_non_working_day === 0) {
+      errors.override_non_working_day =
+        "Vous devez cocher 'Dérogation' pour les jours non ouvrés.";
+    }
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  }, [formData, isHolidayOrWeekend, activityTypeDefinitions]);
+
+  const handleSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+
+      if (!validateForm()) {
+        showMessage(
+          "Veuillez corriger les erreurs dans le formulaire.",
+          "error"
+        );
+        return;
+      }
+
+      // Prepare data for saving - ensure names match page.js's handleAddCraActivity
+      const dataToSave = {
+        ...formData,
+        // Convert Date object to ISO string for API
+        date_activite: format(formData.date_activite, "yyyy-MM-dd"),
+        temps_passe: parseFloat(formData.temps_passe),
+        user_id: currentUserId, // Ensure user ID is always explicitly set on save
+        // Pass activityType as type_activite for the API payload
+        type_activite: formData.activityType, // This sends the NAME of the activity type
+      };
+
+      // Remove the original 'activityType' from dataToSave if it's no longer needed in the final payload
+      delete dataToSave.activityType; // This cleans up the property name for the API
+
+      console.log(
+        "ActivityModal dataToSave before onSaveActivity:",
+        dataToSave
+      ); // Debug log
+
+      try {
+        await onSaveActivity(dataToSave); // Call the parent's function with the prepared data
+        onClose(); // Close modal on success
+      } catch (error) {
+        // showMessage will be handled by the parent component's onSaveActivity
+        console.error("Failed to save activity:", error);
+      }
+    },
+    [
+      formData,
+      validateForm,
+      onSaveActivity,
+      onClose,
+      showMessage,
+      currentUserId,
+    ]
+  );
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    if (
-      !selectedDate ||
-      !(selectedDate instanceof Date) ||
-      isNaN(selectedDate.getTime())
-    ) {
-      showMessage(
-        "Erreur interne : La date sélectionnée est invalide. Veuillez réessayer.",
-        "error"
-      );
-      console.error(
-        "ActivityModal: selectedDate invalide au moment de la soumission",
-        selectedDate
-      );
-      return;
-    }
-
-    if (!tempsPasse || !typeActivite) {
-      showMessage(
-        "Veuillez remplir le temps passé et le type d'activité.",
-        "error"
-      );
-      return;
-    }
-
-    const parsedTempsPasse = parseFloat(tempsPasse);
-
-    // Ensure individual activity time is within bounds
-    if (parsedTempsPasse <= 0 || parsedTempsPasse > 1) {
-      showMessage("Le temps passé doit être entre 0.1 et 1 jour.", "error");
-      return;
-    }
-
-    // Validate against specific allowed values
-    const allowedValues = [0.25, 0.5, 0.75, 1.0];
-    // Check if the parsedTempsPasse is in the allowedValues, considering potential floating point inaccuracies by rounding
-    if (
-      !allowedValues.some((val) => Math.abs(val - parsedTempsPasse) < 0.001)
-    ) {
-      showMessage("Le temps passé doit être 0.25, 0.5, 0.75 ou 1.", "error");
-      return;
-    }
-
-    const activityTypeDefinition = activityTypeDefinitions.find(
-      (def) => def.name === typeActivite
-    );
-    const isAbsence = activityTypeDefinition?.name?.includes("Absence");
-    const isHeureSupp = typeActivite === "Heure supplémentaire"; // Check for "Heure supplémentaire"
-    // isBillable est maintenant un état local, déjà mis à jour par l'effet ci-dessus
-
-    const isSelectedDateWeekend =
-      selectedDate && isWeekend(selectedDate, { weekStartsOn: 1 });
-
-    // Rule for non-working days, apply only if not an Absence AND not an "Heure supplémentaire"
-    if (
-      isHolidayOrWeekendSelected &&
-      !isAbsence &&
-      !isHeureSupp &&
-      !overrideNonWorkingDay
-    ) {
-      showMessage(
-        "Vous essayez d'ajouter une activité un jour non ouvrable (week-end ou jour férié). Cochez 'Dérogation' ou sélectionnez un type d'activité 'Absence' ou 'Heure supplémentaire'.",
-        "warning"
-      );
-      return;
-    }
-
-    const activityData = {
-      date: format(selectedDate, "yyyy-MM-dd"),
-      tempsPasse: parsedTempsPasse, // Use the parsed float value
-      typeActivite,
-      descriptionActivite,
-      // Client ID is null for Absence and Heure supplémentaire
-      clientId:
-        isAbsence || isHeureSupp
-          ? null
-          : clientId === ""
-          ? null
-          : parseInt(clientId),
-      overrideNonWorkingDay,
-      isBillable: isBillable, // Utiliser la valeur de l'état local isBillable
-    };
-
-    onSave(
-      editingActivity ? { ...editingActivity, ...activityData } : activityData
-    );
-    onClose();
-  };
-
-  const activityTypeText = activityTypeDefinitions.find(
-    (def) => def.name === typeActivite
-  )?.name;
-  const isAbsence = activityTypeText?.includes("Absence");
-  const isHeureSupp = typeActivite === "Heure supplémentaire";
-
-  const isWeekendDay =
-    selectedDate && isWeekend(selectedDate, { weekStartsOn: 1 });
-  const isHoliday = isHolidayOrWeekendSelected && !isWeekendDay;
+  const modalTitle = editingActivity
+    ? "Modifier l'activité"
+    : `Ajouter une activité pour le ${date ? format(date, "dd/MM/yyyy") : ""}`;
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition duration-200"
-          aria-label="Fermer"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6 text-gray-700"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">
-          {editingActivity ? "Modifier l'activité" : "Ajouter une activité"}{" "}
-          pour le{" "}
-          {selectedDate instanceof Date && !isNaN(selectedDate.getTime())
-            ? format(selectedDate, "dd MMMM", { locale: fr })
-            : "date inconnue ou invalide"}
-        </h2>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex justify-center items-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <h2 className="text-2xl font-bold mb-4 text-gray-800">{modalTitle}</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
             <label
-              htmlFor="tempsPasse"
-              className="block text-sm font-medium text-gray-700"
+              htmlFor="date_activite"
+              className="block text-gray-700 text-sm font-bold mb-2"
             >
-              Temps passé (en jours, ex: 0.25, 0.5, 0.75, 1)
+              Date
             </label>
             <input
-              type="number"
-              id="tempsPasse"
-              step="0.25" // Adjust step for 0.25 increments
-              min="0.25"
-              max="1"
-              value={tempsPasse}
-              onChange={(e) => setTempsPasse(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
-              required
-              list="tempsPasseOptions" // Add datalist attribute
+              type="text"
+              id="date_activite"
+              name="date_activite"
+              value={
+                formData.date_activite
+                  ? format(formData.date_activite, "dd/MM/yyyy")
+                  : ""
+              }
+              readOnly
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-100 cursor-not-allowed"
             />
-            <datalist id="tempsPasseOptions">
-              <option value="0.25" />
-              <option value="0.50" />
-              <option value="0.75" />
-              <option value="1.00" />
-            </datalist>
+            {validationErrors.date_activite && (
+              <p className="text-red-500 text-xs italic">
+                {validationErrors.date_activite}
+              </p>
+            )}
           </div>
 
-          <div>
+          <div className="mb-4">
             <label
-              htmlFor="typeActivite"
-              className="block text-sm font-medium text-gray-700"
+              htmlFor="client_id"
+              className="block text-gray-700 text-sm font-bold mb-2"
+            >
+              Client
+            </label>
+            <select
+              id="client_id"
+              name="client_id"
+              value={formData.client_id}
+              onChange={handleChange}
+              className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            >
+              <option value="">Sélectionner un client</option>
+              {clientDefinitions.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name || client.nom_client}
+                </option>
+              ))}
+            </select>
+            {validationErrors.client_id && (
+              <p className="text-red-500 text-xs italic">
+                {validationErrors.client_id}
+              </p>
+            )}
+          </div>
+
+          <div className="mb-4">
+            <label
+              htmlFor="activityType" // Use "activityType"
+              className="block text-gray-700 text-sm font-bold mb-2"
             >
               Type d'activité
             </label>
             <select
-              id="typeActivite"
-              value={typeActivite}
-              onChange={(e) => setTypeActivite(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
-              required
+              id="activityType" // Use "activityType"
+              name="activityType" // Use "activityType"
+              value={formData.activityType}
+              onChange={handleChange}
+              className="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
             >
               <option value="">Sélectionner un type</option>
-              {activityTypeDefinitions.map((typeDef) => (
-                <option key={typeDef.id} value={typeDef.name}>
-                  {typeDef.name}
+              {activityTypeDefinitions.map((type) => (
+                <option key={type.id} value={type.name || type.libelle}>
+                  {type.name || type.libelle}
                 </option>
               ))}
-              <option value="Heure supplémentaire">Heure supplémentaire</option>{" "}
-              {/* Added new option */}
             </select>
+            {validationErrors.activityType && (
+              <p className="text-red-500 text-xs italic">
+                {validationErrors.activityType}
+              </p>
+            )}
           </div>
 
-          {!isAbsence &&
-            !isHeureSupp && ( // Client field hidden for Absence and Heure supplémentaire
-              <div>
-                <label
-                  htmlFor="clientId"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Client (facultatif)
-                </label>
-                <select
-                  id="clientId"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Sélectionner un client</option>
-                  {clientDefinitions.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.nom_client}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-          <div>
+          <div className="mb-4">
             <label
-              htmlFor="descriptionActivite"
-              className="block text-sm font-medium text-gray-700"
+              htmlFor="temps_passe"
+              className="block text-gray-700 text-sm font-bold mb-2"
             >
-              Description (facultatif)
+              Temps passé (jours)
+            </label>
+            <input
+              type="number"
+              id="temps_passe"
+              name="temps_passe"
+              value={formData.temps_passe}
+              onChange={handleChange}
+              step="0.01"
+              min="0"
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            />
+            {validationErrors.temps_passe && (
+              <p className="text-red-500 text-xs italic">
+                {validationErrors.temps_passe}
+              </p>
+            )}
+          </div>
+
+          <div className="mb-4">
+            <label
+              htmlFor="description_activite"
+              className="block text-gray-700 text-sm font-bold mb-2"
+            >
+              Description (optionnel)
             </label>
             <textarea
-              id="descriptionActivite"
-              value={descriptionActivite}
-              onChange={(e) => setDescriptionActivite(e.target.value)}
+              id="description_activite"
+              name="description_activite"
+              value={formData.description_activite}
+              onChange={handleChange}
               rows="3"
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
             ></textarea>
           </div>
 
-          {isHolidayOrWeekendSelected &&
-            !isAbsence &&
-            !isHeureSupp && ( // Override checkbox hidden for Absence and Heure supplémentaire
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="overrideNonWorkingDay"
-                  checked={overrideNonWorkingDay}
-                  onChange={(e) => setOverrideNonWorkingDay(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label
-                  htmlFor="overrideNonWorkingDay"
-                  className="ml-2 block text-sm font-medium text-gray-700"
-                >
-                  Dérogation (jour{" "}
-                  {isWeekendDay && isHoliday
-                    ? "férié et week-end"
-                    : isWeekendDay
-                    ? "de week-end"
-                    : "férié"}
-                  )
-                </label>
-              </div>
-            )}
+          <div className="mb-4 flex items-center">
+            <input
+              type="checkbox"
+              id="is_billable"
+              name="is_billable"
+              checked={formData.is_billable === 1}
+              onChange={handleChange}
+              className="mr-2 leading-tight"
+            />
+            <label
+              htmlFor="is_billable"
+              className="text-sm text-gray-700 font-bold"
+            >
+              Facturable
+            </label>
+          </div>
 
-          <div className="flex justify-end space-x-3 mt-6">
+          {isHolidayOrWeekend && (
+            <div className="mb-4 flex items-center p-3 border border-yellow-400 bg-yellow-50 rounded">
+              <input
+                type="checkbox"
+                id="override_non_working_day"
+                name="override_non_working_day"
+                checked={formData.override_non_working_day === 1}
+                onChange={handleChange}
+                className="mr-2 leading-tight"
+              />
+              <label
+                htmlFor="override_non_working_day"
+                className="text-sm text-yellow-800 font-bold"
+              >
+                Dérogation (jour non ouvré)
+              </label>
+            </div>
+          )}
+          {validationErrors.override_non_working_day && (
+            <p className="text-red-500 text-xs italic">
+              {validationErrors.override_non_working_day}
+            </p>
+          )}
+
+          <div className="flex justify-end space-x-4 mt-6">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-200"
+              className="px-4 py-2 rounded-lg bg-gray-300 text-gray-800 font-semibold hover:bg-gray-400 transition duration-300"
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-200"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-300"
             >
-              {editingActivity ? "Modifier" : "Ajouter"}
+              {editingActivity ? "Modifier l'activité" : "Ajouter l'activité"}
             </button>
           </div>
         </form>
