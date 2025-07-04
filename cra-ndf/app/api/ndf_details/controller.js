@@ -8,6 +8,8 @@ import path from "path";
 export async function handleGetAll(req) {
     const session = await auth();
     const userId = session?.user?.id;
+    const userRoles = session?.user?.roles || [];
+    const isAdmin = userRoles.includes("Admin");
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
@@ -16,7 +18,7 @@ export async function handleGetAll(req) {
 
     const ndf = await getNdfById(ndfId);
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
-    if (ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+    if (!isAdmin && ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
 
     const data = await getAllDetailsByNdf(ndfId);
     return Response.json(data);
@@ -25,13 +27,15 @@ export async function handleGetAll(req) {
 export async function handleGetById(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
+    const userRoles = session?.user?.roles || [];
+    const isAdmin = userRoles.includes("Admin");
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     const detail = await getDetailById(params.id);
     if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
 
     const ndf = await getNdfById(detail.id_ndf);
-    if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
+    if (!ndf || (!isAdmin && ndf.user_id !== userId)) return Response.json({ error: "Forbidden" }, { status: 403 });
 
     return Response.json(detail);
 }

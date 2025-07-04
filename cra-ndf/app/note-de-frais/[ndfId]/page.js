@@ -11,12 +11,14 @@ export default async function NdfDetailsPage({ params }) {
 
     const session = await auth();
     const userId = session?.user?.id;
+    const isAdmin = session?.user?.roles?.includes("Admin");
     if (!userId) {
         return <p>Vous devez être connecté.</p>;
     }
 
     const ndf = await getNdfById(ndfId);
-    if (!ndf || ndf.user_id !== userId) {
+
+    if (!ndf || (!isAdmin && ndf.user_id !== userId)) {
         return <p className="text-red-600">Accès interdit ou note de frais inconnue.</p>;
     }
 
