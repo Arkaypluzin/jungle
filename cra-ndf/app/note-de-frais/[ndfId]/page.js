@@ -37,7 +37,7 @@ export default async function NdfDetailsPage({ params }) {
                 year={ndf.year}
                 name={ndf.name}
             />
-            <BtnRetour fallback={isAdmin ? "/note-de-frais/admin" : "/note-de-frais/user"} />
+            <BtnRetour />
         </div>
     );
 }
