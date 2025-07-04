@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
 import EditNdfModal from "@/components/EditNdfModal";
 import DeleteNdfButton from "@/components/DeleteNdfButton";
 import ValidateNdfButton from "@/components/ValidateNdfButton";
+import RefuseNdfButton from "@/components/RefuseNdfButton";
 
 const MONTHS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -28,17 +29,17 @@ export default function ClientAdminNdf() {
   const [sortMonth, setSortMonth] = useState("asc");
   const [filterUser, setFilterUser] = useState("");
   const [filterStatut, setFilterStatut] = useState("");
-  const [ndfTotals, setNdfTotals] = useState({});
+  const [totaux, setTotaux] = useState({});
+  const [totauxPerso, setTotauxPerso] = useState({});
 
   async function fetchNdfs() {
     setLoading(true);
     try {
       const res = await fetch("/api/ndf", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      if (!res.ok) throw new Error();
       const data = await res.json();
       setNdfList(Array.isArray(data) ? data : []);
-      fetchTotals(data, setNdfTotals);
-    } catch (error) {
+    } catch {
       setNdfList([]);
     } finally {
       setLoading(false);
@@ -49,43 +50,14 @@ export default function ClientAdminNdf() {
     setLoadingAll(true);
     try {
       const res = await fetch("/api/ndf/all", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      if (!res.ok) throw new Error();
       const data = await res.json();
       setAllNdfs(Array.isArray(data) ? data : []);
-      fetchTotals(data, setNdfTotals);
-    } catch (error) {
+    } catch {
       setAllNdfs([]);
     } finally {
       setLoadingAll(false);
     }
-  }
-
-  async function fetchTotals(ndfs, setState) {
-    if (!Array.isArray(ndfs)) return setState({});
-    const obj = {};
-    await Promise.all(ndfs.map(async (ndf) => {
-      try {
-        const r = await fetch(`/api/ndf_details?ndf=${ndf.uuid}`);
-        const details = await r.json();
-        const totalTTC = details.reduce((acc, d) => acc + getTTC(d.montant, d.tva), 0);
-        obj[ndf.uuid] = totalTTC;
-      } catch {
-        obj[ndf.uuid] = 0;
-      }
-    }));
-    setState(obj);
-  }
-
-  function getTTC(montant, tvaStr) {
-    const base = parseFloat(montant) || 0;
-    if (!tvaStr || tvaStr === "0%") return base;
-    const tauxList = tvaStr
-      .split("/")
-      .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
-      .filter((x) => !isNaN(x));
-    if (tauxList.length === 0) return base;
-    const totalTva = tauxList.reduce((sum, taux) => sum + (base * taux) / 100, 0);
-    return base + totalTva;
   }
 
   useEffect(() => {
@@ -131,10 +103,59 @@ export default function ClientAdminNdf() {
     return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
   });
 
-  const totalFilteredTTC = filteredNdfs.reduce((acc, ndf) => {
-    const ttc = ndfTotals[ndf.uuid];
-    return acc + (ttc || 0);
-  }, 0);
+  const totalTTCSomme = useMemo(() => {
+    return filteredNdfs.reduce((acc, ndf) => acc + (totaux[ndf.uuid] || 0), 0);
+  }, [filteredNdfs, totaux]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function getTotals() {
+      const t = {};
+      for (const ndf of filteredNdfs) {
+        const res = await fetch(`/api/ndf_details?ndf=${ndf.uuid}`);
+        if (!res.ok) continue;
+        const details = await res.json();
+        const ttc = details.reduce((sum, d) => {
+          const montant = parseFloat(d.montant) || 0;
+          let taux = 0;
+          if (d.tva && d.tva !== "0%") {
+            const tauxs = d.tva.split("/").map(e => parseFloat(e.replace(/[^\d.,]/g, "").replace(",", "."))).filter(Boolean);
+            taux = tauxs.reduce((acc, t) => acc + (montant * t) / 100, 0);
+          }
+          return sum + montant + taux;
+        }, 0);
+        t[ndf.uuid] = ttc;
+      }
+      if (isMounted) setTotaux(t);
+    }
+    getTotals();
+    return () => { isMounted = false; };
+  }, [JSON.stringify(filteredNdfs.map(ndf => ndf.uuid))]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function getTotalsPerso() {
+      const t = {};
+      for (const ndf of filteredNdfList) {
+        const res = await fetch(`/api/ndf_details?ndf=${ndf.uuid}`);
+        if (!res.ok) continue;
+        const details = await res.json();
+        const ttc = details.reduce((sum, d) => {
+          const montant = parseFloat(d.montant) || 0;
+          let taux = 0;
+          if (d.tva && d.tva !== "0%") {
+            const tauxs = d.tva.split("/").map(e => parseFloat(e.replace(/[^\d.,]/g, "").replace(",", "."))).filter(Boolean);
+            taux = tauxs.reduce((acc, t) => acc + (montant * t) / 100, 0);
+          }
+          return sum + montant + taux;
+        }, 0);
+        t[ndf.uuid] = ttc;
+      }
+      if (isMounted) setTotauxPerso(t);
+    }
+    getTotalsPerso();
+    return () => { isMounted = false; };
+  }, [JSON.stringify(filteredNdfList.map(ndf => ndf.uuid))]);
 
   function renderTabs() {
     return (
@@ -168,7 +189,6 @@ export default function ClientAdminNdf() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-lg">
-
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
           <span className="font-bold text-lg mb-2 sm:mb-0 text-black">Bienvenue, Lucas TEAR</span>
           <BtnRetour fallback="/dashboard" />
@@ -201,7 +221,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYearPerso("asc")}
-                    title="Trier par année croissante"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7l4-4m0 0l4 4m-4-4v18" />
@@ -213,7 +232,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYearPerso("desc")}
-                    title="Trier par année décroissante"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l-4 4m0 0l-4-4m4 4V3" />
@@ -241,7 +259,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonthPerso("asc")}
-                    title="Trier par mois croissant"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7l4-4m0 0l4 4m-4-4v18" />
@@ -253,7 +270,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonthPerso("desc")}
-                    title="Trier par mois décroissant"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l-4 4m0 0l-4-4m4 4V3" />
@@ -316,8 +332,8 @@ export default function ClientAdminNdf() {
                       }`}>
                       {ndf.statut}
                     </span>
-                    <span className="ml-3 font-bold text-indigo-700">
-                      {typeof ndfTotals[ndf.uuid] === "number" ? "• " + ndfTotals[ndf.uuid].toFixed(2) + " € TTC" : ""}
+                    <span className="ml-3 text-sm text-blue-700 font-bold">
+                      {typeof totauxPerso[ndf.uuid] === "number" ? `${totauxPerso[ndf.uuid].toFixed(2)} € TTC` : ""}
                     </span>
                   </div>
                   <div className="flex gap-3 flex-wrap justify-end">
@@ -360,7 +376,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYear("asc")}
-                    title="Trier par année croissante"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7l4-4m0 0l4 4m-4-4v18" />
@@ -372,7 +387,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYear("desc")}
-                    title="Trier par année décroissante"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l-4 4m0 0l-4-4m4 4V3" />
@@ -400,7 +414,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonth("asc")}
-                    title="Trier par mois croissant"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7l4-4m0 0l4 4m-4-4v18" />
@@ -412,7 +425,6 @@ export default function ClientAdminNdf() {
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonth("desc")}
-                    title="Trier par mois décroissant"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l-4 4m0 0l-4-4m4 4V3" />
@@ -462,10 +474,9 @@ export default function ClientAdminNdf() {
                 Réinitialiser
               </button>
             </div>
-            <div className="w-full flex justify-start items-center py-2 px-2 mb-2">
-              <span className="text-lg font-bold text-indigo-700">
-                Total TTC affiché : {totalFilteredTTC.toFixed(2)} €
-              </span>
+            <div className="mb-2 flex items-center gap-3">
+              <span className="font-semibold text-base text-gray-800">Total TTC affiché :</span>
+              <span className="text-lg font-bold text-blue-800">{totalTTCSomme.toFixed(2)} €</span>
             </div>
             {loadingAll && (
               <div className="text-center py-4">
@@ -492,11 +503,11 @@ export default function ClientAdminNdf() {
                       }`}>
                       {ndf.statut}
                     </span>
-                    <span className="ml-3 font-bold text-indigo-700">
-                      {typeof ndfTotals[ndf.uuid] === "number" ? "• " + ndfTotals[ndf.uuid].toFixed(2) + " € TTC" : ""}
-                    </span>
                     <span className="ml-3 text-sm text-gray-600">
                       par <b className="text-gray-800">{ndf.name || ndf.user_id}</b>
+                    </span>
+                    <span className="ml-3 text-sm text-blue-700 font-bold">
+                      {typeof totaux[ndf.uuid] === "number" ? `${totaux[ndf.uuid].toFixed(2)} € TTC` : ""}
                     </span>
                   </div>
                   <div className="flex gap-3 flex-wrap justify-end">
@@ -504,16 +515,15 @@ export default function ClientAdminNdf() {
                       Voir
                     </a>
                     <ValidateNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onValidated={() => { fetchAllNdfs(); fetchNdfs(); }} />
+                    {ndf.statut === "Déclaré" && (
+                      <RefuseNdfButton ndfId={ndf.uuid} onRefused={() => { fetchAllNdfs(); fetchNdfs(); }} />
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
           </>
         )}
-
-        <div className="mt-10">
-          <BtnRetour fallback="/dashboard" />
-        </div>
       </div>
     </div>
   );

@@ -10,16 +10,18 @@ export async function getNdfById(uuid) {
     return db.collection("ndf").findOne({ uuid });
 }
 
-export async function createNdf({ uuid, month, year, user_id, name, statut }) {
+export async function createNdf({ uuid, month, year, user_id, name, statut, motif_refus }) {
     const db = await getMongoDb();
     const doc = { uuid, month, year, user_id, name, statut };
+    if (motif_refus) doc.motif_refus = motif_refus;
     await db.collection("ndf").insertOne(doc);
     return doc;
 }
 
-export async function updateNdf(uuid, { month, year, statut }) {
+export async function updateNdf(uuid, { month, year, statut, motif_refus }) {
     const db = await getMongoDb();
     const update = { $set: { month, year, statut } };
+    if (motif_refus !== undefined) update.$set.motif_refus = motif_refus;
     await db.collection("ndf").updateOne({ uuid }, update);
     return db.collection("ndf").findOne({ uuid });
 }

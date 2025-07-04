@@ -21,22 +21,6 @@ export default function ValidateNdfButton({ ndfId, ndfStatut, onValidated }) {
         setLoading(false);
     }
 
-    async function handleNonValidate() {
-        setLoading(true);
-        setError("");
-        const res = await fetch(`/api/ndf/${ndfId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ statut: "Provisoire" }),
-        });
-        if (!res.ok) {
-            setError("Impossible de remettre à Provisoire");
-        } else {
-            onValidated?.();
-        }
-        setLoading(false);
-    }
-
     if (ndfStatut === "Déclaré") {
         return (
             <div className="flex gap-2">
@@ -47,14 +31,6 @@ export default function ValidateNdfButton({ ndfId, ndfStatut, onValidated }) {
                     title="Valider"
                 >
                     {loading ? "Validation..." : "Valider"}
-                </button>
-                <button
-                    className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-800 text-sm"
-                    onClick={handleNonValidate}
-                    disabled={loading}
-                    title="Refuser"
-                >
-                    {loading ? "..." : "Refuser"}
                 </button>
                 {error && <span className="text-red-600 text-xs ml-2">{error}</span>}
             </div>

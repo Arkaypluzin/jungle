@@ -9,7 +9,6 @@ export async function handleGetAll(req) {
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
     const data = await getAllNdf(userId);
     return Response.json(data);
 }
@@ -18,14 +17,11 @@ export async function handleGetById(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
     const data = await getNdfById(params.id);
     if (!data) return Response.json({ error: "Not found" }, { status: 404 });
-
     if (data.user_id !== userId) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-
     return Response.json(data);
 }
 
@@ -33,11 +29,8 @@ export async function handlePost(req) {
     const session = await auth();
     const userId = session?.user?.id;
     const userName = session?.user?.name;
-
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
     const { month, year } = await req.json();
-
     const existing = await getNdfByMonthYearUser(month, year, userId);
     if (existing) {
         return Response.json(
@@ -45,16 +38,14 @@ export async function handlePost(req) {
             { status: 409 }
         );
     }
-
     const newNdf = await createNdf({
         uuid: uuidv4(),
         month,
         year,
         user_id: userId,
         name: userName,
-        statut: "Provisoire",
+        statut: "Provisoire"
     });
-
     return Response.json(newNdf, { status: 201 });
 }
 
@@ -62,46 +53,59 @@ export async function handlePut(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
     const userRoles = session?.user?.roles || [];
-
     const ndf = await getNdfById(params.id);
     if (!ndf) {
         return Response.json({ error: "Not found" }, { status: 404 });
     }
-
     const isOwner = ndf.user_id === userId;
     const isAdmin = userRoles.includes("Admin");
     const body = await req.json();
-    const { month, year, statut } = body;
-
+    const { month, year, statut, motif_refus } = body;
     if (!isOwner && !isAdmin) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-
     if (ndf.statut === "Provisoire" && isOwner) {
         const updated = await updateNdf(params.id, {
             month: month ?? ndf.month,
             year: year ?? ndf.year,
             statut: statut ?? ndf.statut,
+            motif_refus: undefined
         });
         return Response.json(updated);
     }
-
     if (isAdmin) {
-        if (
-            (ndf.statut === "Déclaré" && statut === "Validé") ||
-            (ndf.statut === "Validé" && statut === "Remboursé") ||
-            (ndf.statut === "Déclaré" && statut === "Provisoire")
-        ) {
+        if ((ndf.statut === "Déclaré" && statut === "Validé")) {
             const updated = await updateNdf(params.id, {
                 month: ndf.month,
                 year: ndf.year,
                 statut,
+                motif_refus: undefined
+            });
+            return Response.json(updated);
+        }
+        if ((ndf.statut === "Validé" && statut === "Remboursé")) {
+            const updated = await updateNdf(params.id, {
+                month: ndf.month,
+                year: ndf.year,
+                statut,
+                motif_refus: undefined
+            });
+            return Response.json(updated);
+        }
+        if ((ndf.statut === "Déclaré" && statut === "Provisoire")) {
+            if (!motif_refus || typeof motif_refus !== "string" || !motif_refus.trim()) {
+                return Response.json({ error: "Le motif de refus est obligatoire." }, { status: 400 });
+            }
+            const updated = await updateNdf(params.id, {
+                month: ndf.month,
+                year: ndf.year,
+                statut,
+                motif_refus: motif_refus.trim()
             });
             return Response.json(updated);
         }
         return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
     }
-
     return Response.json({ error: "Modification impossible, statut verrouillé" }, { status: 403 });
 }
 
@@ -111,7 +115,6 @@ export async function handleDelete(req, { params }) {
     if (!userId) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     const ndf = await getNdfById(params.id);
     if (!ndf) {
         return Response.json({ error: "Not found" }, { status: 404 });
@@ -119,25 +122,20 @@ export async function handleDelete(req, { params }) {
     if (ndf.user_id !== userId) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-
     if (ndf.statut !== "Provisoire") {
         return Response.json({ error: "Impossible de supprimer une note de frais non Provisoire" }, { status: 403 });
     }
-
     const details = await getAllDetailsByNdf(params.id);
-
     for (const detail of details) {
         if (detail.img_url) {
             const imgPath = path.join(process.cwd(), "public", detail.img_url);
             try {
                 await fs.unlink(imgPath);
             } catch (e) {
-                console.error(`Erreur lors de la suppression de l'image ${detail.img_url}:`, e);
             }
         }
         await deleteDetail(detail.uuid);
     }
-
     const deleted = await deleteNdf(params.id);
     return Response.json(deleted);
 }
