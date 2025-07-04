@@ -52,9 +52,9 @@ export default function ValidateNdfButton({ ndfId, ndfStatut, onValidated }) {
                     className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-800 text-sm"
                     onClick={handleNonValidate}
                     disabled={loading}
-                    title="Non valider"
+                    title="Refuser"
                 >
-                    {loading ? "..." : "Non valider"}
+                    {loading ? "..." : "Refuser"}
                 </button>
                 {error && <span className="text-red-600 text-xs ml-2">{error}</span>}
             </div>

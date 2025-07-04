@@ -773,7 +773,7 @@ export default function NdfDetailTable({
         </button>
         {ndfStatut === "Provisoire" && (
           <p className="text-sm text-gray-500 mt-2 italic">
-            Le statut doit être autre que "Provisoire" pour permettre l’export
+            Le statut doit être autre que Provisoire pour permettre l’export
             PDF.
           </p>
         )}

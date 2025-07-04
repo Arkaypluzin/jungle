@@ -12,10 +12,7 @@ const MONTHS = [
 ];
 
 export default function ClientAdminNdf() {
-  // Onglet actif : "mes" ou "all"
   const [tab, setTab] = useState("mes");
-
-  // États pour "Mes notes de frais"
   const [ndfList, setNdfList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterYearPerso, setFilterYearPerso] = useState("");
@@ -23,8 +20,6 @@ export default function ClientAdminNdf() {
   const [filterMonthPerso, setFilterMonthPerso] = useState("");
   const [sortMonthPerso, setSortMonthPerso] = useState("asc");
   const [filterStatutPerso, setFilterStatutPerso] = useState("");
-
-  // États pour "Toutes les notes de frais"
   const [allNdfs, setAllNdfs] = useState([]);
   const [loadingAll, setLoadingAll] = useState(true);
   const [filterYear, setFilterYear] = useState("");
@@ -67,8 +62,6 @@ export default function ClientAdminNdf() {
     fetchAllNdfs();
   }, []);
 
-  // ------------------------
-  // FILTRAGE/TRI MES NDF
   const yearOptionsPerso = Array.from(new Set(ndfList.map((n) => n.year))).sort((a, b) => b - a);
   const monthOptionsPerso = MONTHS.filter((m) => ndfList.some((ndf) => ndf.month === m));
   const statutOptionsPerso = ["Provisoire", "Déclaré", "Validé", "Remboursé"];
@@ -87,8 +80,6 @@ export default function ClientAdminNdf() {
     return sortMonthPerso === "asc" ? idxA - idxB : idxB - idxA;
   });
 
-  // ------------------------
-  // FILTRAGE/TRI ALL NDF
   const yearOptions = Array.from(new Set(allNdfs.map((n) => n.year))).sort((a, b) => b - a);
   const monthOptions = MONTHS.filter((m) => allNdfs.some((ndf) => ndf.month === m));
   const userOptions = Array.from(new Set(allNdfs.map((n) => n.name || n.user_id))).filter(Boolean).sort();
@@ -109,8 +100,6 @@ export default function ClientAdminNdf() {
     return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
   });
 
-  // ------------------------
-  // ONGLET HEADER
   function renderTabs() {
     return (
       <div className="flex justify-center mb-8 mt-2 gap-1">
@@ -155,7 +144,6 @@ export default function ClientAdminNdf() {
 
         {tab === "mes" && (
           <>
-            {/* SECTION MES NDF */}
             <div className="mb-6 flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-md border border-gray-200">
               <div className="flex-grow">
                 <label htmlFor="filterYearPerso" className="block text-sm font-medium text-gray-700 mb-1">Année</label>
@@ -167,14 +155,14 @@ export default function ClientAdminNdf() {
                     onChange={(e) => setFilterYearPerso(e.target.value)}
                   >
                     <option value="">Toutes</option>
-                    {yearOptionsPerso.map((y) => (
-                      <option key={y} value={y}>{y}</option>
+                    {yearOptionsPerso.map((y, idx) => (
+                      <option key={`${y}-${idx}`} value={y}>{y}</option>
                     ))}
                   </select>
                   <button
                     className={`ml-2 p-2 rounded-full transition-colors duration-200 ${sortYearPerso === "asc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYearPerso("asc")}
                     title="Trier par année croissante"
@@ -185,8 +173,8 @@ export default function ClientAdminNdf() {
                   </button>
                   <button
                     className={`ml-1 p-2 rounded-full transition-colors duration-200 ${sortYearPerso === "desc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYearPerso("desc")}
                     title="Trier par année décroissante"
@@ -207,14 +195,14 @@ export default function ClientAdminNdf() {
                     onChange={(e) => setFilterMonthPerso(e.target.value)}
                   >
                     <option value="">Tous</option>
-                    {monthOptionsPerso.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                    {monthOptionsPerso.map((m, idx) => (
+                      <option key={`${m}-${idx}`} value={m}>{m}</option>
                     ))}
                   </select>
                   <button
                     className={`ml-2 p-2 rounded-full transition-colors duration-200 ${sortMonthPerso === "asc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonthPerso("asc")}
                     title="Trier par mois croissant"
@@ -225,8 +213,8 @@ export default function ClientAdminNdf() {
                   </button>
                   <button
                     className={`ml-1 p-2 rounded-full transition-colors duration-200 ${sortMonthPerso === "desc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonthPerso("desc")}
                     title="Trier par mois décroissant"
@@ -246,8 +234,8 @@ export default function ClientAdminNdf() {
                   onChange={(e) => setFilterStatutPerso(e.target.value)}
                 >
                   <option value="">Tous</option>
-                  {statutOptionsPerso.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {statutOptionsPerso.map((s, idx) => (
+                    <option key={`${s}-${idx}`} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
@@ -283,12 +271,12 @@ export default function ClientAdminNdf() {
                       {ndf.month} {ndf.year}
                     </span>
                     <span className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${ndf.statut === "Provisoire"
-                        ? "bg-blue-100 text-blue-800"
-                        : ndf.statut === "Déclaré"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : ndf.statut === "Validé"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-purple-100 text-purple-800"
+                      ? "bg-blue-100 text-blue-800"
+                      : ndf.statut === "Déclaré"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : ndf.statut === "Validé"
+                          ? "bg-green-100 text-green-800"
+                          : "bg-purple-100 text-purple-800"
                       }`}>
                       {ndf.statut}
                     </span>
@@ -312,7 +300,6 @@ export default function ClientAdminNdf() {
 
         {tab === "all" && (
           <>
-            {/* SECTION TOUTES LES NDFS */}
             <div className="mb-6 flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-md border border-gray-200">
               <div className="flex-grow">
                 <label htmlFor="filterYear" className="block text-sm font-medium text-gray-700 mb-1">Année</label>
@@ -324,14 +311,14 @@ export default function ClientAdminNdf() {
                     onChange={(e) => setFilterYear(e.target.value)}
                   >
                     <option value="">Toutes</option>
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>{y}</option>
+                    {yearOptions.map((y, idx) => (
+                      <option key={`${y}-${idx}`} value={y}>{y}</option>
                     ))}
                   </select>
                   <button
                     className={`ml-2 p-2 rounded-full transition-colors duration-200 ${sortYear === "asc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYear("asc")}
                     title="Trier par année croissante"
@@ -342,8 +329,8 @@ export default function ClientAdminNdf() {
                   </button>
                   <button
                     className={`ml-1 p-2 rounded-full transition-colors duration-200 ${sortYear === "desc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortYear("desc")}
                     title="Trier par année décroissante"
@@ -364,14 +351,14 @@ export default function ClientAdminNdf() {
                     onChange={(e) => setFilterMonth(e.target.value)}
                   >
                     <option value="">Tous</option>
-                    {monthOptions.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                    {monthOptions.map((m, idx) => (
+                      <option key={`${m}-${idx}`} value={m}>{m}</option>
                     ))}
                   </select>
                   <button
                     className={`ml-2 p-2 rounded-full transition-colors duration-200 ${sortMonth === "asc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonth("asc")}
                     title="Trier par mois croissant"
@@ -382,8 +369,8 @@ export default function ClientAdminNdf() {
                   </button>
                   <button
                     className={`ml-1 p-2 rounded-full transition-colors duration-200 ${sortMonth === "desc"
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       }`}
                     onClick={() => setSortMonth("desc")}
                     title="Trier par mois décroissant"
@@ -403,8 +390,8 @@ export default function ClientAdminNdf() {
                   onChange={(e) => setFilterUser(e.target.value)}
                 >
                   <option value="">Tous</option>
-                  {userOptions.map((n) => (
-                    <option key={n} value={n}>{n}</option>
+                  {userOptions.map((n, idx) => (
+                    <option key={`${n}-${idx}`} value={n}>{n}</option>
                   ))}
                 </select>
               </div>
@@ -417,8 +404,8 @@ export default function ClientAdminNdf() {
                   onChange={(e) => setFilterStatut(e.target.value)}
                 >
                   <option value="">Tous</option>
-                  {statutOptions.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {statutOptions.map((s, idx) => (
+                    <option key={`${s}-${idx}`} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
@@ -454,10 +441,10 @@ export default function ClientAdminNdf() {
                       {ndf.month} {ndf.year}
                     </span>
                     <span className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${ndf.statut === "Déclaré"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : ndf.statut === "Validé"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-purple-100 text-purple-800"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : ndf.statut === "Validé"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-purple-100 text-purple-800"
                       }`}>
                       {ndf.statut}
                     </span>
@@ -469,7 +456,7 @@ export default function ClientAdminNdf() {
                     <a href={`/note-de-frais/${ndf.uuid}`} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
                       Voir
                     </a>
-                    <ValidateNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onValidated={fetchAllNdfs} />
+                    <ValidateNdfButton ndfId={ndf.uuid} ndfStatut={ndf.statut} onValidated={() => { fetchAllNdfs(); fetchNdfs(); }} />
                   </div>
                 </li>
               ))}
