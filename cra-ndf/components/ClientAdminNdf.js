@@ -28,6 +28,7 @@ export default function ClientAdminNdf() {
   const [sortMonth, setSortMonth] = useState("asc");
   const [filterUser, setFilterUser] = useState("");
   const [filterStatut, setFilterStatut] = useState("");
+  const [ndfTotals, setNdfTotals] = useState({});
 
   async function fetchNdfs() {
     setLoading(true);
@@ -36,8 +37,9 @@ export default function ClientAdminNdf() {
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       setNdfList(Array.isArray(data) ? data : []);
+      fetchTotals(data, setNdfTotals);
     } catch (error) {
-      console.error("Erreur lors de la récupération de mes notes de frais :", error);
+      setNdfList([]);
     } finally {
       setLoading(false);
     }
@@ -50,11 +52,40 @@ export default function ClientAdminNdf() {
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       setAllNdfs(Array.isArray(data) ? data : []);
+      fetchTotals(data, setNdfTotals);
     } catch (error) {
-      console.error("Erreur lors de la récupération de toutes les notes de frais :", error);
+      setAllNdfs([]);
     } finally {
       setLoadingAll(false);
     }
+  }
+
+  async function fetchTotals(ndfs, setState) {
+    if (!Array.isArray(ndfs)) return setState({});
+    const obj = {};
+    await Promise.all(ndfs.map(async (ndf) => {
+      try {
+        const r = await fetch(`/api/ndf_details?ndf=${ndf.uuid}`);
+        const details = await r.json();
+        const totalTTC = details.reduce((acc, d) => acc + getTTC(d.montant, d.tva), 0);
+        obj[ndf.uuid] = totalTTC;
+      } catch {
+        obj[ndf.uuid] = 0;
+      }
+    }));
+    setState(obj);
+  }
+
+  function getTTC(montant, tvaStr) {
+    const base = parseFloat(montant) || 0;
+    if (!tvaStr || tvaStr === "0%") return base;
+    const tauxList = tvaStr
+      .split("/")
+      .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
+      .filter((x) => !isNaN(x));
+    if (tauxList.length === 0) return base;
+    const totalTva = tauxList.reduce((sum, taux) => sum + (base * taux) / 100, 0);
+    return base + totalTva;
   }
 
   useEffect(() => {
@@ -99,6 +130,11 @@ export default function ClientAdminNdf() {
     const idxB = MONTHS.indexOf(b.month);
     return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
   });
+
+  const totalFilteredTTC = filteredNdfs.reduce((acc, ndf) => {
+    const ttc = ndfTotals[ndf.uuid];
+    return acc + (ttc || 0);
+  }, 0);
 
   function renderTabs() {
     return (
@@ -280,6 +316,9 @@ export default function ClientAdminNdf() {
                       }`}>
                       {ndf.statut}
                     </span>
+                    <span className="ml-3 font-bold text-indigo-700">
+                      {typeof ndfTotals[ndf.uuid] === "number" ? "• " + ndfTotals[ndf.uuid].toFixed(2) + " € TTC" : ""}
+                    </span>
                   </div>
                   <div className="flex gap-3 flex-wrap justify-end">
                     <a href={`/note-de-frais/${ndf.uuid}`} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
@@ -423,6 +462,11 @@ export default function ClientAdminNdf() {
                 Réinitialiser
               </button>
             </div>
+            <div className="w-full flex justify-start items-center py-2 px-2 mb-2">
+              <span className="text-lg font-bold text-indigo-700">
+                Total TTC affiché : {totalFilteredTTC.toFixed(2)} €
+              </span>
+            </div>
             {loadingAll && (
               <div className="text-center py-4">
                 <p className="text-gray-600">Chargement de toutes les notes de frais...</p>
@@ -447,6 +491,9 @@ export default function ClientAdminNdf() {
                         : "bg-purple-100 text-purple-800"
                       }`}>
                       {ndf.statut}
+                    </span>
+                    <span className="ml-3 font-bold text-indigo-700">
+                      {typeof ndfTotals[ndf.uuid] === "number" ? "• " + ndfTotals[ndf.uuid].toFixed(2) + " € TTC" : ""}
                     </span>
                     <span className="ml-3 text-sm text-gray-600">
                       par <b className="text-gray-800">{ndf.name || ndf.user_id}</b>
