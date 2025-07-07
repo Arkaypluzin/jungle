@@ -20,9 +20,11 @@ import {
   isBefore,
 } from "date-fns";
 import { fr } from "date-fns/locale";
-import ActivityModal from "./ActivityModal"; // Assurez-vous que le chemin est correct
-import SummaryReport from "./SummaryReport"; // Assurez-vous que le chemin est correct
-import ConfirmationModal from "./ConfirmationModal"; // Assurez-vous que le chemin est correct
+import ActivityModal from "./ActivityModal";
+import SummaryReport from "./SummaryReport";
+import ConfirmationModal from "./ConfirmationModal";
+// Suppression des imports Drag and Drop:
+// import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 const dayNames = [
   "Dimanche",
@@ -472,6 +474,8 @@ export default function CraBoard({
     }
   }, [selectedDate, showSummaryReport]);
 
+  // Suppression de la fonction onDragEnd
+
   const renderHeader = () => {
     let statusBadge = null;
     let badgeClass = "ml-3 text-sm font-bold px-2 py-1 rounded-full";
@@ -613,6 +617,7 @@ export default function CraBoard({
     for (let i = 0; i < numDaysInMonth; i++) {
       const currentDay = addDays(monthStart, i);
       const formattedDate = format(currentDay, "d");
+      // Suppression de droppableDateId car plus de D&D
 
       // Filtrer les activités pour le jour courant et l'utilisateur actuel
       const activitiesForDay = craActivities
@@ -813,20 +818,7 @@ export default function CraBoard({
                       title="Supprimer l'activité"
                       aria-label="Supprimer l'activité"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-3 w-3"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
+                      &times; {/* Utilisation d'un caractère X */}
                     </button>
                   )}
                 </div>

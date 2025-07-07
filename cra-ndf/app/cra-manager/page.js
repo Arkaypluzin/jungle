@@ -11,13 +11,40 @@ import Link from "next/link";
 import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
 
+// Placeholder pour le nouveau composant des CRAs reçus
+const ReceivedCraList = ({ currentUserId, showMessage }) => {
+  // Ici, vous implémenteriez la logique pour récupérer et afficher les CRAs reçus
+  // (ceux qui ont été "envoyés" par d'autres utilisateurs ou qui sont en attente de validation par l'admin)
+  return (
+    <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">
+        CRAs Reçus (Panel Admin)
+      </h2>
+      <p className="text-gray-600">
+        Cette section affichera la liste des CRAs soumis par les utilisateurs
+        pour validation. La logique de récupération et d'affichage sera
+        implémentée ici.
+      </p>
+      {/* Exemple de contenu pour débogage */}
+      <p className="mt-4 text-sm text-gray-500">
+        Utilisateur actuel ID: {currentUserId}
+      </p>
+      <p className="text-sm text-gray-500">
+        (Fonctionnalité à développer pour afficher les CRAs en attente de
+        validation)
+      </p>
+    </div>
+  );
+};
+
 export default function CRAPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
 
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserName, setCurrentUserName] = useState("Chargement...");
-  const [activeTab, setActiveTab] = useState("craManager");
+  // Ajout du nouvel onglet 'receivedCras'
+  const [activeTab, setActiveTab] = useState("craManager"); // 'craManager', 'sentCraHistory', 'gestion', 'receivedCras'
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.id) {
@@ -210,6 +237,110 @@ export default function CRAPage() {
       } catch (error) {
         console.error("Erreur lors de la suppression du client:", error);
         showMessage(`Erreur de suppression client: ${error.message}`, "error");
+      }
+    },
+    [showMessage]
+  );
+
+  const handleAddActivityType = useCallback(
+    async (typeData) => {
+      try {
+        const response = await fetch("/api/activity_type", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(typeData),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || "Échec de l'ajout du type d'activité"
+          );
+        }
+        const newType = await response.json();
+        setActivityTypeDefinitions((prevTypes) => [...prevTypes, newType]);
+        showMessage("Type d'activité ajouté avec succès !", "success");
+      } catch (error) {
+        console.error("Erreur lors de l'ajout du type d'activité:", error);
+        showMessage(
+          `Erreur d'ajout de type d'activité: ${error.message}`,
+          "error"
+        );
+      }
+    },
+    [showMessage]
+  );
+
+  const handleUpdateActivityType = useCallback(
+    async (id, typeData) => {
+      try {
+        const response = await fetch(`/api/activity_type/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(typeData),
+        });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log(
+              "Type d'activité mis à jour avec succès (204 No Content)."
+            );
+          } else {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.message || "Échec de la mise à jour du type d'activité"
+            );
+          }
+        }
+        setActivityTypeDefinitions((prevTypes) =>
+          prevTypes.map((type) =>
+            type.id === id ? { ...type, ...typeData } : type
+          )
+        );
+        showMessage("Type d'activité mis à jour avec succès !", "success");
+      } catch (error) {
+        console.error(
+          "Erreur lors de la mise à jour du type d'activité:",
+          error
+        );
+        showMessage(
+          `Erreur de mise à jour de type d'activité: ${error.message}`,
+          "error"
+        );
+      }
+    },
+    [showMessage]
+  );
+
+  const handleDeleteActivityType = useCallback(
+    async (id) => {
+      try {
+        const response = await fetch(`/api/activity_type/${id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          if (response.status === 204) {
+            console.log(
+              "Type d'activité supprimé avec succès (204 No Content)."
+            );
+          } else {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.message || "Échec de la suppression du type d'activité"
+            );
+          }
+        }
+        setActivityTypeDefinitions((prevTypes) =>
+          prevTypes.filter((type) => type.id !== id)
+        );
+        showMessage("Type d'activité supprimé avec succès !", "success");
+      } catch (error) {
+        console.error(
+          "Erreur lors de la suppression du type d'activité:",
+          error
+        );
+        showMessage(
+          `Erreur de suppression de type d'activité: ${error.message}`,
+          "error"
+        );
       }
     },
     [showMessage]
@@ -706,6 +837,27 @@ export default function CRAPage() {
         >
           Historique des CRAs envoyés
         </button>
+        <button
+          onClick={() => setActiveTab("gestion")}
+          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
+            activeTab === "gestion"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
+        >
+          Gestion
+        </button>
+        {/* Nouveau bouton pour les CRAs reçus */}
+        <button
+          onClick={() => setActiveTab("receivedCras")}
+          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
+            activeTab === "receivedCras"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
+        >
+          CRAs Reçus
+        </button>
       </div>
 
       {activeTab === "craManager" && (
@@ -735,17 +887,28 @@ export default function CRAPage() {
         />
       )}
 
-      <UnifiedManager
-        clientDefinitions={clientDefinitions}
-        onAddClient={handleAddClient}
-        onUpdateClient={handleUpdateClient}
-        onDeleteClient={handleDeleteClient}
-        activityTypeDefinitions={activityTypeDefinitions}
-        onAddActivityType={() => {}}
-        onUpdateActivityType={() => {}}
-        onDeleteActivityType={() => {}}
-        showMessage={showMessage}
-      />
+      {activeTab === "gestion" && (
+        <UnifiedManager
+          clientDefinitions={clientDefinitions}
+          onAddClient={handleAddClient}
+          onUpdateClient={handleUpdateClient}
+          onDeleteClient={handleDeleteClient}
+          activityTypeDefinitions={activityTypeDefinitions}
+          onAddActivityType={handleAddActivityType}
+          onUpdateActivityType={handleUpdateActivityType}
+          onDeleteActivityType={handleDeleteActivityType}
+          showMessage={showMessage}
+        />
+      )}
+
+      {activeTab === "receivedCras" && (
+        <ReceivedCraList
+          currentUserId={currentUserId}
+          showMessage={showMessage}
+          // Vous passerez ici les props nécessaires pour la gestion des CRAs reçus
+          // Ex: craActivities (filtrées pour les CRAs à valider), onUpdateCraStatus, etc.
+        />
+      )}
 
       <ToastMessage
         message={toastMessage.message}

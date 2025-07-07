@@ -206,7 +206,7 @@ export default function ActivityModal({
 
         <div className="flex items-center text-gray-600 mb-4">
           <span className="font-semibold">
-            Date: {date ? format(date, "dd MMMM yyyy", { locale: fr }) : "N/A"}
+            Date: {date ? format(date, "dd MMMM", { locale: fr }) : "N/A"}
           </span>
           {isHolidayOrWeekend && (
             <span className="ml-2 text-sm text-red-500 font-medium">
