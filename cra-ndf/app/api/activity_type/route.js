@@ -1,4 +1,7 @@
-import { getAllActivityTypesController, createActivityTypeController } from "./controller";
+import {
+  getAllActivityTypesController,
+  createActivityTypeController,
+} from "./controller";
 
 export async function GET() {
   return getAllActivityTypesController();

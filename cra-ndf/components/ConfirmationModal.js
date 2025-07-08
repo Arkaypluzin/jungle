@@ -21,13 +21,13 @@ export default function ConfirmationModal({
             onClick={onClose} // Appelle la fonction onClose fournie par le parent pour fermer le modal (action "Annuler")
             className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-200"
           >
-            Annuler {/* Texte du bouton d'annulation */}
+            Annuler
           </button>
           <button
             onClick={onConfirm} // Appelle la fonction onConfirm fournie par le parent (action "Confirmer")
             className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-200"
           >
-            Confirmer {/* Texte du bouton de confirmation */}
+            Confirmer
           </button>
         </div>
       </div>

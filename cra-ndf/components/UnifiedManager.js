@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+// components/UnifiedManager.js
+"use client";
+
+import React, { useState, useCallback, useEffect } from "react";
 import ConfirmationModal from "./ConfirmationModal";
 
 export default function UnifiedManager({
@@ -10,301 +13,575 @@ export default function UnifiedManager({
   onAddActivityType,
   onUpdateActivityType,
   onDeleteActivityType,
-  showMessage,
+  showMessage, // showMessage est maintenant une prop
 }) {
-  // ---- Gestion clients ----
-  const [newClientName, setNewClientName] = useState("");
-  const [editingClient, setEditingClient] = useState(null);
+  const [activeTab, setActiveTab] = useState("clients");
 
-  // ---- Gestion types activité ----
-  const [newActivityTypeName, setNewActivityTypeName] = useState("");
-  const [newActivityTypeIsBillable, setNewActivityTypeIsBillable] = useState(true);
-  const [editingActivityType, setEditingActivityType] = useState(null);
+  // --- Client Management States and Callbacks ---
+  const [newClientData, setNewClientData] = useState({ name: "" });
+  const [editClientData, setEditClientData] = useState(null);
+  const [isClientEditModalOpen, setIsClientEditModalOpen] = useState(false);
 
-  // ---- Modal confirmations ----
+  const handleNewClientChange = useCallback((e) => {
+    setNewClientData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  }, []);
+
+  const handleEditClientChange = useCallback((e) => {
+    setEditClientData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  }, []);
+
+  const handleAddClientSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (!newClientData.name.trim()) {
+        showMessage("Le nom du client est requis.", "error");
+        return;
+      }
+      await onAddClient(newClientData);
+      setNewClientData({ name: "" });
+    },
+    [newClientData, onAddClient, showMessage]
+  );
+
+  const handleUpdateClientSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (editClientData && !editClientData.name.trim()) {
+        showMessage("Le nom du client est requis.", "error");
+        return;
+      }
+      if (editClientData) {
+        try {
+          console.log(
+            "UnifiedManager: Tentative de mise à jour du client avec ID:",
+            editClientData.id,
+            "et données:",
+            editClientData
+          );
+          await onUpdateClient(editClientData.id, editClientData);
+          setIsClientEditModalOpen(false);
+          setEditClientData(null);
+          // Le message de succès est géré dans CRAPage.js après le fetchClient()
+        } catch (error) {
+          console.error(
+            "UnifiedManager: Erreur lors de la soumission de la mise à jour du client:",
+            error
+          );
+          showMessage(
+            `Échec de la mise à jour du client: ${error.message}`,
+            "error"
+          );
+        }
+      }
+    },
+    [editClientData, onUpdateClient, showMessage]
+  );
+
   const [showClientConfirmModal, setShowClientConfirmModal] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
-  const [showActivityTypeConfirmModal, setShowActivityTypeConfirmModal] = useState(false);
-  const [activityTypeToDelete, setActivityTypeToDelete] = useState(null);
 
-  // ---- Handlers clients ----
-  const handleAddClientSubmit = async (e) => {
-    e.preventDefault();
-    if (!newClientName.trim()) {
-      showMessage("Le nom du client ne peut pas être vide.", "error");
-      return;
-    }
-    await onAddClient({ nom_client: newClientName });
-    setNewClientName("");
-  };
-
-  const handleUpdateClientSubmit = async (e) => {
-    e.preventDefault();
-    if (!editingClient || !editingClient.nom_client.trim()) {
-      showMessage("Le nom du client ne peut pas être vide.", "error");
-      return;
-    }
-    await onUpdateClient(editingClient.id, {
-      nom_client: editingClient.nom_client,
-    });
-    setEditingClient(null);
-  };
-
-  const requestDeleteClient = (clientId) => {
+  const requestDeleteClient = useCallback((clientId) => {
     setClientToDelete(clientId);
     setShowClientConfirmModal(true);
-  };
+  }, []);
 
-  const confirmDeleteClient = async () => {
+  const confirmDeleteClient = useCallback(async () => {
     setShowClientConfirmModal(false);
     if (clientToDelete) {
       await onDeleteClient(clientToDelete);
       setClientToDelete(null);
     }
-  };
+  }, [clientToDelete, onDeleteClient]);
 
-  const cancelDeleteClient = () => {
+  const cancelDeleteClient = useCallback(() => {
     setShowClientConfirmModal(false);
     setClientToDelete(null);
-  };
+  }, []);
 
-  // ---- Handlers types activité ----
-  const handleAddActivityTypeSubmit = async (e) => {
-    e.preventDefault();
-    if (!newActivityTypeName.trim()) {
-      showMessage("Le nom du type d'activité ne peut pas être vide.", "error");
-      return;
-    }
-    await onAddActivityType({
-      name: newActivityTypeName,
-      is_billable: newActivityTypeIsBillable ? 1 : 0,
-    });
-    setNewActivityTypeName("");
-    setNewActivityTypeIsBillable(true);
-  };
+  const openClientEditModal = useCallback((client) => {
+    setEditClientData({ id: client.id, name: client.name });
+    setIsClientEditModalOpen(true);
+  }, []);
 
-  const handleUpdateActivityTypeSubmit = async (e) => {
-    e.preventDefault();
-    if (!editingActivityType || !editingActivityType.name.trim()) {
-      showMessage("Le nom du type d'activité ne peut pas être vide.", "error");
-      return;
-    }
-    await onUpdateActivityType(editingActivityType.id, {
-      name: editingActivityType.name,
-      is_billable: editingActivityType.is_billable ? 1 : 0,
-    });
-    setEditingActivityType(null);
-  };
+  const closeClientEditModal = useCallback(() => {
+    setIsClientEditModalOpen(false);
+    setEditClientData(null);
+  }, []);
 
-  const requestDeleteActivityType = (activityTypeId) => {
+  // --- Activity Type Management States and Callbacks ---
+  const [newActivityTypeData, setNewActivityTypeData] = useState({
+    name: "",
+    is_billable: false,
+    requires_client: true,
+    is_overtime: false,
+  });
+  const [editActivityTypeData, setEditActivityTypeData] = useState(null);
+  const [isActivityTypeEditModalOpen, setIsActivityTypeEditModalOpen] =
+    useState(false);
+
+  const handleNewActivityTypeChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setNewActivityTypeData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }, []);
+
+  const handleEditActivityTypeChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setEditActivityTypeData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }, []);
+
+  const handleAddActivityTypeSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (!newActivityTypeData.name.trim()) {
+        showMessage("Le nom du type d'activité est requis.", "error");
+        return;
+      }
+      await onAddActivityType(newActivityTypeData);
+      setNewActivityTypeData({
+        name: "",
+        is_billable: false,
+        requires_client: true,
+        is_overtime: false,
+      });
+    },
+    [newActivityTypeData, onAddActivityType, showMessage]
+  );
+
+  const handleUpdateActivityTypeSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (editActivityTypeData && !editActivityTypeData.name.trim()) {
+        showMessage("Le nom du type d'activité est requis.", "error");
+        return;
+      }
+      if (editActivityTypeData) {
+        try {
+          console.log(
+            "UnifiedManager: Tentative de mise à jour du type d'activité avec ID:",
+            editActivityTypeData.id,
+            "et données:",
+            editActivityTypeData
+          );
+          await onUpdateActivityType(
+            editActivityTypeData.id,
+            editActivityTypeData
+          );
+          setIsActivityTypeEditModalOpen(false);
+          setEditActivityTypeData(null);
+          // Le message de succès est géré dans CRAPage.js après le fetchActivityTypes()
+        } catch (error) {
+          console.error(
+            "UnifiedManager: Erreur lors de la soumission de la mise à jour du type d'activité:",
+            error
+          );
+          showMessage(
+            `Échec de la mise à jour du type d'activité: ${error.message}`,
+            "error"
+          );
+        }
+      }
+    },
+    [editActivityTypeData, onUpdateActivityType, showMessage]
+  );
+
+  const [showActivityTypeConfirmModal, setShowActivityTypeConfirmModal] =
+    useState(false);
+  const [activityTypeToDelete, setActivityTypeToDelete] = useState(null);
+
+  const requestDeleteActivityType = useCallback((activityTypeId) => {
     setActivityTypeToDelete(activityTypeId);
     setShowActivityTypeConfirmModal(true);
-  };
+  }, []);
 
-  const confirmDeleteActivityType = async () => {
+  const confirmDeleteActivityType = useCallback(async () => {
     setShowActivityTypeConfirmModal(false);
     if (activityTypeToDelete) {
       await onDeleteActivityType(activityTypeToDelete);
       setActivityTypeToDelete(null);
     }
-  };
+  }, [activityTypeToDelete, onDeleteActivityType]);
 
-  const cancelDeleteActivityType = () => {
+  const cancelDeleteActivityType = useCallback(() => {
     setShowActivityTypeConfirmModal(false);
     setActivityTypeToDelete(null);
-  };
+  }, []);
+
+  const openActivityTypeEditModal = useCallback((activityType) => {
+    setEditActivityTypeData({
+      id: activityType.id,
+      name: activityType.name,
+      is_billable: activityType.is_billable ?? false,
+      requires_client: activityType.requires_client ?? true,
+      is_overtime: activityType.is_overtime ?? false,
+    });
+    setIsActivityTypeEditModalOpen(true);
+  }, []);
+
+  const closeActivityTypeEditModal = useCallback(() => {
+    setIsActivityTypeEditModalOpen(false);
+    setEditActivityTypeData(null);
+  }, []);
 
   return (
-    <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
-      <h2 className="text-3xl font-extrabold text-center text-gray-800 mb-8">
-        Gestion Unifiée (clients & types activités)
+    <div className="bg-white shadow-xl rounded-2xl p-6 sm:p-8 w-full max-w-7xl mx-auto">
+      <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
+        Gestion des Données de Référence
       </h2>
 
-      {/* Section Clients */}
-      <div className="mb-10 p-6 border border-gray-200 rounded-lg shadow-sm">
-        <h3 className="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">
-          Gestion des Clients
-        </h3>
-        <form
-          onSubmit={editingClient ? handleUpdateClientSubmit : handleAddClientSubmit}
-          className="mb-6 flex flex-col sm:flex-row gap-4"
+      <div className="flex justify-center mb-6">
+        <button
+          onClick={() => setActiveTab("clients")}
+          className={`px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
+            activeTab === "clients"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
         >
-          <input
-            type="text"
-            placeholder="Nom du nouveau client"
-            value={editingClient ? editingClient.nom_client : newClientName}
-            onChange={(e) =>
-              editingClient
-                ? setEditingClient({ ...editingClient, nom_client: e.target.value })
-                : setNewClientName(e.target.value)
-            }
-            className="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-          />
-          <button
-            type="submit"
-            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300"
-          >
-            {editingClient ? "Modifier le client" : "Ajouter un client"}
-          </button>
-          {editingClient && (
-            <button
-              type="button"
-              onClick={() => setEditingClient(null)}
-              className="px-6 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-300"
-            >
-              Annuler
-            </button>
-          )}
-        </form>
-
-        <h4 className="text-xl font-semibold text-gray-700 mb-4">Clients existants :</h4>
-        {clientDefinitions.length === 0 ? (
-          <p className="text-gray-500">Aucun client défini.</p>
-        ) : (
-          <ul className="space-y-2">
-            {clientDefinitions.map((client) => (
-              <li
-                key={client.id}
-                className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
-              >
-                <span className="text-gray-800 font-medium">{client.nom_client}</span>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setEditingClient(client)}
-                    className="p-2 rounded-full bg-yellow-400 text-white hover:bg-yellow-500 transition duration-300"
-                    title="Modifier"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.827-2.828z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => requestDeleteClient(client.id)}
-                    className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-300"
-                    title="Supprimer"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm-1 3a1 1 0 100 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+          Clients
+        </button>
+        <button
+          onClick={() => setActiveTab("activityTypes")}
+          className={`ml-2 px-6 py-3 rounded-t-lg font-semibold transition duration-300 ${
+            activeTab === "activityTypes"
+              ? "bg-blue-600 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
+        >
+          Types d'Activité
+        </button>
       </div>
 
-      {/* Section Types activité */}
-      <div className="p-6 border border-gray-200 rounded-lg shadow-sm">
-        <h3 className="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">
-          Gestion types activité
-        </h3>
-        <form
-          onSubmit={editingActivityType ? handleUpdateActivityTypeSubmit : handleAddActivityTypeSubmit}
-          className="mb-6 flex flex-col sm:flex-row gap-4 items-center"
-        >
-          <input
-            type="text"
-            placeholder="Nom du nouveau type d'activité"
-            value={editingActivityType ? editingActivityType.name : newActivityTypeName}
-            onChange={(e) =>
-              editingActivityType
-                ? setEditingActivityType({ ...editingActivityType, name: e.target.value })
-                : setNewActivityTypeName(e.target.value)
+      {activeTab === "clients" && (
+        <div className="mb-10 p-6 border border-gray-200 rounded-lg shadow-sm">
+          <h3 className="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">
+            Gestion des Clients
+          </h3>
+          <form
+            onSubmit={
+              isClientEditModalOpen
+                ? handleUpdateClientSubmit
+                : handleAddClientSubmit
             }
-            className="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-          />
-          <label htmlFor="isBillableActivityType" className="flex items-center text-gray-700 font-medium">
+            className="mb-6 flex flex-col sm:flex-row gap-4"
+          >
             <input
-              type="checkbox"
-              id="isBillableActivityType"
-              checked={
-                editingActivityType
-                  ? editingActivityType.is_billable === 1 || editingActivityType.is_billable === true
-                  : newActivityTypeIsBillable
+              type="text"
+              name="name"
+              placeholder="Nom du nouveau client"
+              value={
+                isClientEditModalOpen && editClientData
+                  ? editClientData.name
+                  : newClientData.name
               }
-              onChange={(e) =>
-                editingActivityType
-                  ? setEditingActivityType({
-                    ...editingActivityType,
-                    is_billable: e.target.checked ? 1 : 0,
-                  })
-                  : setNewActivityTypeIsBillable(e.target.checked)
+              onChange={
+                isClientEditModalOpen
+                  ? handleEditClientChange
+                  : handleNewClientChange
               }
-              className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+              className="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
             />
-            Facturable
-          </label>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300"
-          >
-            {editingActivityType ? "Modifier le type" : "Ajouter un type"}
-          </button>
-          {editingActivityType && (
             <button
-              type="button"
-              onClick={() => setEditingActivityType(null)}
-              className="px-6 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-300"
+              type="submit"
+              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300"
             >
-              Annuler
+              {isClientEditModalOpen
+                ? "Modifier le client"
+                : "Ajouter un client"}
             </button>
-          )}
-        </form>
-
-        <h4 className="text-xl font-semibold text-gray-700 mb-4">
-          Types activité existants :
-        </h4>
-        {activityTypeDefinitions.length === 0 ? (
-          <p className="text-gray-500">Aucun type activité défini.</p>
-        ) : (
-          <ul className="space-y-2">
-            {activityTypeDefinitions.map((type, idx) => (
-              <li
-                key={type.id ?? type._id ?? `activity-type-${idx}`}
-                className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
+            {isClientEditModalOpen && (
+              <button
+                type="button"
+                onClick={closeClientEditModal}
+                className="px-6 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-300"
               >
-                <span className="text-gray-800 font-medium">
-                  {type.name}
-                  {type.is_billable === 1 || type.is_billable === true ? (
-                    <span className="ml-2 text-green-600 text-sm" title="Facturable">
-                      {" "}
-                      (Facturable)
-                    </span>
-                  ) : (
-                    <span className="ml-2 text-red-600 text-sm" title="Non facturable">
-                      {" "}
-                      (Non facturable)
-                    </span>
-                  )}
-                </span>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setEditingActivityType(type)}
-                    className="p-2 rounded-full bg-yellow-400 text-white hover:bg-yellow-500 transition duration-300"
-                    title="Modifier"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.827-2.828z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => requestDeleteActivityType(type.id)}
-                    className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-300"
-                    title="Supprimer"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm-1 3a1 1 0 100 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                Annuler
+              </button>
+            )}
+          </form>
 
-      {/* Modals confirmation */}
+          <h4 className="text-xl font-semibold text-gray-700 mb-4">
+            Clients existants :
+          </h4>
+          {clientDefinitions.length === 0 ? (
+            <p className="text-gray-500">Aucun client défini.</p>
+          ) : (
+            <ul className="space-y-2">
+              {clientDefinitions.map((client) => (
+                <li
+                  key={client.id}
+                  className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
+                >
+                  <span className="text-gray-800 font-medium">
+                    {client.name}
+                  </span>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => openClientEditModal(client)}
+                      className="p-2 rounded-full bg-yellow-400 text-white hover:bg-yellow-500 transition duration-300"
+                      title="Modifier"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.827-2.828z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => requestDeleteClient(client.id)}
+                      className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-300"
+                      title="Supprimer"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm-1 3a1 1 0 100 2h8a1 1 0 100-2H6z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {activeTab === "activityTypes" && (
+        <div className="p-6 border border-gray-200 rounded-lg shadow-sm">
+          <h3 className="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">
+            Gestion types activité
+          </h3>
+          <form
+            onSubmit={
+              isActivityTypeEditModalOpen
+                ? handleUpdateActivityTypeSubmit
+                : handleAddActivityTypeSubmit
+            }
+            className="mb-6 flex flex-col sm:flex-row gap-4 items-center flex-wrap"
+          >
+            <input
+              type="text"
+              name="name"
+              placeholder="Nom du nouveau type d'activité"
+              value={
+                isActivityTypeEditModalOpen && editActivityTypeData
+                  ? editActivityTypeData.name
+                  : newActivityTypeData.name
+              }
+              onChange={
+                isActivityTypeEditModalOpen
+                  ? handleEditActivityTypeChange
+                  : handleNewActivityTypeChange
+              }
+              className="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 min-w-[200px]"
+            />
+            <label
+              htmlFor="is_billable"
+              className="flex items-center text-gray-700 font-medium px-2 py-1"
+            >
+              <input
+                type="checkbox"
+                id="is_billable"
+                name="is_billable"
+                checked={
+                  isActivityTypeEditModalOpen && editActivityTypeData
+                    ? editActivityTypeData.is_billable
+                    : newActivityTypeData.is_billable
+                }
+                onChange={
+                  isActivityTypeEditModalOpen
+                    ? handleEditActivityTypeChange
+                    : handleNewActivityTypeChange
+                }
+                className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+              />
+              Facturable
+            </label>
+            <label
+              htmlFor="requires_client"
+              className="flex items-center text-gray-700 font-medium px-2 py-1"
+            >
+              <input
+                type="checkbox"
+                id="requires_client"
+                name="requires_client"
+                checked={
+                  isActivityTypeEditModalOpen && editActivityTypeData
+                    ? editActivityTypeData.requires_client
+                    : newActivityTypeData.requires_client
+                }
+                onChange={
+                  isActivityTypeEditModalOpen
+                    ? handleEditActivityTypeChange
+                    : handleNewActivityTypeChange
+                }
+                className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+              />
+              Nécessite un client
+            </label>
+            <label
+              htmlFor="is_overtime"
+              className="flex items-center text-gray-700 font-medium px-2 py-1"
+            >
+              <input
+                type="checkbox"
+                id="is_overtime"
+                name="is_overtime"
+                checked={
+                  isActivityTypeEditModalOpen && editActivityTypeData
+                    ? editActivityTypeData.is_overtime
+                    : newActivityTypeData.is_overtime
+                }
+                onChange={
+                  isActivityTypeEditModalOpen
+                    ? handleEditActivityTypeChange
+                    : handleNewActivityTypeChange
+                }
+                className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+              />
+              Heures supplémentaires
+            </label>
+            <button
+              type="submit"
+              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 min-w-[120px]"
+            >
+              {isActivityTypeEditModalOpen
+                ? "Modifier le type"
+                : "Ajouter un type"}
+            </button>
+            {isActivityTypeEditModalOpen && (
+              <button
+                type="button"
+                onClick={closeActivityTypeEditModal}
+                className="px-6 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-300 min-w-[100px]"
+              >
+                Annuler
+              </button>
+            )}
+          </form>
+
+          <h4 className="text-xl font-semibold text-gray-700 mb-4">
+            Types activité existants :
+          </h4>
+          {activityTypeDefinitions.length === 0 ? (
+            <p className="text-gray-500">Aucun type activité défini.</p>
+          ) : (
+            <ul className="space-y-2">
+              {activityTypeDefinitions.map((type, idx) => (
+                <li
+                  key={type.id ?? type._id ?? `activity-type-${idx}`}
+                  className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
+                >
+                  <span className="text-gray-800 font-medium">
+                    {type.name}
+                    {type.is_billable ? (
+                      <span
+                        className="ml-2 text-green-600 text-sm"
+                        title="Facturable"
+                      >
+                        {" "}
+                        (Facturable)
+                      </span>
+                    ) : (
+                      <span
+                        className="ml-2 text-red-600 text-sm"
+                        title="Non facturable"
+                      >
+                        {" "}
+                        (Non facturable)
+                      </span>
+                    )}
+                    {type.requires_client ? (
+                      <span
+                        className="ml-2 text-blue-600 text-sm"
+                        title="Nécessite un client"
+                      >
+                        {" "}
+                        (Client requis)
+                      </span>
+                    ) : (
+                      <span
+                        className="ml-2 text-gray-500 text-sm"
+                        title="Client non requis"
+                      >
+                        {" "}
+                        (Client non requis)
+                      </span>
+                    )}
+                    {type.is_overtime ? (
+                      <span
+                        className="ml-2 text-purple-600 text-sm"
+                        title="Heures supplémentaires"
+                      >
+                        {" "}
+                        (HS)
+                      </span>
+                    ) : (
+                      <span
+                        className="ml-2 text-gray-500 text-sm"
+                        title="Pas d'heures supplémentaires"
+                      >
+                        {" "}
+                        (Non HS)
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => openActivityTypeEditModal(type)}
+                      className="p-2 rounded-full bg-yellow-400 text-white hover:bg-yellow-500 transition duration-300"
+                      title="Modifier"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.827-2.828z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => requestDeleteActivityType(type.id)}
+                      className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-300"
+                      title="Supprimer"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm-1 3a1 1 0 100 2h8a1 1 0 100-2H6z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <ConfirmationModal
         isOpen={showClientConfirmModal}
         onClose={cancelDeleteClient}

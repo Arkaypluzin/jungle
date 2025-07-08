@@ -4,286 +4,258 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
-// Suppression des imports FontAwesome:
-// import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-// import { faSave, faTimes, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
 
-export default function ActivityModal({
+const ActivityModal = ({
   isOpen,
   onClose,
-  date,
-  editingActivity,
-  clientDefinitions = [],
-  activityTypeDefinitions = [],
-  onSaveActivity,
-  showMessage,
-  isHolidayOrWeekend,
-  currentUserId,
-  craActivities, // Ajouté pour la validation côté client
-}) {
-  const [description_activite, setDescriptionActivite] = useState("");
-  const [temps_passe, setTempsPasse] = useState("");
-  const [type_activite, setTypeActivite] = useState(""); // Sera l'ID du type d'activité
-  const [client_id, setClientId] = useState(""); // Sera l'ID du client (string)
-  const [override_non_working_day, setOverrideNonWorkingDay] = useState(false);
-  const [status, setStatus] = useState("draft"); // Par défaut 'draft'
-  const [formErrors, setFormErrors] = useState({});
+  onSave,
+  onDelete,
+  activity,
+  initialDate,
+  activityTypeDefinitions,
+  clientDefinitions,
+  showMessage, // showMessage est maintenant une prop
+}) => {
+  const getFormattedDate = useCallback((dateValue) => {
+    let dateObj;
+    if (dateValue instanceof Date) {
+      dateObj = dateValue;
+    } else if (typeof dateValue === "string") {
+      dateObj = parseISO(dateValue);
+    } else {
+      dateObj = new Date();
+    }
+    return isValid(dateObj)
+      ? format(dateObj, "yyyy-MM-dd")
+      : format(new Date(), "yyyy-MM-dd");
+  }, []);
 
-  // Log pour voir les définitions de types d'activité reçues
+  const [formData, setFormData] = useState({
+    date_activite: getFormattedDate(initialDate),
+    temps_passe: "",
+    description_activite: "",
+    type_activite: "",
+    client_id: "",
+    override_non_working_day: false,
+    status: "draft",
+  });
+  const [selectedActivityType, setSelectedActivityType] = useState(null);
+  const [isClientRequired, setIsClientRequired] = useState(false);
+  const [errors, setErrors] = useState({});
+
   useEffect(() => {
     console.log(
-      "ActivityModal: >>> Définitions de types d'activité reçues (prop):",
+      "ActivityModal (Log 0): onSave prop reçue:",
+      typeof onSave === "function" ? "OK" : "ERREUR (non fonction)"
+    );
+  }, [onSave]);
+
+  useEffect(() => {
+    console.log("ActivityModal (Log 1): Modal ouvert?", isOpen);
+    console.log(
+      "ActivityModal (Log 2): ActivityTypeDefinitions reçues:",
       JSON.stringify(activityTypeDefinitions, null, 2)
     );
-  }, [activityTypeDefinitions]);
-
-  // Initialisation du formulaire en mode édition ou ajout
-  useEffect(() => {
-    if (isOpen) {
-      setFormErrors({}); // Réinitialiser les erreurs à l'ouverture
-
-      if (editingActivity) {
-        // Mode édition
-        setDescriptionActivite(editingActivity.description_activite || "");
-        setTempsPasse(editingActivity.temps_passe?.toString() || "");
-        setTypeActivite(editingActivity.type_activite || ""); // L'ID du type
-        setClientId(editingActivity.client_id || ""); // L'ID du client
-        setOverrideNonWorkingDay(
-          editingActivity.override_non_working_day || false
-        );
-        setStatus(editingActivity.status || "draft");
-      } else {
-        // Mode ajout
-        setDescriptionActivite("");
-        setTempsPasse("");
-        setTypeActivite("");
-        setClientId("");
-        setOverrideNonWorkingDay(false);
-        setStatus("draft");
-      }
-    }
-  }, [isOpen, editingActivity]);
-
-  // Dérive les propriétés du type d'activité sélectionné
-  const selectedActivityType = useMemo(() => {
-    return activityTypeDefinitions.find(
-      (def) => String(def.id) === String(type_activite)
+    console.log(
+      "ActivityModal (Log 3): ClientDefinitions reçues:",
+      JSON.stringify(clientDefinitions, null, 2)
     );
-  }, [type_activite, activityTypeDefinitions]);
 
-  // Détermine si le champ client doit être affiché et est requis
-  const isClientRequired = useMemo(() => {
-    // S'assurer que selectedActivityType existe et que requires_client est vrai
-    return selectedActivityType ? selectedActivityType.requires_client : false;
-  }, [selectedActivityType]);
+    const debugInitialDateValid = initialDate
+      ? initialDate instanceof Date
+        ? isValid(initialDate)
+        : isValid(parseISO(initialDate))
+      : false;
+    console.log(
+      "ActivityModal (Log Debug): initialDate prop:",
+      initialDate,
+      "isValid(initialDate):",
+      debugInitialDateValid
+    );
 
-  // Détermine si l'activité est une heure supplémentaire
-  const isOvertimeActivity = useMemo(() => {
-    return selectedActivityType ? selectedActivityType.is_overtime : false;
-  }, [selectedActivityType]);
-
-  // Validation du formulaire
-  const validateForm = useCallback(() => {
-    const errors = {};
-    if (!temps_passe || parseFloat(temps_passe) <= 0) {
-      errors.temps_passe = "Le temps passé doit être un nombre positif.";
+    if (activity) {
+      const debugActivityDateValid = activity.date_activite
+        ? isValid(parseISO(activity.date_activite))
+        : false;
+      console.log(
+        "ActivityModal (Log Debug): activity prop:",
+        JSON.stringify(activity, null, 2)
+      );
+      console.log(
+        "ActivityModal (Log Debug): activity.date_activite:",
+        activity.date_activite,
+        "isValid(parseISO(activity.date_activite)):",
+        debugActivityDateValid
+      );
     }
-    if (!type_activite) {
-      errors.type_activite = "Le type d'activité est requis.";
-    }
-    if (isClientRequired && !client_id) {
-      errors.client_id = "Le client est requis pour ce type d'activité.";
-    }
 
-    // Validation du 1 jour maximum
-    if (date && currentUserId && !isOvertimeActivity) {
-      // Seulement pour les activités non-heures supplémentaires
-      const formattedDate = format(date, "yyyy-MM-dd");
-      const newTime = parseFloat(temps_passe) || 0;
+    if (isOpen) {
+      setErrors({});
 
-      const totalTimeForDayExcludingCurrentAndOvertime = craActivities
-        .filter(
-          (activity) =>
-            activity.user_id === currentUserId &&
-            activity.date_activite === formattedDate &&
-            activity.id !== (editingActivity ? editingActivity.id : null) && // Exclut l'activité en cours d'édition
-            activity.is_overtime !== true // Exclut les heures supplémentaires existantes
-        )
-        .reduce(
-          (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
-          0
-        );
-
-      if (totalTimeForDayExcludingCurrentAndOvertime + newTime > 1) {
-        errors.temps_passe = `Le temps total pour le ${format(date, "dd MMMM", {
-          locale: fr,
-        })} dépassera 1 jour (${(
-          totalTimeForDayExcludingCurrentAndOvertime + newTime
-        ).toFixed(
-          2
-        )}j). Maximum autorisé pour les activités régulières : 1 jour.`;
+      if (activity) {
+        setFormData({
+          date_activite: getFormattedDate(activity.date_activite),
+          temps_passe: activity.temps_passe?.toString() || "",
+          description_activite: activity.description_activite || "",
+          type_activite: activity.type_activite || "",
+          client_id: activity.client_id ? String(activity.client_id) : "",
+          override_non_working_day: activity.override_non_working_day ?? false,
+          status: activity.status || "draft",
+        });
+      } else {
+        setFormData({
+          date_activite: getFormattedDate(initialDate),
+          temps_passe: "",
+          description_activite: "",
+          type_activite: "",
+          client_id: "",
+          override_non_working_day: false,
+          status: "draft",
+        });
       }
     }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
   }, [
-    temps_passe,
-    type_activite,
-    isClientRequired,
-    client_id,
-    date,
-    currentUserId,
-    isOvertimeActivity,
-    craActivities,
-    editingActivity,
+    isOpen,
+    activity,
+    initialDate,
+    activityTypeDefinitions,
+    clientDefinitions,
+    getFormattedDate,
   ]);
 
+  useEffect(() => {
+    const currentType = activityTypeDefinitions.find(
+      (type) => String(type.id) === String(formData.type_activite)
+    );
+
+    console.log(
+      "ActivityModal (Log 4): Type d'activité sélectionné (ID):",
+      formData.type_activite
+    );
+    console.log(
+      "ActivityModal (Log 5): Type d'activité sélectionné (Objet):",
+      JSON.stringify(currentType, null, 2)
+    );
+
+    if (currentType) {
+      setSelectedActivityType(currentType);
+      setIsClientRequired(currentType.requires_client);
+    } else {
+      setSelectedActivityType(null);
+      setIsClientRequired(false);
+    }
+  }, [formData.type_activite, activityTypeDefinitions]);
+
+  const handleChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+    setErrors((prev) => ({ ...prev, [name]: "" }));
+  }, []);
+
+  const validateForm = useCallback(() => {
+    const newErrors = {};
+    if (!formData.date_activite)
+      newErrors.date_activite = "La date est requise.";
+    if (!formData.temps_passe || parseFloat(formData.temps_passe) <= 0)
+      newErrors.temps_passe = "Le temps passé doit être un nombre positif.";
+    if (!formData.type_activite)
+      newErrors.type_activite = "Le type d'activité est requis.";
+    if (isClientRequired && (!formData.client_id || formData.client_id === ""))
+      newErrors.client_id = "Le client est requis pour ce type d'activité.";
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [formData, isClientRequired]);
+
   const handleSubmit = useCallback(
-    async (e) => {
+    (e) => {
       e.preventDefault();
-      if (!validateForm()) {
+      if (validateForm()) {
+        const payload = {
+          ...formData,
+          temps_passe: parseFloat(formData.temps_passe),
+          client_id:
+            formData.client_id === "" ? null : String(formData.client_id),
+        };
+        console.log(
+          "ActivityModal (Debug): Appel de onSave avec payload:",
+          payload
+        );
+        if (typeof onSave === "function") {
+          onSave(payload);
+        } else {
+          console.error(
+            "ActivityModal (Erreur): onSave n'est pas une fonction ou est undefined.",
+            "onSave value:",
+            onSave
+          );
+          showMessage(
+            "Erreur interne: Impossible de sauvegarder l'activité (onSave manquant).",
+            "error"
+          );
+        }
+      } else {
         showMessage(
           "Veuillez corriger les erreurs dans le formulaire.",
           "error"
         );
-        return;
       }
-
-      if (!date) {
-        showMessage("Date de l'activité non définie.", "error");
-        return;
-      }
-
-      const activityData = {
-        date_activite: format(date, "yyyy-MM-dd"),
-        temps_passe: parseFloat(temps_passe),
-        description_activite,
-        type_activite: String(type_activite), // S'assurer que c'est une chaîne
-        client_id: client_id === "" ? null : String(client_id), // S'assurer que c'est une chaîne ou null
-        override_non_working_day,
-        user_id: currentUserId,
-        status,
-      };
-
-      console.log(
-        "ActivityModal: >>> Payload envoyé à onSaveActivity (vers CRAPage):",
-        activityData
-      );
-      await onSaveActivity(activityData);
     },
-    [
-      validateForm,
-      date,
-      temps_passe,
-      description_activite,
-      type_activite,
-      client_id,
-      override_non_working_day,
-      currentUserId,
-      status,
-      onSaveActivity,
-      showMessage,
-    ]
+    [formData, onSave, validateForm, showMessage]
   );
+
+  const handleClientSelectChange = useCallback((e) => {
+    const value = e.target.value;
+    setFormData((prev) => ({
+      ...prev,
+      client_id: value,
+    }));
+    setErrors((prev) => ({ ...prev, client_id: "" }));
+  }, []);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md relative">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+          {activity ? "Modifier l'Activité" : "Ajouter une Activité"}
+        </h2>
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl"
+          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-3xl leading-none"
           aria-label="Fermer"
         >
-          &times; {/* Utilisation d'un caractère X */}
+          &times;
         </button>
-
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">
-          {editingActivity ? "Modifier l'activité" : "Ajouter une activité"}
-        </h2>
-
-        <div className="flex items-center text-gray-600 mb-4">
-          <span className="font-semibold">
-            Date: {date ? format(date, "dd MMMM", { locale: fr }) : "N/A"}
-          </span>
-          {isHolidayOrWeekend && (
-            <span className="ml-2 text-sm text-red-500 font-medium">
-              (Jour non ouvré)
-            </span>
-          )}
-        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label
-              htmlFor="type_activite"
+              htmlFor="date_activite"
               className="block text-gray-700 text-sm font-bold mb-2"
             >
-              Type d'activité:
+              Date de l'activité:
             </label>
-            <select
-              id="type_activite"
-              value={type_activite}
-              onChange={(e) => {
-                setTypeActivite(e.target.value);
-                setFormErrors((prev) => ({
-                  ...prev,
-                  type_activite: undefined,
-                }));
-              }}
+            <input
+              type="date"
+              id="date_activite"
+              name="date_activite"
+              value={formData.date_activite}
+              onChange={handleChange}
               className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                formErrors.type_activite ? "border-red-500" : ""
+                errors.date_activite ? "border-red-500" : ""
               }`}
-            >
-              <option value="">Sélectionner un type</option>
-              {activityTypeDefinitions.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
-            {formErrors.type_activite && (
+            />
+            {errors.date_activite && (
               <p className="text-red-500 text-xs italic">
-                {formErrors.type_activite}
+                {errors.date_activite}
               </p>
             )}
           </div>
-
-          {isClientRequired && (
-            <div className="mb-4">
-              <label
-                htmlFor="client_id"
-                className="block text-gray-700 text-sm font-bold mb-2"
-              >
-                Client:
-              </label>
-              <select
-                id="client_id"
-                value={client_id}
-                onChange={(e) => {
-                  setClientId(e.target.value);
-                  setFormErrors((prev) => ({ ...prev, client_id: undefined }));
-                }}
-                className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                  formErrors.client_id ? "border-red-500" : ""
-                }`}
-              >
-                <option value="">Sélectionner un client</option>
-                {clientDefinitions.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name || client.nom_client}
-                  </option>
-                ))}
-              </select>
-              {formErrors.client_id && (
-                <p className="text-red-500 text-xs italic">
-                  {formErrors.client_id}
-                </p>
-              )}
-            </div>
-          )}
 
           <div className="mb-4">
             <label
@@ -295,75 +267,156 @@ export default function ActivityModal({
             <input
               type="number"
               id="temps_passe"
-              value={temps_passe}
-              onChange={(e) => {
-                setTempsPasse(e.target.value);
-                setFormErrors((prev) => ({ ...prev, temps_passe: undefined }));
-              }}
-              min="0.1"
-              step="0.1"
+              name="temps_passe"
+              step="0.01"
+              value={formData.temps_passe}
+              onChange={handleChange}
+              placeholder="Ex: 0.5 (pour une demi-journée)"
               className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                formErrors.temps_passe ? "border-red-500" : ""
+                errors.temps_passe ? "border-red-500" : ""
               }`}
             />
-            {formErrors.temps_passe && (
+            {errors.temps_passe && (
               <p className="text-red-500 text-xs italic">
-                {formErrors.temps_passe}
+                {errors.temps_passe}
+              </p>
+            )}
+          </div>
+          <div className="mb-4">
+            <label
+              htmlFor="type_activite"
+              className="block text-gray-700 text-sm font-bold mb-2"
+            >
+              Type d'activité:
+            </label>
+            <select
+              id="type_activite"
+              name="type_activite"
+              value={formData.type_activite}
+              onChange={handleChange}
+              className={`shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-white ${
+                errors.type_activite ? "border-red-500" : ""
+              }`}
+            >
+              <option value="">Sélectionner un type</option>
+              {activityTypeDefinitions.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name} (
+                  {type.is_billable ? "Facturable" : "Non facturable"})
+                </option>
+              ))}
+            </select>
+            {errors.type_activite && (
+              <p className="text-red-500 text-xs italic">
+                {errors.type_activite}
               </p>
             )}
           </div>
 
           <div className="mb-4">
             <label
+              htmlFor="client_id"
+              className="block text-gray-700 text-sm font-bold mb-2"
+            >
+              Client:
+            </label>
+            <select
+              id="client_id"
+              name="client_id"
+              value={formData.client_id}
+              onChange={handleClientSelectChange}
+              className={`shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-white ${
+                errors.client_id ? "border-red-500" : ""
+              }`}
+            >
+              <option value="">Sélectionner un client (optionnel)</option>
+              {clientDefinitions.length > 0 ? (
+                clientDefinitions.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
+                ))
+              ) : (
+                <option disabled>Aucun client disponible</option>
+              )}
+            </select>
+            {errors.client_id && (
+              <p className="text-red-500 text-xs italic">{errors.client_id}</p>
+            )}
+          </div>
+          <div className="mb-4">
+            <label
               htmlFor="description_activite"
               className="block text-gray-700 text-sm font-bold mb-2"
             >
-              Description de l'activité:
+              Description:
             </label>
             <textarea
               id="description_activite"
-              value={description_activite}
-              onChange={(e) => setDescriptionActivite(e.target.value)}
+              name="description_activite"
+              value={formData.description_activite || ""}
+              onChange={handleChange}
               rows="3"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              placeholder="Détails de l'activité (optionnel)"
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline resize-y"
             ></textarea>
           </div>
-
-          {isHolidayOrWeekend && (
-            <div className="mb-4 flex items-center">
-              <input
-                type="checkbox"
-                id="override_non_working_day"
-                checked={override_non_working_day}
-                onChange={(e) => setOverrideNonWorkingDay(e.target.checked)}
-                className="mr-2 leading-tight"
-              />
-              <label
-                htmlFor="override_non_working_day"
-                className="text-gray-700 text-sm font-bold"
+          {selectedActivityType &&
+            (selectedActivityType.is_overtime ||
+              selectedActivityType.is_billable) && (
+              <div className="mb-4">
+                <label
+                  htmlFor="override_non_working_day"
+                  className="flex items-center text-gray-700 text-sm font-bold"
+                >
+                  <input
+                    type="checkbox"
+                    id="override_non_working_day"
+                    name="override_non_working_day"
+                    checked={formData.override_non_working_day}
+                    onChange={handleChange}
+                    className="mr-2 h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  Reporter cette activité même si c'est un jour non travaillé
+                  (weekend, jour férié)
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Utile pour les heures supplémentaires ou les urgences.
+                </p>
+              </div>
+            )}
+          <div className="flex justify-between mt-6">
+            {activity && (
+              <button
+                type="button"
+                onClick={() => onDelete(activity.id)}
+                className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200"
               >
-                Dérogation jour non ouvré
-              </label>
+                Supprimer
+              </button>
+            )}
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200"
+              >
+                {activity
+                  ? "Sauvegarder les modifications"
+                  : "Ajouter l'activité"}
+              </button>
             </div>
-          )}
-
-          <div className="flex justify-end space-x-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-md transition duration-300"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 flex items-center"
-            >
-              {editingActivity ? "Modifier" : "Ajouter"}
-            </button>
           </div>
         </form>
       </div>
     </div>
   );
-}
+};
+
+export default ActivityModal;

@@ -1,122 +1,201 @@
+// app/api/cra_activities/model.js
 import { getMongoDb } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
 
+const COLLECTION_NAME = "cra_activities";
+
 export async function getAllCraActivities() {
+  const db = await getMongoDb();
   try {
-    const db = await getMongoDb();
-    if (!db) {
-      console.error(
-        "MongoDB connection failed: db object is null or undefined."
-      );
-      throw new Error("Database connection not established.");
-    }
-    return await db.collection("cra_activities").find({}).toArray();
+    const activities = await db.collection(COLLECTION_NAME).find({}).toArray();
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: Récupération de toutes les activités: ${activities.length} documents.`
+    );
+    return activities;
   } catch (error) {
-    console.error("Error in getAllCraActivities model:", error);
+    console.error(
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération de toutes les activités:`,
+      error
+    );
     throw new Error(
-      `Failed to retrieve CRA activities from database: ${error.message}`
+      `Échec de la récupération de toutes les activités: ${error.message}`
     );
   }
 }
 
 export async function getCraActivityById(id) {
   const db = await getMongoDb();
-  if (!db) {
-    console.error("MongoDB connection failed: db object is null or undefined.");
-    throw new Error("Database connection not established.");
+  if (
+    !id ||
+    typeof id !== "string" ||
+    id.length !== 24 ||
+    !id.match(/^[0-9a-fA-F]{24}$/)
+  ) {
+    console.warn(
+      `MongoDB ${COLLECTION_NAME}: ID d'activité CRA invalide fourni pour la recherche: ${id}`
+    );
+    return null;
   }
   try {
-    return db.collection("cra_activities").findOne({ _id: new ObjectId(id) });
-  } catch (err) {
-    console.error(
-      `Error converting ID to ObjectId for getCraActivityById: ${id}`,
-      err
+    const activity = await db
+      .collection(COLLECTION_NAME)
+      .findOne({ _id: new ObjectId(id) });
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: Activité CRA par ID ${id}: ${
+        activity ? "Trouvée" : "Non trouvée"
+      }.`
     );
-    // Si l'ID n'est pas un ObjectId valide, cela peut signifier un ID malformé
-    throw new Error(`Invalid activity ID provided: ${id}`);
+    return activity;
+  } catch (error) {
+    console.error(
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération de l'activité CRA par ID ${id}:`,
+      error
+    );
+    return null;
   }
 }
 
-export async function createCraActivity(activity) {
+export async function createCraActivity(data) {
   const db = await getMongoDb();
-  if (!db) {
-    console.error("MongoDB connection failed: db object is null or undefined.");
-    throw new Error("Database connection not established.");
-  }
+  const newActivity = {
+    date_activite: new Date(data.date_activite), // Assurez-vous que c'est un objet Date
+    temps_passe: data.temps_passe,
+    description_activite: data.description_activite || null,
+    type_activite: new ObjectId(data.type_activite),
+    client_id: data.client_id ? new ObjectId(data.client_id) : null,
+    override_non_working_day: Boolean(data.override_non_working_day),
+    status: data.status || "draft",
+    user_id: data.user_id, // <-- S'assure que user_id est bien enregistré
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
   try {
-    const doc = {
-      description_activite: activity.description_activite || "",
-      temps_passe: activity.temps_passe,
-      date_activite: activity.date_activite,
-      type_activite: activity.type_activite,
-      type_activite_name: activity.type_activite_name,
-      client_id: activity.client_id || null,
-      client_name: activity.client_name || null,
-      override_non_working_day: activity.override_non_working_day || 0,
-      user_id: activity.user_id,
-      is_billable: activity.is_billable || 0,
-      is_overtime: activity.is_overtime || 0,
-      status: activity.status || "draft",
-      created_at: new Date(),
-      updated_at: new Date(),
-    };
-    const { insertedId } = await db.collection("cra_activities").insertOne(doc);
-    doc._id = insertedId;
-    return doc;
-  } catch (error) {
-    console.error("Error in createCraActivity model:", error);
-    throw new Error(
-      `Failed to create CRA activity in database: ${error.message}`
+    const result = await db.collection(COLLECTION_NAME).insertOne(newActivity);
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: Activité CRA créée avec ID: ${result.insertedId}`
     );
+    return { ...newActivity, _id: result.insertedId };
+  } catch (error) {
+    console.error(
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la création de l'activité CRA:`,
+      error
+    );
+    throw new Error(`Échec de la création de l'activité CRA: ${error.message}`);
   }
 }
 
 export async function updateCraActivity(id, updateData) {
   const db = await getMongoDb();
-  if (!db) {
-    console.error("MongoDB connection failed: db object is null or undefined.");
-    throw new Error("Database connection not established.");
+  if (
+    !id ||
+    typeof id !== "string" ||
+    id.length !== 24 ||
+    !id.match(/^[0-9a-fA-F]{24}$/)
+  ) {
+    console.warn(
+      `MongoDB ${COLLECTION_NAME}: ID d'activité CRA invalide fourni pour la mise à jour: ${id}`
+    );
+    return null;
   }
-  const update = { $set: {} };
+  const objectId = new ObjectId(id);
+  const updateDoc = { $set: { updated_at: new Date() } };
 
-  for (const key in updateData) {
-    if (updateData.hasOwnProperty(key)) {
-      update.$set[key] = updateData[key];
-    }
-  }
-  update.$set.updated_at = new Date();
+  if (updateData.date_activite !== undefined)
+    updateDoc.$set.date_activite = new Date(updateData.date_activite);
+  if (updateData.temps_passe !== undefined)
+    updateDoc.$set.temps_passe = updateData.temps_passe;
+  if (updateData.description_activite !== undefined)
+    updateDoc.$set.description_activite = updateData.description_activite;
+  if (updateData.type_activite !== undefined)
+    updateDoc.$set.type_activite = new ObjectId(updateData.type_activite);
+  if (updateData.client_id !== undefined)
+    updateDoc.$set.client_id = updateData.client_id
+      ? new ObjectId(updateData.client_id)
+      : null;
+  if (updateData.override_non_working_day !== undefined)
+    updateDoc.$set.override_non_working_day = Boolean(
+      updateData.override_non_working_day
+    );
+  if (updateData.status !== undefined)
+    updateDoc.$set.status = updateData.status;
 
   try {
     const res = await db
-      .collection("cra_activities")
-      .updateOne({ _id: new ObjectId(id) }, update);
-    if (res.matchedCount === 0) return null;
-    return await db
-      .collection("cra_activities")
-      .findOne({ _id: new ObjectId(id) });
-  } catch (err) {
-    console.error("Error in updateCraActivity model:", err);
-    throw new Error(
-      `Failed to update CRA activity in database: ${err.message}`
+      .collection(COLLECTION_NAME)
+      .findOneAndUpdate({ _id: objectId }, updateDoc, {
+        returnDocument: "after",
+      });
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: Activité CRA mise à jour pour ID ${id}: ${
+        res.value ? "Succès" : "Non trouvée"
+      }.`
     );
+    return res.value;
+  } catch (error) {
+    console.error(
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la mise à jour de l'activité CRA par ID ${id}:`,
+      error
+    );
+    return null;
   }
 }
 
 export async function deleteCraActivity(id) {
   const db = await getMongoDb();
-  if (!db) {
-    console.error("MongoDB connection failed: db object is null or undefined.");
-    throw new Error("Database connection not established.");
+  if (
+    !id ||
+    typeof id !== "string" ||
+    id.length !== 24 ||
+    !id.match(/^[0-9a-fA-F]{24}$/)
+  ) {
+    console.warn(
+      `MongoDB ${COLLECTION_NAME}: ID d'activité CRA invalide fourni pour la suppression: ${id}`
+    );
+    return { deleted: false };
   }
   try {
     const res = await db
-      .collection("cra_activities")
+      .collection(COLLECTION_NAME)
       .deleteOne({ _id: new ObjectId(id) });
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: Activité CRA supprimée pour ID ${id}: ${
+        res.deletedCount > 0 ? "Oui" : "Non"
+      }.`
+    );
     return { deleted: res.deletedCount > 0 };
-  } catch (err) {
-    console.error("Error in deleteCraActivity model:", err);
+  } catch (error) {
+    console.error(
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la suppression de l'activité CRA par ID ${id}:`,
+      error
+    );
+    return { deleted: false };
+  }
+}
+
+export async function getCraActivitiesByDateRange(startDate, endDate) {
+  const db = await getMongoDb();
+  try {
+    const query = {
+      date_activite: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      },
+    };
+    const activities = await db
+      .collection(COLLECTION_NAME)
+      .find(query)
+      .toArray();
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: ${activities.length} activités trouvées entre ${startDate} et ${endDate}.`
+    );
+    return activities;
+  } catch (error) {
+    console.error(
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération des activités par plage de dates:`,
+      error
+    );
     throw new Error(
-      `Failed to delete CRA activity from database: ${err.message}`
+      `Échec de la récupération des activités par plage de dates: ${error.message}`
     );
   }
 }

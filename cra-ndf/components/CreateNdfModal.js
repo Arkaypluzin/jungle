@@ -91,7 +91,6 @@ export default function CreateNdfModal({ onNdfCreated }) {
       {open && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-lg relative transform transition-all scale-100 opacity-100 duration-300 ease-out">
-            {/* Bouton de fermeture */}
             <button
               type="button"
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"

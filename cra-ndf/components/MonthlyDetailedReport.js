@@ -323,7 +323,6 @@ export default function MonthlyDetailedReport({
                           }`}
                         >
                           {time > 0 ? time.toFixed(2) : ""}{" "}
-                          {/* Affiche vide si 0 */}
                         </td>
                       );
                     })}
@@ -333,7 +332,6 @@ export default function MonthlyDetailedReport({
                   </tr>
                 );
               })}
-              {/* Ligne Total par Type d'Activité */}
               <tr className="bg-gray-200 font-bold print:bg-gray-100">
                 <td className="sticky left-0 bg-gray-200 px-4 py-2 whitespace-nowrap text-sm text-gray-900 print:bg-gray-100 print:text-xs border-r border-gray-200">
                   Total Type
@@ -363,7 +361,6 @@ export default function MonthlyDetailedReport({
         Total général pour le mois : {grandTotalDays} jours
       </div>
 
-      {/* Section Signature Électronique */}
       <div className="mt-10 p-6 bg-gray-50 rounded-lg shadow-sm border border-gray-200 print:mt-6 print:p-0 print:bg-white print:border-none print:shadow-none">
         <h3 className="text-xl font-bold text-gray-700 mb-4 print:text-lg">
           Signature Électronique

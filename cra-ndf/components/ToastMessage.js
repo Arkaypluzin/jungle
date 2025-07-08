@@ -46,7 +46,7 @@ export default function ToastMessage({
       aria-live="assertive" // Annonce aux lecteurs d'écran les changements dynamiques
       role="alert" // Indique que l'élément est une alerte
     >
-      {message} {/* Affiche le message du toast */}
+      {message}
     </div>
   );
 }
