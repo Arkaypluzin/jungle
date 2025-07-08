@@ -1,150 +1,214 @@
 // components/SummaryReport.js
 "use client";
 
-import React, { useMemo } from "react";
-import { format, startOfMonth, endOfMonth, isValid } from "date-fns"; // parseISO n'est plus nécessaire ici
+import React, { useCallback } from "react"; // Ajout de useCallback pour la fonction helper
+import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export default function SummaryReport({
-  craActivities = [],
+  activities = [],
   activityTypeDefinitions = [],
   clientDefinitions = [],
-  monthToDisplay,
-  currentUserId,
-  currentUserName,
-  showMessage,
+  currentMonth, // Reçoit un objet Date
+  totalWorkingDaysInMonth,
+  totalActivitiesTimeInMonth,
+  timeDifference,
+  onClose, // La fonction pour fermer le rapport
 }) {
-  const activitiesInMonth = useMemo(() => {
-    if (!monthToDisplay || !isValid(monthToDisplay)) return [];
+  // Vérifier si currentMonth est une date valide avant de l'utiliser
+  const displayMonth = isValid(currentMonth)
+    ? format(currentMonth, "MMMM YYYY", { locale: fr }) // Format complet avec l'année
+    : "Mois inconnu";
 
-    const monthStart = startOfMonth(monthToDisplay);
-    const monthEnd = endOfMonth(monthToDisplay);
-
-    return craActivities.filter(
-      (activity) =>
-        activity.user_id === currentUserId &&
-        activity.date_activite &&
-        isValid(activity.date_activite) && // MODIFICATION CLÉ : Supprimé parseISO
-        activity.date_activite >= monthStart && // MODIFICATION CLÉ : Comparaison directe d'objets Date
-        activity.date_activite <= monthEnd // MODIFICATION CLÉ : Comparaison directe d'objets Date
-    );
-  }, [craActivities, monthToDisplay, currentUserId]);
-
-  const monthlySummary = useMemo(() => {
-    const summary = {};
-    let totalDays = 0;
-
-    activitiesInMonth.forEach((activity) => {
-      let activityTypeName = activity.type_activite;
-      // Reclasser "Type Inconnu" en "Heure supplémentaire" pour le rapport
-      if (!activityTypeName || activityTypeName === "Type Inconnu") {
-        activityTypeName = "Heure supplémentaire";
+  // Fonction helper pour obtenir le nom d'affichage du type d'activité
+  const getActivityTypeDisplayName = useCallback(
+    (activityItem) => {
+      // Priorité 1: Utiliser le nom populé directement du backend (si le lookup fonctionne)
+      if (activityItem.activityTypeName) {
+        return activityItem.activityTypeName;
       }
+      // Priorité 2: Rechercher dans les définitions par ID (fallback)
+      const definition = activityTypeDefinitions.find(
+        (t) => String(t.id) === String(activityItem.type_activite)
+      );
+      return definition ? definition.name : "Activité inconnue";
+    },
+    [activityTypeDefinitions]
+  );
 
-      const timeSpent = parseFloat(activity.temps_passe) || 0;
-
-      if (!summary[activityTypeName]) {
-        summary[activityTypeName] = {
-          total: 0,
-          billable: 0,
-          nonBillable: 0,
-        };
+  // Fonction helper pour obtenir le nom d'affichage du client
+  const getClientDisplayName = useCallback(
+    (activityItem) => {
+      // Priorité 1: Utiliser le nom populé directement du backend (si le lookup fonctionne)
+      if (activityItem.clientName) {
+        return activityItem.clientName;
       }
-      summary[activityTypeName].total += timeSpent;
-      if (activity.is_billable === 1) {
-        summary[activityTypeName].billable += timeSpent;
-      } else {
-        summary[activityTypeName].nonBillable += timeSpent;
-      }
-      totalDays += timeSpent;
-    });
+      // Priorité 2: Rechercher dans les définitions par ID (fallback)
+      const definition = clientDefinitions.find(
+        (c) => String(c.id) === String(activityItem.client_id)
+      );
+      return definition ? definition.nom_client : "Non attribué";
+    },
+    [clientDefinitions]
+  );
 
-    // Trier les types d'activité pour un affichage cohérent
-    const sortedActivityTypes = Object.keys(summary).sort();
+  // Trier les activités par date
+  const sortedActivities = [...activities].sort((a, b) => {
+    const dateA = isValid(parseISO(a.date_activite))
+      ? parseISO(a.date_activite)
+      : new Date(0);
+    const dateB = isValid(parseISO(b.date_activite))
+      ? parseISO(b.date_activite)
+      : new Date(0);
+    return dateA.getTime() - dateB.getTime();
+  });
 
-    return { summary, totalDays, sortedActivityTypes };
-  }, [activitiesInMonth]);
-
-  const { summary, totalDays, sortedActivityTypes } = monthlySummary;
-
-  if (!monthToDisplay || !isValid(monthToDisplay)) {
-    return (
-      <div className="bg-white p-6 rounded-lg shadow-md text-center text-gray-600">
-        Veuillez sélectionner un mois pour afficher le résumé.
-      </div>
+  // Fonction pour gérer le clic sur le bouton de fermeture
+  const handleCloseClick = useCallback(() => {
+    console.log(
+      "SummaryReport: Le bouton 'Fermer' a été cliqué. Appel de la prop onClose."
     );
-  }
-
-  if (activitiesInMonth.length === 0) {
-    return (
-      <div className="bg-white p-6 rounded-lg shadow-md text-center text-gray-600">
-        Aucune activité trouvée pour{" "}
-        {format(monthToDisplay, "MMMM", { locale: fr })}.
-      </div>
-    );
-  }
+    onClose(); // Appelle la fonction onClose passée par le composant parent
+  }, [onClose]);
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
-      <h3 className="text-xl font-bold text-gray-800 mb-4">
-        Résumé Mensuel pour {format(monthToDisplay, "MMMM", { locale: fr })}
-      </h3>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Type d'activité
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total (jours)
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Facturable (jours)
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Non Facturable (jours)
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {sortedActivityTypes.map((type) => (
-              <tr key={type}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {activityTypeDefinitions.find((def) => def.name === type)
-                    ?.name_full || type}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500">
-                  {summary[type].total.toFixed(2)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500">
-                  {summary[type].billable.toFixed(2)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500">
-                  {summary[type].nonBillable.toFixed(2)}
-                </td>
-              </tr>
-            ))}
-            <tr className="bg-gray-50 font-bold">
-              <td className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                Total Général
-              </td>
-              <td className="px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">
-                {totalDays.toFixed(2)}
-              </td>
-              <td className="px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">
-                {Object.values(summary)
-                  .reduce((sum, s) => sum + s.billable, 0)
-                  .toFixed(2)}
-              </td>
-              <td className="px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">
-                {Object.values(summary)
-                  .reduce((sum, s) => sum + s.nonBillable, 0)
-                  .toFixed(2)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto relative">
+        <button
+          onClick={handleCloseClick} // Le bouton Fermer appellera la fonction interne handleCloseClick
+          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold"
+          aria-label="Fermer le rapport"
+        >
+          &times;
+        </button>
+        <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
+          Rapport d'activités pour {displayMonth}
+        </h2>
+
+        {/* Section Résumé */}
+        <div className="bg-blue-50 p-4 rounded-lg mb-6 shadow-sm">
+          <h3 className="text-xl font-semibold text-blue-800 mb-3">
+            Résumé du mois
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-gray-700">
+            <p>
+              Jours ouvrés:{" "}
+              <span className="font-bold">
+                {/* Vérification de sécurité pour totalWorkingDaysInMonth */}
+                {typeof totalWorkingDaysInMonth === "number" &&
+                !isNaN(totalWorkingDaysInMonth)
+                  ? totalWorkingDaysInMonth
+                  : "0"}
+              </span>
+            </p>
+            <p>
+              Temps déclaré:{" "}
+              <span className="font-bold">
+                {/* Vérification de sécurité pour totalActivitiesTimeInMonth */}
+                {typeof totalActivitiesTimeInMonth === "number" &&
+                !isNaN(totalActivitiesTimeInMonth)
+                  ? totalActivitiesTimeInMonth.toFixed(2)
+                  : "0.00"}{" "}
+                j
+              </span>
+            </p>
+            <p>
+              Écart:{" "}
+              <span
+                className={`font-bold ${
+                  // timeDifference est déjà une chaîne formatée par toFixed(2), donc parseFloat est sûr ici
+                  parseFloat(timeDifference || "0") < 0
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}
+              >
+                {/* timeDifference est déjà formaté, pas besoin de toFixed ici */}
+                {timeDifference || "0.00"} j
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* Section Détail des Activités */}
+        <div className="mb-6">
+          <h3 className="text-xl font-semibold text-gray-800 mb-3">
+            Détail des activités
+          </h3>
+          {sortedActivities.length === 0 ? (
+            <p className="text-gray-600 italic">
+              Aucune activité déclarée pour ce mois.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="py-2 px-4 border-b text-left text-sm font-medium text-gray-600">
+                      Date
+                    </th>
+                    <th className="py-2 px-4 border-b text-left text-sm font-medium text-gray-600">
+                      Type d'activité
+                    </th>
+                    <th className="py-2 px-4 border-b text-left text-sm font-medium text-gray-600">
+                      Client
+                    </th>
+                    <th className="py-2 px-4 border-b text-left text-sm font-medium text-gray-600">
+                      Temps (j)
+                    </th>
+                    <th className="py-2 px-4 border-b text-left text-sm font-medium text-gray-600">
+                      Description
+                    </th>
+                    <th className="py-2 px-4 border-b text-left text-sm font-medium text-gray-600">
+                      Statut
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedActivities.map((activity) => (
+                    <tr key={activity.id} className="hover:bg-gray-50">
+                      <td className="py-2 px-4 border-b text-sm text-gray-800">
+                        {isValid(parseISO(activity.date_activite))
+                          ? format(
+                              parseISO(activity.date_activite),
+                              "dd/MM/yyyy"
+                            )
+                          : "Date invalide"}
+                      </td>
+                      <td className="py-2 px-4 border-b text-sm text-gray-800">
+                        {getActivityTypeDisplayName(activity)}
+                      </td>
+                      <td className="py-2 px-4 border-b text-sm text-gray-800">
+                        {getClientDisplayName(activity)}
+                      </td>
+                      <td className="py-2 px-4 border-b text-sm text-gray-800">
+                        {/* Assurez-vous que temps_passe est un nombre avant toFixed */}
+                        {typeof activity.temps_passe === "number" &&
+                        !isNaN(activity.temps_passe)
+                          ? activity.temps_passe.toFixed(1)
+                          : "0.0"}
+                      </td>
+                      <td className="py-2 px-4 border-b text-sm text-gray-800">
+                        {activity.description_activite || "-"}
+                      </td>
+                      <td className="py-2 px-4 border-b text-sm text-gray-800">
+                        {activity.status}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="text-center mt-6">
+          <button
+            onClick={handleCloseClick} // Le bouton Fermer appellera la fonction interne handleCloseClick
+            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300"
+          >
+            Fermer
+          </button>
+        </div>
       </div>
     </div>
   );

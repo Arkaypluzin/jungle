@@ -997,7 +997,6 @@ export default function CraBoard({
           Envoyer le CRA
         </button>
       </div>
-
       {showSummaryReport && summaryReportMonth && (
         <SummaryReport
           month={summaryReportMonth}
@@ -1009,6 +1008,7 @@ export default function CraBoard({
           timeDifference={timeDifference}
           isPublicHoliday={isPublicHoliday}
           userFirstName={userFirstName}
+          onClose={handleToggleSummaryReport}
         />
       )}
 

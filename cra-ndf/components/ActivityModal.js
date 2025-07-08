@@ -310,8 +310,7 @@ const ActivityModal = ({
                   key={type.id || type._id?.toString()}
                   value={type.id || type._id?.toString()}
                 >
-                  {type.name} (
-                  {type.is_billable ? "Facturable" : "Non facturable"})
+                  {type.name} {type.is_billable}
                 </option>
               ))}
             </select>
@@ -338,7 +337,7 @@ const ActivityModal = ({
                 errors.client_id ? "border-red-500" : ""
               }`}
             >
-              <option value="">Sélectionner un client (optionnel)</option>
+              <option value="">Sélectionner un client </option>
               {clientDefinitions.length > 0 ? (
                 clientDefinitions.map((client) => {
                   const clientKey = client.id || client._id?.toString();

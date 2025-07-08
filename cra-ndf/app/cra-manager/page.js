@@ -150,6 +150,10 @@ export default function CRAPage() {
           `/api/cra_activities?userId=${currentUserId}&startDate=${startDate}&endDate=${endDate}`,
           "activités CRA"
         );
+        console.log(
+          "CRAPage: Données d'activités CRA reçues (après API transformation et lookup):",
+          JSON.stringify(activitiesData, null, 2)
+        );
         setCraActivities(activitiesData);
         console.log(
           "CRAPage: >>> Activités CRA chargées (fetchCraActivitiesForMonth):",
@@ -181,8 +185,6 @@ export default function CRAPage() {
         JSON.stringify(clientsData, null, 2)
       );
 
-      // Les données de clients devraient déjà avoir un champ 'id' dû à la configuration toJSON/toObject dans le modèle Mongoose.
-      // Nous allons loguer pour nous en assurer.
       clientsData.slice(0, 5).forEach((client, index) => {
         console.log(
           `CRAPage: Client ${index} ID:`,
@@ -192,7 +194,7 @@ export default function CRAPage() {
         );
       });
 
-      setClientDefinitions(clientsData); // Utiliser les données directement, elles devraient être formatées correctement.
+      setClientDefinitions(clientsData);
       console.log(
         "CRAPage: >>> Définitions de clients chargées:",
         clientsData.length,
@@ -213,12 +215,24 @@ export default function CRAPage() {
         "/api/activity_type",
         "types d'activité"
       );
+      console.log(
+        "CRAPage: Données brutes des types d'activité reçues (après API transformation):",
+        JSON.stringify(activityTypesData, null, 2)
+      );
       setActivityTypeDefinitions(activityTypesData);
       console.log(
         "CRAPage: >>> Définitions de types d'activité chargées:",
         activityTypesData.length,
         "types. État activityTypeDefinitions mis à jour."
       );
+      activityTypesData.slice(0, 5).forEach((type, index) => {
+        console.log(
+          `CRAPage: Type d'activité ${index} ID:`,
+          type.id,
+          "Nom:",
+          type.name
+        );
+      });
       return activityTypesData;
     } catch (err) {
       console.error(
@@ -249,11 +263,10 @@ export default function CRAPage() {
       setError(null);
       try {
         if (status === "authenticated" && currentUserId) {
-          await Promise.all([
-            fetchClients(),
-            fetchActivityTypes(),
-            fetchCraActivitiesForMonth(currentDisplayedMonth),
-          ]);
+          // Utiliser Promise.all pour charger les définitions et ensuite les activités
+          await Promise.all([fetchClients(), fetchActivityTypes()]);
+          // Une fois les définitions chargées, charger les activités
+          await fetchCraActivitiesForMonth(currentDisplayedMonth);
         } else if (status === "unauthenticated") {
           setClientDefinitions([]);
           setActivityTypeDefinitions([]);
@@ -319,8 +332,13 @@ export default function CRAPage() {
           );
         }
         const newActivity = await response.json();
-        console.log("CRAPage: Activité CRA créée avec succès:", newActivity);
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        console.log(
+          "CRAPage: Activité CRA créée avec succès (réponse API brute):",
+          newActivity
+        );
+        // Après la création, on recharge les activités pour s'assurer qu'elles sont populées
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        showMessage("Activité ajoutée avec succès !", "success"); // Déplacé ici pour s'assurer du rechargement
         return newActivity;
       } catch (error) {
         console.error(
@@ -377,10 +395,12 @@ export default function CRAPage() {
         }
         const updatedActivity = await response.json();
         console.log(
-          "CRAPage: Activité CRA mise à jour avec succès:",
+          "CRAPage: Activité CRA mise à jour avec succès (réponse API brute):",
           updatedActivity
         );
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Après la mise à jour, on recharge les activités pour s'assurer qu'elles sont populées
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        showMessage("Activité mise à jour avec succès !", "success"); // Déplacé ici
         return updatedActivity;
       } catch (error) {
         console.error(
@@ -432,7 +452,9 @@ export default function CRAPage() {
           );
         }
         console.log(`CRAPage: Activité CRA ${id} supprimée avec succès.`);
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Après la suppression, on recharge les activités
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        showMessage("Activité supprimée avec succès !", "success"); // Déplacé ici
       } catch (error) {
         console.error(
           "CRAPage: Échec de la suppression de l'activité CRA:",
@@ -466,7 +488,6 @@ export default function CRAPage() {
           body: JSON.stringify(clientData),
         });
 
-        // Log the response status and body for debugging
         console.log(
           `CRAPage: handleAddClient - Réponse API statut: ${res.status}`
         );
@@ -479,7 +500,8 @@ export default function CRAPage() {
         }
         showMessage("Client ajouté avec succès !", "success");
         await fetchClients();
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Recharge les activités pour s'assurer que les nouvelles associations sont visibles
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error("CRAPage: Erreur lors de l'ajout du client:", error);
         showMessage(`Échec de l'ajout du client: ${error.message}`, "error");
@@ -523,7 +545,8 @@ export default function CRAPage() {
         }
         showMessage("Client mis à jour avec succès !", "success");
         await fetchClients();
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Recharge les activités pour s'assurer que les nouvelles associations sont visibles
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Erreur lors de la mise à jour du client:",
@@ -566,7 +589,8 @@ export default function CRAPage() {
         }
         showMessage("Client supprimé avec succès !", "success");
         await fetchClients();
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Recharge les activités pour s'assurer que les nouvelles associations sont visibles
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error("CRAPage: Échec de la suppression du client:", error);
         showMessage(
@@ -599,7 +623,8 @@ export default function CRAPage() {
         }
         showMessage("Type d'activité ajouté avec succès !", "success");
         await fetchActivityTypes();
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Recharge les activités pour s'assurer que les nouvelles associations sont visibles
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Erreur lors de l'ajout du type d'activité:",
@@ -639,7 +664,8 @@ export default function CRAPage() {
         }
         showMessage("Type d'activité mis à jour avec succès !", "success");
         await fetchActivityTypes();
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Recharge les activités pour s'assurer que les nouvelles associations sont visibles
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Erreur lors de la mise à jour du type d'activité:",
@@ -673,7 +699,8 @@ export default function CRAPage() {
         }
         showMessage("Type d'activité supprimé avec succès !", "success");
         await fetchActivityTypes();
-        fetchCraActivitiesForMonth(currentDisplayedMonth);
+        // Recharge les activités pour s'assurer que les nouvelles associations sont visibles
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Échec de la suppression du type d'activité:",
@@ -726,7 +753,8 @@ export default function CRAPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-8">
-      <div className="container mx-auto px-4">
+      {/* Modification ici: utilisation de max-w-7xl pour plus d'espace */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Bouton de retour */}
         <div className="mb-4">
           <button
