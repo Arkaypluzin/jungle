@@ -13,12 +13,12 @@ export default function UnifiedManager({
   onAddActivityType,
   onUpdateActivityType,
   onDeleteActivityType,
-  showMessage, // showMessage est maintenant une prop
+  showMessage,
 }) {
   const [activeTab, setActiveTab] = useState("clients");
 
   // --- Client Management States and Callbacks ---
-  const [newClientData, setNewClientData] = useState({ name: "" });
+  const [newClientData, setNewClientData] = useState({ nom_client: "" });
   const [editClientData, setEditClientData] = useState(null);
   const [isClientEditModalOpen, setIsClientEditModalOpen] = useState(false);
 
@@ -33,12 +33,31 @@ export default function UnifiedManager({
   const handleAddClientSubmit = useCallback(
     async (e) => {
       e.preventDefault();
-      if (!newClientData.name.trim()) {
-        showMessage("Le nom du client est requis.", "error");
-        return;
+      // Assurez-vous que le nom du client est toujours une chaîne et supprimez les espaces blancs
+      const clientName = newClientData.nom_client
+        ? String(newClientData.nom_client).trim()
+        : "";
+
+      console.log(
+        "UnifiedManager: Tentative d'ajout de client. Nom actuel (après trim):",
+        `"${clientName}"`
+      ); // NOUVEAU LOG CLÉ
+
+      // Validation côté client: Si le nom est vide après avoir retiré les espaces
+      if (clientName === "") {
+        showMessage("Le nom du client est requis (côté client).", "error"); // Message plus spécifique
+        console.warn(
+          "UnifiedManager: Validation côté client bloquée: Nom du client vide ou espaces."
+        );
+        return; // Empêche l'envoi de la requête API
       }
-      await onAddClient(newClientData);
-      setNewClientData({ name: "" });
+
+      console.log(
+        "UnifiedManager: Validation côté client réussie. Envoi de newClientData à onAddClient:",
+        JSON.stringify({ nom_client: clientName })
+      );
+      await onAddClient({ nom_client: clientName }); // Passez la valeur nettoyée
+      setNewClientData({ nom_client: "" }); // Réinitialisez l'input
     },
     [newClientData, onAddClient, showMessage]
   );
@@ -46,22 +65,24 @@ export default function UnifiedManager({
   const handleUpdateClientSubmit = useCallback(
     async (e) => {
       e.preventDefault();
-      if (editClientData && !editClientData.name.trim()) {
+      if (
+        editClientData &&
+        (!editClientData.nom_client || editClientData.nom_client.trim() === "")
+      ) {
         showMessage("Le nom du client est requis.", "error");
         return;
       }
       if (editClientData) {
+        console.log(
+          "UnifiedManager: Tentative de mise à jour du client avec ID:",
+          editClientData.id,
+          "et données:",
+          editClientData
+        );
         try {
-          console.log(
-            "UnifiedManager: Tentative de mise à jour du client avec ID:",
-            editClientData.id,
-            "et données:",
-            editClientData
-          );
           await onUpdateClient(editClientData.id, editClientData);
           setIsClientEditModalOpen(false);
           setEditClientData(null);
-          // Le message de succès est géré dans CRAPage.js après le fetchClient()
         } catch (error) {
           console.error(
             "UnifiedManager: Erreur lors de la soumission de la mise à jour du client:",
@@ -80,14 +101,24 @@ export default function UnifiedManager({
   const [showClientConfirmModal, setShowClientConfirmModal] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
 
-  const requestDeleteClient = useCallback((clientId) => {
-    setClientToDelete(clientId);
+  const requestDeleteClient = useCallback((client) => {
+    console.log(
+      "UnifiedManager: Demande de suppression du client avec ID:",
+      client.id,
+      "Nom:",
+      client.nom_client
+    );
+    setClientToDelete(client.id);
     setShowClientConfirmModal(true);
   }, []);
 
   const confirmDeleteClient = useCallback(async () => {
     setShowClientConfirmModal(false);
     if (clientToDelete) {
+      console.log(
+        "UnifiedManager: Confirmation de suppression du client avec ID:",
+        clientToDelete
+      );
       await onDeleteClient(clientToDelete);
       setClientToDelete(null);
     }
@@ -99,7 +130,13 @@ export default function UnifiedManager({
   }, []);
 
   const openClientEditModal = useCallback((client) => {
-    setEditClientData({ id: client.id, name: client.name });
+    console.log(
+      "UnifiedManager: Ouverture de la modale d'édition pour le client:",
+      client.id,
+      "Nom:",
+      client.nom_client
+    );
+    setEditClientData({ id: client.id, nom_client: client.nom_client });
     setIsClientEditModalOpen(true);
   }, []);
 
@@ -161,20 +198,19 @@ export default function UnifiedManager({
         return;
       }
       if (editActivityTypeData) {
+        console.log(
+          "UnifiedManager: Tentative de mise à jour du type d'activité avec ID:",
+          editActivityTypeData.id,
+          "et données:",
+          editActivityTypeData
+        );
         try {
-          console.log(
-            "UnifiedManager: Tentative de mise à jour du type d'activité avec ID:",
-            editActivityTypeData.id,
-            "et données:",
-            editActivityTypeData
-          );
           await onUpdateActivityType(
             editActivityTypeData.id,
             editActivityTypeData
           );
           setIsActivityTypeEditModalOpen(false);
           setEditActivityTypeData(null);
-          // Le message de succès est géré dans CRAPage.js après le fetchActivityTypes()
         } catch (error) {
           console.error(
             "UnifiedManager: Erreur lors de la soumission de la mise à jour du type d'activité:",
@@ -272,12 +308,12 @@ export default function UnifiedManager({
           >
             <input
               type="text"
-              name="name"
+              name="nom_client"
               placeholder="Nom du nouveau client"
               value={
                 isClientEditModalOpen && editClientData
-                  ? editClientData.name
-                  : newClientData.name
+                  ? editClientData.nom_client
+                  : newClientData.nom_client
               }
               onChange={
                 isClientEditModalOpen
@@ -314,11 +350,11 @@ export default function UnifiedManager({
             <ul className="space-y-2">
               {clientDefinitions.map((client) => (
                 <li
-                  key={client.id}
+                  key={client.id || client._id?.toString() || client.nom_client}
                   className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
                 >
                   <span className="text-gray-800 font-medium">
-                    {client.name}
+                    {client.nom_client}
                   </span>
                   <div className="flex space-x-2">
                     <button
@@ -336,7 +372,7 @@ export default function UnifiedManager({
                       </svg>
                     </button>
                     <button
-                      onClick={() => requestDeleteClient(client.id)}
+                      onClick={() => requestDeleteClient(client)}
                       className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-300"
                       title="Supprimer"
                     >
@@ -484,7 +520,9 @@ export default function UnifiedManager({
             <ul className="space-y-2">
               {activityTypeDefinitions.map((type, idx) => (
                 <li
-                  key={type.id ?? type._id ?? `activity-type-${idx}`}
+                  key={
+                    type.id ?? type._id?.toString() ?? `activity-type-${idx}`
+                  }
                   className="flex justify-between items-center bg-gray-50 p-3 rounded-md border border-gray-200 shadow-sm"
                 >
                   <span className="text-gray-800 font-medium">

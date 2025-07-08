@@ -176,17 +176,45 @@ export default function CRAPage() {
   const fetchClients = useCallback(async () => {
     try {
       const clientsData = await fetchAndParse("/api/client", "clients");
-      setClientDefinitions(clientsData); // <-- Mise à jour de l'état ici
+      console.log(
+        "CRAPage: Données brutes des clients reçues:",
+        JSON.stringify(clientsData, null, 2)
+      );
+      // Assurez-vous que chaque client a une propriété 'id' qui est le _id de MongoDB
+      const formattedClientsData = clientsData.map((client) => {
+        const clientId = client._id?.toString();
+        if (!clientId) {
+          console.warn(
+            "CRAPage: Client sans ID valide détecté (après tentative de formatage):",
+            JSON.stringify(client)
+          );
+        }
+        return {
+          ...client,
+          id: clientId,
+        };
+      });
+
+      setClientDefinitions(formattedClientsData);
       console.log(
         "CRAPage: >>> Définitions de clients chargées:",
-        clientsData.length,
+        formattedClientsData.length,
         "clients. État clientDefinitions mis à jour."
       );
-      return clientsData;
+      // Log pour vérifier les IDs des clients après formatage
+      formattedClientsData.slice(0, 5).forEach((client, index) => {
+        console.log(
+          `CRAPage: Client ${index} ID:`,
+          client.id,
+          "Nom:",
+          client.nom_client
+        );
+      });
+      return formattedClientsData;
     } catch (err) {
       console.error("CRAPage: Erreur lors du chargement des clients:", err);
       showMessage(`Erreur de chargement des clients: ${err.message}`, "error");
-      setClientDefinitions([]); // <-- Réinitialisation en cas d'erreur
+      setClientDefinitions([]);
       throw err;
     }
   }, [showMessage, fetchAndParse]);
@@ -197,7 +225,7 @@ export default function CRAPage() {
         "/api/activity_type",
         "types d'activité"
       );
-      setActivityTypeDefinitions(activityTypesData); // <-- Mise à jour de l'état ici
+      setActivityTypeDefinitions(activityTypesData);
       console.log(
         "CRAPage: >>> Définitions de types d'activité chargées:",
         activityTypesData.length,
@@ -213,7 +241,7 @@ export default function CRAPage() {
         `Erreur de chargement des types d'activité: ${err.message}`,
         "error"
       );
-      setActivityTypeDefinitions([]); // <-- Réinitialisation en cas d'erreur
+      setActivityTypeDefinitions([]);
       throw err;
     }
   }, [showMessage, fetchAndParse]);
@@ -233,7 +261,6 @@ export default function CRAPage() {
       setError(null);
       try {
         if (status === "authenticated" && currentUserId) {
-          // Promise.all pour charger en parallèle, les fonctions de fetch mettent maintenant à jour leurs propres états
           await Promise.all([
             fetchClients(),
             fetchActivityTypes(),
@@ -305,7 +332,7 @@ export default function CRAPage() {
         }
         const newActivity = await response.json();
         console.log("CRAPage: Activité CRA créée avec succès:", newActivity);
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir pour le mois affiché
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
         return newActivity;
       } catch (error) {
         console.error(
@@ -365,7 +392,7 @@ export default function CRAPage() {
           "CRAPage: Activité CRA mise à jour avec succès:",
           updatedActivity
         );
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir pour le mois affiché
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
         return updatedActivity;
       } catch (error) {
         console.error(
@@ -387,7 +414,7 @@ export default function CRAPage() {
     ]
   );
 
-  const handleDeleteCraActivity = useCallback(
+  const handleDeleteActivity = useCallback(
     async (id) => {
       if (!currentUserId || currentUserId === "unauthenticated") {
         showMessage(
@@ -398,7 +425,7 @@ export default function CRAPage() {
       }
       try {
         console.log(
-          `CRAPage: handleDeleteCraActivity - Tentative de suppression de l'ID: ${id}`
+          `CRAPage: handleDeleteActivity - Tentative de suppression de l'ID: ${id}`
         );
         const response = await fetch(`/api/cra_activities/${id}`, {
           method: "DELETE",
@@ -417,7 +444,7 @@ export default function CRAPage() {
           );
         }
         console.log(`CRAPage: Activité CRA ${id} supprimée avec succès.`);
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir pour le mois affiché
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Échec de la suppression de l'activité CRA:",
@@ -442,23 +469,29 @@ export default function CRAPage() {
     async (clientData) => {
       try {
         console.log(
-          "CRAPage: handleAddClient - Données à envoyer:",
-          clientData
+          "CRAPage: handleAddClient - Données à envoyer (avant fetch):", // NOUVEAU LOG CLÉ
+          JSON.stringify(clientData, null, 2)
         );
         const res = await fetch("/api/client", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(clientData),
         });
+
+        // Log the response status and body for debugging
+        console.log(
+          `CRAPage: handleAddClient - Réponse API statut: ${res.status}`
+        );
         if (!res.ok) {
           const errorData = await res.json();
+          console.error("CRAPage: handleAddClient - Erreur API:", errorData);
           throw new Error(
             errorData.message || `Erreur serveur: ${res.statusText}`
           );
         }
         showMessage("Client ajouté avec succès !", "success");
-        await fetchClients(); // <-- Attendre la mise à jour de l'état des clients
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir les activités
+        await fetchClients();
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error("CRAPage: Erreur lors de l'ajout du client:", error);
         showMessage(`Échec de l'ajout du client: ${error.message}`, "error");
@@ -474,11 +507,21 @@ export default function CRAPage() {
 
   const handleUpdateClient = useCallback(
     async (id, clientData) => {
-      try {
-        console.log(
-          `CRAPage: handleUpdateClient - ID: ${id}, Données:`,
-          clientData
+      console.log(
+        `CRAPage: handleUpdateClient - ID reçu: ${id}, Données:`,
+        clientData
+      );
+      if (!id) {
+        showMessage(
+          "Erreur: ID du client manquant pour la mise à jour.",
+          "error"
         );
+        console.error(
+          "CRAPage: ID du client est undefined lors de la mise à jour."
+        );
+        return;
+      }
+      try {
         const res = await fetch(`/api/client/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -491,8 +534,8 @@ export default function CRAPage() {
           );
         }
         showMessage("Client mis à jour avec succès !", "success");
-        await fetchClients(); // <-- Attendre la mise à jour de l'état des clients
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir les activités
+        await fetchClients();
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Erreur lors de la mise à jour du client:",
@@ -514,6 +557,17 @@ export default function CRAPage() {
 
   const handleDeleteClient = useCallback(
     async (id) => {
+      console.log(`CRAPage: handleDeleteClient - ID reçu: ${id}`);
+      if (!id) {
+        showMessage(
+          "Erreur: ID du client manquant pour la suppression.",
+          "error"
+        );
+        console.error(
+          "CRAPage: ID du client est undefined lors de la suppression."
+        );
+        return;
+      }
       try {
         const res = await fetch(`/api/client/${id}`, { method: "DELETE" });
         if (!res.ok) {
@@ -523,13 +577,10 @@ export default function CRAPage() {
           );
         }
         showMessage("Client supprimé avec succès !", "success");
-        await fetchClients(); // <-- Attendre la mise à jour de l'état des clients
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir les activités
+        await fetchClients();
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
-        console.error(
-          "CRAPage: Erreur lors de la suppression du client:",
-          error
-        );
+        console.error("CRAPage: Échec de la suppression du client:", error);
         showMessage(
           `Échec de la suppression du client: ${error.message}`,
           "error"
@@ -559,8 +610,8 @@ export default function CRAPage() {
           );
         }
         showMessage("Type d'activité ajouté avec succès !", "success");
-        await fetchActivityTypes(); // <-- Attendre la mise à jour de l'état des types d'activité
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir les activités
+        await fetchActivityTypes();
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Erreur lors de l'ajout du type d'activité:",
@@ -599,8 +650,8 @@ export default function CRAPage() {
           );
         }
         showMessage("Type d'activité mis à jour avec succès !", "success");
-        await fetchActivityTypes(); // <-- Attendre la mise à jour de l'état des types d'activité
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir les activités
+        await fetchActivityTypes();
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
           "CRAPage: Erreur lors de la mise à jour du type d'activité:",
@@ -633,11 +684,11 @@ export default function CRAPage() {
           );
         }
         showMessage("Type d'activité supprimé avec succès !", "success");
-        await fetchActivityTypes(); // <-- Attendre la mise à jour de l'état des types d'activité
-        fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchir les activités
+        await fetchActivityTypes();
+        fetchCraActivitiesForMonth(currentDisplayedMonth);
       } catch (error) {
         console.error(
-          "CRAPage: Erreur lors de la suppression du type d'activité:",
+          "CRAPage: Échec de la suppression du type d'activité:",
           error
         );
         showMessage(
@@ -763,7 +814,7 @@ export default function CRAPage() {
             clientDefinitions={clientDefinitions}
             onAddActivity={handleAddCraActivity}
             onUpdateActivity={handleUpdateCraActivity}
-            onDeleteActivity={handleDeleteCraActivity}
+            onDeleteActivity={handleDeleteActivity}
             fetchActivitiesForMonth={fetchCraActivitiesForMonth}
             showMessage={showMessage}
             currentMonth={currentDisplayedMonth}
