@@ -3,6 +3,43 @@ import { getMongoDb } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
 
 const COLLECTION_NAME = "cra_activities";
+// VÉRIFIEZ ET AJUSTEZ CES NOMS DE COLLECTION SI NÉCESSAIRE POUR CORRESPONDRE À VOTRE BASE DE DONNÉES !
+// Exemple: si votre collection clients est nommée "MyClients", changez "clients" en "MyClients"
+const CLIENT_COLLECTION_NAME = "clients";
+const ACTIVITY_TYPE_COLLECTION_NAME = "activitytypes";
+
+// Helper to transform _id to id for single documents
+function transformDocument(doc) {
+  if (!doc) return null;
+  const newDoc = { ...doc, id: doc._id.toString() };
+  delete newDoc._id;
+  // If client_id was populated (which means it's an object), transform its _id as well
+  // Note: client_id in cra_activities is now stored as String, but the populated object will have _id
+  if (
+    newDoc.client_id &&
+    typeof newDoc.client_id === "object" &&
+    newDoc.client_id._id
+  ) {
+    newDoc.client_id.id = newDoc.client_id._id.toString();
+    delete newDoc.client_id._id;
+  }
+  // If type_activite was populated, transform its _id as well
+  if (
+    newDoc.type_activite &&
+    typeof newDoc.type_activite === "object" &&
+    newDoc.type_activite._id
+  ) {
+    newDoc.type_activite.id = newDoc.type_activite._id.toString();
+    delete newDoc.type_activite._id;
+  }
+  return newDoc;
+}
+
+// Helper to transform _id to id for arrays of documents
+function transformDocuments(docs) {
+  if (!docs) return [];
+  return docs.map(transformDocument);
+}
 
 export async function getAllCraActivities() {
   const db = await getMongoDb();
@@ -11,7 +48,7 @@ export async function getAllCraActivities() {
     console.log(
       `MongoDB ${COLLECTION_NAME}: Récupération de toutes les activités: ${activities.length} documents.`
     );
-    return activities;
+    return transformDocuments(activities); // Transform for frontend
   } catch (error) {
     console.error(
       `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération de toutes les activités:`,
@@ -40,12 +77,13 @@ export async function getCraActivityById(id) {
     const activity = await db
       .collection(COLLECTION_NAME)
       .findOne({ _id: new ObjectId(id) });
+
     console.log(
       `MongoDB ${COLLECTION_NAME}: Activité CRA par ID ${id}: ${
         activity ? "Trouvée" : "Non trouvée"
       }.`
     );
-    return activity;
+    return transformDocument(activity); // Transform for frontend
   } catch (error) {
     console.error(
       `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération de l'activité CRA par ID ${id}:`,
@@ -57,15 +95,19 @@ export async function getCraActivityById(id) {
 
 export async function createCraActivity(data) {
   const db = await getMongoDb();
+
+  // Store client_id and type_activite as strings directly,
+  // as they are not valid ObjectIds from the frontend based on logs.
+  // This assumes the 'id' field in clients/activitytypes is a string (e.g., numeric string).
   const newActivity = {
     date_activite: new Date(data.date_activite), // Assurez-vous que c'est un objet Date
     temps_passe: data.temps_passe,
     description_activite: data.description_activite || null,
-    type_activite: new ObjectId(data.type_activite),
-    client_id: data.client_id ? new ObjectId(data.client_id) : null,
+    type_activite: data.type_activite, // Stored as String
+    client_id: data.client_id || null, // Stored as String
     override_non_working_day: Boolean(data.override_non_working_day),
     status: data.status || "draft",
-    user_id: data.user_id, // <-- S'assure que user_id est bien enregistré
+    user_id: data.user_id, // user_id is a string, not an ObjectId
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -74,7 +116,8 @@ export async function createCraActivity(data) {
     console.log(
       `MongoDB ${COLLECTION_NAME}: Activité CRA créée avec ID: ${result.insertedId}`
     );
-    return { ...newActivity, _id: result.insertedId };
+    // Return the inserted document with the _id transformed to id
+    return transformDocument({ ...newActivity, _id: result.insertedId });
   } catch (error) {
     console.error(
       `MongoDB ${COLLECTION_NAME}: Erreur lors de la création de l'activité CRA:`,
@@ -106,12 +149,15 @@ export async function updateCraActivity(id, updateData) {
     updateDoc.$set.temps_passe = updateData.temps_passe;
   if (updateData.description_activite !== undefined)
     updateDoc.$set.description_activite = updateData.description_activite;
-  if (updateData.type_activite !== undefined)
-    updateDoc.$set.type_activite = new ObjectId(updateData.type_activite);
-  if (updateData.client_id !== undefined)
-    updateDoc.$set.client_id = updateData.client_id
-      ? new ObjectId(updateData.client_id)
-      : null;
+
+  // Store type_activite and client_id as strings in update
+  if (updateData.type_activite !== undefined) {
+    updateDoc.$set.type_activite = updateData.type_activite; // Stored as String
+  }
+
+  if (updateData.client_id !== undefined) {
+    updateDoc.$set.client_id = updateData.client_id; // Stored as String
+  }
   if (updateData.override_non_working_day !== undefined)
     updateDoc.$set.override_non_working_day = Boolean(
       updateData.override_non_working_day
@@ -130,13 +176,15 @@ export async function updateCraActivity(id, updateData) {
         res.value ? "Succès" : "Non trouvée"
       }.`
     );
-    return res.value;
+    return transformDocument(res.value); // Transform for frontend
   } catch (error) {
     console.error(
       `MongoDB ${COLLECTION_NAME}: Erreur lors de la mise à jour de l'activité CRA par ID ${id}:`,
       error
     );
-    return null;
+    throw new Error(
+      `Échec de la mise à jour de l'activité CRA: ${error.message}`
+    );
   }
 }
 
@@ -168,30 +216,72 @@ export async function deleteCraActivity(id) {
       `MongoDB ${COLLECTION_NAME}: Erreur lors de la suppression de l'activité CRA par ID ${id}:`,
       error
     );
-    return { deleted: false };
+    throw new Error(
+      `Échec de la suppression de l'activité CRA: ${error.message}`
+    );
   }
 }
 
-export async function getCraActivitiesByDateRange(startDate, endDate) {
+export async function getCraActivitiesByDateRange(userId, startDate, endDate) {
   const db = await getMongoDb();
   try {
     const query = {
+      user_id: userId, // Filter by user_id (expected to be a String)
       date_activite: {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       },
     };
+
+    const pipeline = [
+      { $match: query },
+      {
+        $lookup: {
+          from: CLIENT_COLLECTION_NAME, // The collection to join with
+          localField: "client_id", // Field from the input documents (now a String)
+          foreignField: "id", // Field from the "from" documents (assuming it's 'id' string)
+          as: "client_id", // Output array field name
+        },
+      },
+      {
+        $unwind: {
+          path: "$client_id",
+          preserveNullAndEmptyArrays: true, // Keep activity if no client match
+        },
+      },
+      {
+        $lookup: {
+          from: ACTIVITY_TYPE_COLLECTION_NAME, // The collection to join with
+          localField: "type_activite", // Field from the input documents (now a String)
+          foreignField: "id", // Field from the "from" documents (assuming it's 'id' string)
+          as: "type_activite",
+        },
+      },
+      {
+        $unwind: {
+          path: "$type_activite",
+          preserveNullAndEmptyArrays: true, // Keep activity if no activity type match
+        },
+      },
+    ];
+
+    console.log(
+      `MongoDB ${COLLECTION_NAME}: Exécution de l'agrégation avec le pipeline:`,
+      JSON.stringify(pipeline, null, 2)
+    );
+
     const activities = await db
       .collection(COLLECTION_NAME)
-      .find(query)
+      .aggregate(pipeline)
       .toArray();
+
     console.log(
-      `MongoDB ${COLLECTION_NAME}: ${activities.length} activités trouvées entre ${startDate} et ${endDate}.`
+      `MongoDB ${COLLECTION_NAME}: ${activities.length} activités trouvées pour userId ${userId} entre ${startDate} et ${endDate}.`
     );
-    return activities;
+    return transformDocuments(activities); // Transform for frontend, handles populated fields
   } catch (error) {
     console.error(
-      `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération des activités par plage de dates:`,
+      `MongoDB ${COLLECTION_NAME}: Erreur lors de la récupération des activités par plage de dates (agrégation):`,
       error
     );
     throw new Error(

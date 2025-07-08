@@ -57,7 +57,7 @@ const ActivityModal = ({
       JSON.stringify(activityTypeDefinitions, null, 2)
     );
     console.log(
-      "ActivityModal (Log 3): ClientDefinitions reçues:",
+      "ActivityModal (Log 3): ClientDefinitions reçues (au montage/ouverture):",
       JSON.stringify(clientDefinitions, null, 2)
     );
 
@@ -177,6 +177,7 @@ const ActivityModal = ({
         const payload = {
           ...formData,
           temps_passe: parseFloat(formData.temps_passe),
+          // S'assurer que client_id est null si vide, sinon stringifié
           client_id:
             formData.client_id === "" ? null : String(formData.client_id),
         };
@@ -217,6 +218,11 @@ const ActivityModal = ({
   }, []);
 
   if (!isOpen) return null;
+
+  console.log(
+    "ActivityModal (Render): clientDefinitions pour le select (avant map):",
+    JSON.stringify(clientDefinitions, null, 2)
+  );
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -300,7 +306,10 @@ const ActivityModal = ({
             >
               <option value="">Sélectionner un type</option>
               {activityTypeDefinitions.map((type) => (
-                <option key={type.id} value={type.id}>
+                <option
+                  key={type.id || type._id?.toString()}
+                  value={type.id || type._id?.toString()}
+                >
                   {type.name} (
                   {type.is_billable ? "Facturable" : "Non facturable"})
                 </option>
@@ -331,11 +340,18 @@ const ActivityModal = ({
             >
               <option value="">Sélectionner un client (optionnel)</option>
               {clientDefinitions.length > 0 ? (
-                clientDefinitions.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))
+                clientDefinitions.map((client) => {
+                  const clientKey = client.id || client._id?.toString();
+                  console.log(
+                    `ActivityModal (Render): Option client - key: "${clientKey}", value: "${clientKey}", name: "${client.nom_client}"`
+                  ); // NOUVEAU LOG CLÉ
+                  return (
+                    <option key={clientKey} value={clientKey}>
+                      {client.nom_client}{" "}
+                      {/* Utilisez client.nom_client pour l'affichage */}
+                    </option>
+                  );
+                })
               ) : (
                 <option disabled>Aucun client disponible</option>
               )}

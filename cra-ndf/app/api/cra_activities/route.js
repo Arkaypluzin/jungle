@@ -1,45 +1,43 @@
 // app/api/cra_activities/route.js
+import { NextResponse } from "next/server";
 import {
-  getAllCraActivitiesController,
   createCraActivityController,
-  updateCraActivityController,
-  deleteCraActivityController,
-} from "./controller"; // Le chemin est relatif au dossier courant
+  getCraActivitiesByDateRangeController,
+} from "./controller";
 
-// GET /api/cra_activities?userId=...
 export async function GET(request) {
-  return getAllCraActivitiesController(request);
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get("userId");
+  const startDate = searchParams.get("startDate");
+  const endDate = searchParams.get("endDate");
+
+  if (!userId) {
+    return NextResponse.json(
+      { message: "L'ID utilisateur est requis." },
+      { status: 400 }
+    );
+  }
+
+  // Si startDate et endDate sont fournis, utiliser la fonction par plage de dates
+  if (startDate && endDate) {
+    return getCraActivitiesByDateRangeController(userId, startDate, endDate);
+  } else {
+    // Sinon, utiliser la fonction pour toutes les activités de l'utilisateur (si implémentée)
+    // Pour l'instant, nous redirigeons vers la plage de dates si aucune n'est spécifiée.
+    // Vous pouvez implémenter une logique pour récupérer toutes les activités d'un user ici si nécessaire.
+    return NextResponse.json(
+      {
+        message:
+          "Veuillez fournir startDate et endDate pour récupérer les activités CRA.",
+      },
+      { status: 400 }
+    );
+  }
 }
 
-// POST /api/cra_activities
 export async function POST(request) {
-  return createCraActivityController(request);
-}
-
-// PUT /api/cra_activities?id=...
-// Pour une route statique comme celle-ci, l'ID doit venir des query parameters
-export async function PUT(request) {
-  const id = request.nextUrl.searchParams.get("id"); // Extrait l'ID des query params
-  if (!id) {
-    // Utilise NextResponse pour une réponse JSON cohérente
-    return new Response(
-      JSON.stringify({ message: "ID manquant pour la mise à jour." }),
-      { status: 400 }
-    );
-  }
-  return updateCraActivityController(request, id);
-}
-
-// DELETE /api/cra_activities?id=...
-// Pour une route statique comme celle-ci, l'ID doit venir des query parameters
-export async function DELETE(request) {
-  const id = request.nextUrl.searchParams.get("id"); // Extrait l'ID des query params
-  if (!id) {
-    // Utilise NextResponse pour une réponse JSON cohérente
-    return new Response(
-      JSON.stringify({ message: "ID manquant pour la suppression." }),
-      { status: 400 }
-    );
-  }
-  return deleteCraActivityController(request, id);
+  // C'est ici que la correction est appliquée :
+  // Vous devez AWAIT le parsing du corps JSON de la requête.
+  const activityData = await request.json();
+  return createCraActivityController(activityData);
 }

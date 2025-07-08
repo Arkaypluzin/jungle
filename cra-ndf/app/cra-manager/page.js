@@ -177,32 +177,13 @@ export default function CRAPage() {
     try {
       const clientsData = await fetchAndParse("/api/client", "clients");
       console.log(
-        "CRAPage: Données brutes des clients reçues:",
+        "CRAPage: Données brutes des clients reçues (après API transformation):",
         JSON.stringify(clientsData, null, 2)
       );
-      // Assurez-vous que chaque client a une propriété 'id' qui est le _id de MongoDB
-      const formattedClientsData = clientsData.map((client) => {
-        const clientId = client._id?.toString();
-        if (!clientId) {
-          console.warn(
-            "CRAPage: Client sans ID valide détecté (après tentative de formatage):",
-            JSON.stringify(client)
-          );
-        }
-        return {
-          ...client,
-          id: clientId,
-        };
-      });
 
-      setClientDefinitions(formattedClientsData);
-      console.log(
-        "CRAPage: >>> Définitions de clients chargées:",
-        formattedClientsData.length,
-        "clients. État clientDefinitions mis à jour."
-      );
-      // Log pour vérifier les IDs des clients après formatage
-      formattedClientsData.slice(0, 5).forEach((client, index) => {
+      // Les données de clients devraient déjà avoir un champ 'id' dû à la configuration toJSON/toObject dans le modèle Mongoose.
+      // Nous allons loguer pour nous en assurer.
+      clientsData.slice(0, 5).forEach((client, index) => {
         console.log(
           `CRAPage: Client ${index} ID:`,
           client.id,
@@ -210,7 +191,14 @@ export default function CRAPage() {
           client.nom_client
         );
       });
-      return formattedClientsData;
+
+      setClientDefinitions(clientsData); // Utiliser les données directement, elles devraient être formatées correctement.
+      console.log(
+        "CRAPage: >>> Définitions de clients chargées:",
+        clientsData.length,
+        "clients. État clientDefinitions mis à jour."
+      );
+      return clientsData;
     } catch (err) {
       console.error("CRAPage: Erreur lors du chargement des clients:", err);
       showMessage(`Erreur de chargement des clients: ${err.message}`, "error");
@@ -469,7 +457,7 @@ export default function CRAPage() {
     async (clientData) => {
       try {
         console.log(
-          "CRAPage: handleAddClient - Données à envoyer (avant fetch):", // NOUVEAU LOG CLÉ
+          "CRAPage: handleAddClient - Données à envoyer (avant fetch):",
           JSON.stringify(clientData, null, 2)
         );
         const res = await fetch("/api/client", {
