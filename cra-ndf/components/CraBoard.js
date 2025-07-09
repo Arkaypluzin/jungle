@@ -25,6 +25,7 @@ import { fr } from "date-fns/locale";
 import ActivityModal from "./ActivityModal";
 import SummaryReport from "./SummaryReport";
 import ConfirmationModal from "./ConfirmationModal";
+import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
 
 // Noms des jours de la semaine, commençant par Lundi pour la locale fr
 const daysOfWeekDisplay = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -59,6 +60,10 @@ export default function CraBoard({
   const [showSendConfirmModal, setShowSendConfirmModal] = useState(false);
   const [showSummaryReport, setShowSummaryReport] = useState(false);
   const [summaryReportMonth, setSummaryReportMonth] = useState(null);
+  const [showMonthlyReportPreview, setShowMonthlyReportPreview] =
+    useState(false);
+  const [monthlyReportPreviewData, setMonthlyReportPreviewData] =
+    useState(null);
 
   // Synchronise le mois interne avec la prop si elle change
   useEffect(() => {
@@ -136,8 +141,10 @@ export default function CraBoard({
     const statuses = new Set(activitiesForCurrentMonth.map((a) => a.status));
 
     if (statuses.has("validated")) return "validated";
-    if (statuses.has("finalized")) return "finalized";
     if (statuses.has("rejected")) return "rejected";
+    if (statuses.has("pending_review")) return "pending_review"; // <-- AJOUTEZ CETTE LIGNE
+
+    if (statuses.has("finalized")) return "finalized";
 
     if (statuses.size === 1 && statuses.has("draft")) return "draft";
 
@@ -195,10 +202,12 @@ export default function CraBoard({
       if (
         currentMonthStatus === "finalized" ||
         currentMonthStatus === "validated" ||
+        currentMonthStatus === "rejected" ||
+        currentMonthStatus === "pending_review" || // <-- AJOUTEZ CETTE LIGNE
         currentMonthStatus.startsWith("mixed")
       ) {
         showMessage(
-          "Ce mois est finalisé ou validé. Vous ne pouvez pas ajouter de nouvelles activités.",
+          "Impossible d'ajouter des activités. Le mois est déjà finalisé, validé, rejeté ou en attente de révision.", // Message plus direct
           "info"
         );
         return;
@@ -221,9 +230,14 @@ export default function CraBoard({
         return;
       }
 
-      if (activity.status === "finalized" || activity.status === "validated") {
+      if (
+        activity.status === "finalized" ||
+        activity.status === "validated" ||
+        activity.status === "pending_review"
+      ) {
+        // <-- MODIFIEZ CETTE LIGNE
         showMessage(
-          "Cette activité est finalisée ou validée et ne peut pas être modifiée ou supprimée.",
+          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut être ni modifiée ni supprimée.", // Message plus direct
           "info"
         );
         return;
@@ -292,8 +306,16 @@ export default function CraBoard({
       event.stopPropagation();
       const activity = activities.find((act) => act.id === activityId);
 
-      if (!activity) {
-        showMessage("Activité non trouvée pour suppression.", "error");
+      if (
+        activity.status === "finalized" ||
+        activity.status === "validated" ||
+        activity.status === "pending_review"
+      ) {
+        // <-- MODIFIEZ CETTE LIGNE
+        showMessage(
+          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être supprimée.", // Message plus direct
+          "info"
+        );
         return;
       }
 
@@ -301,14 +323,6 @@ export default function CraBoard({
         showMessage(
           "Vous ne pouvez pas supprimer les activités des autres utilisateurs.",
           "error"
-        );
-        return;
-      }
-
-      if (activity.status === "finalized" || activity.status === "validated") {
-        showMessage(
-          "Cette activité est finalisée ou validée et ne peut pas être supprimée.",
-          "info"
         );
         return;
       }
@@ -354,10 +368,12 @@ export default function CraBoard({
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated" ||
+      currentMonthStatus === "rejected" ||
+      currentMonthStatus === "pending_review" || // <-- AJOUTEZ CETTE LIGNE
       currentMonthStatus.startsWith("mixed")
     ) {
       showMessage(
-        "Ce mois est finalisé ou validé. Seul un administrateur peut annuler la finalisation.",
+        "Impossible de réinitialiser le mois. Il est déjà finalisé, validé, rejeté ou en attente de révision. Seul un administrateur peut annuler ces statuts.", // Message plus précis
         "info"
       );
       return;
@@ -398,27 +414,6 @@ export default function CraBoard({
         errorCount++;
       }
     }
-
-    if (errorCount === 0) {
-      showMessage(
-        `${successCount} activités brouillon supprimées pour ${format(
-          currentMonth,
-          "MMMM",
-          { locale: fr }
-        )}.`,
-        "success"
-      );
-    } else if (successCount > 0) {
-      showMessage(
-        `${successCount} activités brouillon supprimées, mais ${errorCount} erreurs rencontrées.`,
-        "warning"
-      );
-    } else {
-      showMessage(
-        `Échec de la réinitialisation du mois. Aucune activité supprimée.`,
-        "error"
-      );
-    }
     fetchActivitiesForMonth(currentMonth);
   }, [
     activitiesForCurrentMonth,
@@ -436,6 +431,8 @@ export default function CraBoard({
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated" ||
+      currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+      currentMonthStatus === "pending_review" ||
       currentMonthStatus.startsWith("mixed")
     ) {
       showMessage("Ce mois est déjà finalisé ou validé.", "info");
@@ -446,6 +443,8 @@ export default function CraBoard({
 
   const confirmFinalizeMonth = useCallback(async () => {
     setShowFinalizeMonthConfirmModal(false);
+    let successCount = 0;
+    let errorCount = 0;
     const year = format(currentMonth, "yyyy");
     const month = parseInt(format(currentMonth, "MM"));
 
@@ -453,17 +452,31 @@ export default function CraBoard({
       showMessage(
         `Le mois de ${format(currentMonth, "MMMM", {
           locale: fr,
-        })} a été finalisé avec succès (simulé) !`,
+        })} a été finalisé avec succès!`,
         "success"
       );
       const activitiesToFinalize = activitiesForCurrentMonth.filter(
         (activity) => activity.status === "draft"
       );
       for (const activity of activitiesToFinalize) {
-        await onUpdateActivity(activity.id, {
-          ...activity,
-          status: "finalized",
-        });
+        try {
+          await onUpdateActivity(
+            activity.id,
+            {
+              // Premier argument: ID de l'activité
+              ...activity,
+              status: "finalized",
+            },
+            true // <-- AJOUTEZ CET ARGUMENT pour suppressMessage
+          );
+          successCount++;
+        } catch (error) {
+          console.error(
+            `CraBoard: Erreur lors de la finalisation de l'activité ${activity.id}:`,
+            error
+          );
+          errorCount++;
+        }
       }
       fetchActivitiesForMonth(currentMonth);
     } catch (error) {
@@ -485,9 +498,9 @@ export default function CraBoard({
   const requestSendCra = useCallback(() => {
     if (
       currentMonthStatus !== "finalized" &&
-      currentMonthStatus !== "validated" &&
-      !currentMonthStatus.startsWith("mixed")
+      currentMonthStatus !== "validated"
     ) {
+      // <-- MODIFIEZ CETTE LIGNE
       showMessage(
         "Seuls les mois finalisés ou validés peuvent être envoyés.",
         "info"
@@ -499,32 +512,72 @@ export default function CraBoard({
 
   const confirmSendCra = useCallback(async () => {
     setShowSendConfirmModal(false);
-    const year = format(currentMonth, "yyyy");
-    const month = parseInt(format(currentMonth, "MM"));
+    let successCount = 0;
+    let errorCount = 0;
 
-    try {
-      console.log(
-        `CRA pour ${userFirstName} pour ${format(currentMonth, "MMMM", {
-          locale: fr,
-        })} envoyé (simulé).`
-      );
+    // Filter activities for the current month that are "finalized"
+    const activitiesToSend = activitiesForCurrentMonth.filter(
+      (activity) => activity.status === "finalized"
+    );
+
+    if (activitiesToSend.length === 0) {
       showMessage(
-        `Le CRA pour ${userFirstName} pour ${format(currentMonth, "MMMM", {
+        `No finalized activities to send for ${format(currentMonth, "MMMM", {
           locale: fr,
-        })} a été envoyé avec succès (simulé) !`,
+        })}.`,
+        "info"
+      );
+      return;
+    }
+    for (const activity of activitiesToSend) {
+      try {
+        // Update the activity status to "pending_review"
+        await onUpdateActivity(
+          activity.id,
+          {
+            ...activity,
+            status: "pending_review",
+          },
+          true // <-- AJOUTEZ CET ARGUMENT ICI
+        );
+        successCount++;
+      } catch (error) {
+        console.error(
+          `CraBoard: Error sending activity ${activity.id}:`,
+          error
+        );
+        errorCount++;
+      }
+    }
+    // AJOUTEZ LE BLOC SUIVANT ICI :
+    if (errorCount === 0) {
+      showMessage(
+        `Le CRA de ${format(currentMonth, "MMMM", {
+          locale: fr,
+        })} a été envoyé !`,
         "success"
       );
-    } catch (error) {
-      console.error(
-        "CraBoard: Erreur lors de l'envoi du CRA (simulé) :",
-        error
-      );
+    } else if (successCount > 0) {
       showMessage(
-        `Erreur lors de l'envoi du CRA (simulé) : ${error.message}`,
+        `${successCount} activités envoyées, mais ${errorCount} erreurs sont survenues.`,
+        "warning"
+      );
+    } else {
+      showMessage(
+        `Échec complet de l'envoi du CRA. Aucune activité n'a été envoyée.`,
         "error"
       );
     }
-  }, [currentMonth, userFirstName, showMessage]);
+
+    // Refresh activities after sending so that the status is updated in the UI
+    fetchActivitiesForMonth(currentMonth);
+  }, [
+    currentMonth,
+    showMessage,
+    activitiesForCurrentMonth,
+    onUpdateActivity,
+    fetchActivitiesForMonth,
+  ]);
 
   const cancelSendCra = useCallback(() => {
     setShowSendConfirmModal(false);
@@ -544,6 +597,49 @@ export default function CraBoard({
       setSummaryReportMonth(currentMonth);
     }
   }, [currentMonth, showSummaryReport]);
+  const handleOpenMonthlyReportPreview = useCallback(() => {
+    setShowMonthlyReportPreview(true);
+    // Mapper les activités pour s'assurer que date_activite est un objet Date
+    // ET ajouter les noms de client et de type d'activité pour MonthlyDetailedReport
+    const formattedReportData = activitiesForCurrentMonth.map((activity) => {
+      const activityType = activityTypeDefinitions.find(
+        (def) => String(def.id) === String(activity.type_activite)
+      );
+      const client = clientDefinitions.find(
+        (def) => String(def.id) === String(activity.client_id)
+      );
+
+      return {
+        ...activity,
+        date_activite: parseISO(activity.date_activite), // Assurez-vous que c'est un objet Date
+        activity_type_name_full: activityType
+          ? activityType.name
+          : "Type Inconnu", // Nom du type d'activité
+        client_name_full: client ? client.nom_client : "Client Inconnu", // Nom du client
+      };
+    });
+
+    setMonthlyReportPreviewData({
+      reportData: formattedReportData, // Les activités du mois courant, avec dates et noms formatés
+      year: currentMonth.getFullYear(),
+      month: currentMonth.getMonth() + 1, // getMonth() est basé sur 0
+      userName: userFirstName,
+      userId: userId, // Passez l'ID utilisateur si nécessaire dans le rapport détaillé
+    });
+  }, [
+    activitiesForCurrentMonth,
+    currentMonth,
+    userFirstName,
+    userId,
+    activityTypeDefinitions,
+    clientDefinitions,
+  ]); // <-- VÉRIFIEZ BIEN CES DÉPENDANCES
+
+  // Nouvelle fonction pour fermer la modal de prévisualisation du rapport détaillé <-- AJOUTEZ TOUT CE BLOC
+  const handleCloseMonthlyReportPreview = useCallback(() => {
+    setShowMonthlyReportPreview(false);
+    setMonthlyReportPreviewData(null);
+  }, []);
 
   // --- Calculs pour l'affichage ---
 
@@ -588,11 +684,18 @@ export default function CraBoard({
             FINALISÉ
           </span>
         );
+      case "pending_review": // <-- AJOUTEZ CE BLOC
+        statusBadge = (
+          <span className={`${badgeClass} text-blue-700 bg-blue-100`}>
+            ENVOYÉ (EN ATTENTE)
+          </span>
+        );
         break;
       case "mixed":
       case "mixed_finalized":
       case "mixed_validated":
       case "mixed_rejected":
+      case "mixed_pending_review":
         statusBadge = (
           <span className={`${badgeClass} text-purple-700 bg-purple-100`}>
             PARTIEL
@@ -703,6 +806,14 @@ export default function CraBoard({
         cellClasses +=
           " bg-white text-gray-900 hover:bg-blue-50 cursor-pointer";
       }
+      const canAddActivity =
+        !isOutsideCurrentMonth &&
+        !isNonWorkingDay &&
+        currentMonthStatus !== "finalized" &&
+        currentMonthStatus !== "validated" &&
+        currentMonthStatus !== "rejected" && // <-- AJOUTEZ CETTE LIGNE
+        currentMonthStatus !== "pending_review" && // <-- AJOUTEZ CETTE LIGNE
+        !currentMonthStatus.startsWith("mixed");
 
       allCells.push(
         <div
@@ -813,13 +924,18 @@ export default function CraBoard({
                   statusColorClass = "bg-green-300 text-green-900";
                 } else if (activity.status === "validated") {
                   statusColorClass = "bg-purple-300 text-purple-900";
+                } else if (activity.status === "pending_review") {
+                  // <-- AJOUTEZ CE BLOC
+                  statusColorClass = "bg-blue-300 text-blue-900";
                 } else {
                   statusColorClass = "bg-gray-300 text-gray-800";
                 }
 
                 const isActivityFinalizedOrValidated =
                   activity.status === "finalized" ||
-                  activity.status === "validated";
+                  activity.status === "validated" ||
+                  activity.status === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+                  activity.status === "pending_review";
 
                 return (
                   <div
@@ -839,8 +955,10 @@ export default function CraBoard({
                     }\nStatut: ${
                       activity.status === "validated"
                         ? "Validé"
-                        : isActivityFinalizedOrValidated
+                        : activity.status === "finalized"
                         ? "Finalisé"
+                        : activity.status === "pending_review"
+                        ? "En attente de révision" // <-- MODIFIEZ CETTE LIGNE
                         : "Brouillon"
                     }\nFacturable: ${
                       activityTypeObj?.is_billable ? "Oui" : "Non"
@@ -868,8 +986,12 @@ export default function CraBoard({
                         className={`absolute top-0 right-0 h-full flex items-center justify-center p-1 text-xs font-semibold rounded-tr-md rounded-br-md ${statusColorClass}`}
                         title={
                           activity.status === "validated"
-                            ? "Validé"
-                            : "Finalisé"
+                            ? "V"
+                            : activity.status === "finalized"
+                            ? "F"
+                            : activity.status === "pending_review"
+                            ? "A" // <-- AJOUTEZ CETTE LIGNE (A pour En Attente)
+                            : ""
                         }
                       >
                         {activity.status === "validated" ? "V" : "F"}
@@ -952,6 +1074,8 @@ export default function CraBoard({
             ${
               currentMonthStatus === "finalized" ||
               currentMonthStatus === "validated" ||
+              currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+              currentMonthStatus === "pending_review" ||
               currentMonthStatus.startsWith("mixed")
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-green-600 text-white hover:bg-green-700"
@@ -959,6 +1083,8 @@ export default function CraBoard({
           disabled={
             currentMonthStatus === "finalized" ||
             currentMonthStatus === "validated" ||
+            currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+            currentMonthStatus === "pending_review" ||
             currentMonthStatus.startsWith("mixed")
           }
         >
@@ -970,6 +1096,8 @@ export default function CraBoard({
             ${
               currentMonthStatus === "finalized" ||
               currentMonthStatus === "validated" ||
+              currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+              currentMonthStatus === "pending_review" ||
               currentMonthStatus.startsWith("mixed")
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-orange-600 text-white hover:bg-orange-700"
@@ -977,6 +1105,8 @@ export default function CraBoard({
           disabled={
             currentMonthStatus === "finalized" ||
             currentMonthStatus === "validated" ||
+            currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+            currentMonthStatus === "pending_review" || // <-- AJOUTEZ CETTE LIGNE
             currentMonthStatus.startsWith("mixed")
           }
         >
@@ -991,7 +1121,8 @@ export default function CraBoard({
                 : "bg-purple-600 text-white hover:bg-purple-700"
             }`}
           disabled={
-            currentMonthStatus === "draft" || currentMonthStatus === "empty"
+            currentMonthStatus !== "finalized" && // <-- MODIFIEZ CETTE LIGNE
+            currentMonthStatus !== "validated"
           }
         >
           Envoyer le CRA
@@ -1009,6 +1140,7 @@ export default function CraBoard({
           isPublicHoliday={isPublicHoliday}
           userFirstName={userFirstName}
           onClose={handleToggleSummaryReport}
+          onOpenMonthlyReportPreview={handleOpenMonthlyReportPreview}
         />
       )}
 
@@ -1029,45 +1161,54 @@ export default function CraBoard({
         />
       )}
 
+      {showMonthlyReportPreview && monthlyReportPreviewData && (
+        <MonthlyReportPreviewModal
+          isOpen={showMonthlyReportPreview}
+          onClose={handleCloseMonthlyReportPreview}
+          reportData={monthlyReportPreviewData.reportData}
+          year={monthlyReportPreviewData.year}
+          month={monthlyReportPreviewData.month}
+          userName={monthlyReportPreviewData.userName}
+          userId={monthlyReportPreviewData.userId}
+        />
+      )}
       <ConfirmationModal
         isOpen={showConfirmModal}
         onClose={cancelDeleteActivity}
         onConfirm={confirmDeleteActivity}
-        title="Confirmer la suppression"
-        message="Êtes-vous sûr de vouloir supprimer cette activité ?"
+        message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible." // Message plus clair
       />
       <ConfirmationModal
         isOpen={showResetMonthConfirmModal}
         onClose={cancelResetMonth}
         onConfirm={confirmResetMonth}
-        title="Confirmer la réinitialisation du mois"
-        message={`Êtes-vous sûr de vouloir supprimer TOUTES les activités brouillons pour ${format(
+        message={`Confirmez-vous la suppression de TOUTES les activités brouillons pour ${format(
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ? Cette action est irréversible.`}
+        )} ? Cette action est irréversible.`} // Message plus clair
       />
+
       <ConfirmationModal
         isOpen={showFinalizeMonthConfirmModal}
         onClose={cancelFinalizeMonth}
         onConfirm={confirmFinalizeMonth}
-        title="Confirmer la finalisation du mois"
-        message={`Êtes-vous sûr de vouloir finaliser le CRA pour ${format(
+        message={`Confirmez-vous la finalisation du CRA pour ${format(
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ? Les activités ne pourront plus être modifiées.`}
+        )} ? Les activités deviendront non modifiables.`} // Message plus clair
       />
+
       <ConfirmationModal
         isOpen={showSendConfirmModal}
         onClose={cancelSendCra}
         onConfirm={confirmSendCra}
-        title="Confirmer l'envoi du CRA"
-        message={`Êtes-vous sûr de vouloir envoyer le CRA pour ${format(
+        message={`Confirmez-vous l'envoi du CRA pour ${format(
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ?`}
+        )} ? Une fois envoyé, vous ne pourrez plus le modifier.`} // Message plus clair
       />
     </div>
   );

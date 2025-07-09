@@ -400,7 +400,7 @@ export default function CRAPage() {
         );
         // Après la mise à jour, on recharge les activités pour s'assurer qu'elles sont populées
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
-        showMessage("Activité mise à jour avec succès !", "success"); // Déplacé ici
+        showMessage; //("Activité mise à jour avec succès !", "success"); // Déplacé ici
         return updatedActivity;
       } catch (error) {
         console.error(

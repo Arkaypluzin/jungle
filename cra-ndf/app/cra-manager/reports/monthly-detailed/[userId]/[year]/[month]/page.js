@@ -64,7 +64,7 @@ export default function CRAPage() {
         const errorText = await response.text();
         errorMessage = errorText || errorMessage;
       } catch (textError) {
-        console.warn("Could not read error response as text:", textError); // Corrected typo here
+        console.warn("Could not read error response as text:", textError);
       }
     }
     throw new Error(errorMessage);
@@ -90,7 +90,6 @@ export default function CRAPage() {
       setCraActivities(parsedData);
     } catch (err) {
       console.error("Failed to fetch CRA activities:", err);
-      setError(err.message);
       showMessage("Échec du chargement des activités CRA.", "error");
     } finally {
       setIsLoading(false);
@@ -156,10 +155,7 @@ export default function CRAPage() {
           await handleFetchError(response);
         }
 
-        const addedActivity = await response.json(); // This is `activityData` in the error message
-
-        // CRITICAL FIX: Changed `addedActivity.date` to `addedActivity.date_activite`
-        // This addresses the error: "Cannot read properties of undefined (reading 'split') at line 310"
+        const addedActivity = await response.json();
         const dateToFormat = addedActivity.date_activite
           ? parseISO(addedActivity.date_activite)
           : null;
@@ -171,7 +167,7 @@ export default function CRAPage() {
 
         const parsedActivity = {
           ...addedActivity,
-          date_activite: dateToFormat, // Use the already parsed and validated date
+          date_activite: dateToFormat,
         };
         setCraActivities((prevActivities) => [
           ...prevActivities,
@@ -190,8 +186,8 @@ export default function CRAPage() {
   );
 
   const handleUpdateCraActivity = useCallback(
-    async (updatedActivityData) => {
-      // updatedActivityData vient de ActivityModal
+    // MODIFIEZ CETTE LIGNE : assurez-vous que `suppressMessage = false` est présent
+    async (updatedActivityData, suppressMessage = false) => {
       try {
         const response = await fetch(
           `/api/cra-activities/${updatedActivityData.id}`,
@@ -209,7 +205,6 @@ export default function CRAPage() {
         }
 
         const updatedActivity = await response.json();
-        // Assurez-vous que date_activite est bien un objet Date après la réponse API
         const parsedActivity = {
           ...updatedActivity,
           date_activite: updatedActivity.date_activite
@@ -221,7 +216,10 @@ export default function CRAPage() {
             act.id === parsedActivity.id ? parsedActivity : act
           )
         );
-        showMessage("Activité mise à jour avec succès !", "success");
+        // AJOUTEZ CETTE CONDITION :
+        if (!suppressMessage) {
+          //showMessage("Activité mise à jour avec succès !", "success");
+        }
       } catch (error) {
         showMessage(
           `Erreur lors de la mise à jour de l'activité : ${error.message}`,
@@ -244,7 +242,6 @@ export default function CRAPage() {
           await handleFetchError(response);
         }
 
-        // Si la suppression est réussie (code 200, 204, etc.), mettez à jour l'état
         setCraActivities((prevActivities) =>
           prevActivities.filter((activity) => activity.id !== activityId)
         );
@@ -275,7 +272,6 @@ export default function CRAPage() {
           await handleFetchError(response);
         }
 
-        // Si la finalisation réussit, rafraîchissez les activités pour mettre à jour les statuts
         await fetchCraActivities();
         showMessage("Mois finalisé avec succès !", "success");
       } catch (error) {
@@ -323,16 +319,17 @@ export default function CRAPage() {
       </h1>
 
       <CraBoard
-        craActivities={craActivities}
+        activities={craActivities} // Renommé de craActivities à activities
         activityTypeDefinitions={activityTypeDefinitions}
         clientDefinitions={clientDefinitions}
-        onAddCraActivity={handleAddCraActivity}
-        onUpdateCraActivity={handleUpdateCraActivity}
-        onDeleteCraActivity={handleDeleteCraActivity}
+        onAddActivity={handleAddCraActivity} // Renommé de onAddCraActivity à onAddActivity
+        onUpdateActivity={handleUpdateCraActivity} // <-- MODIFIEZ CETTE LIGNE (de onUpdateCraActivity à onUpdateActivity)
+        onDeleteActivity={handleDeleteCraActivity} // Renommé de onDeleteCraActivity à onDeleteActivity
+        fetchActivitiesForMonth={fetchCraActivities} // Ajouté pour rafraîchir le mois dans CraBoard
+        userId={currentUserId} // Renommé de currentUserId à userId
+        userFirstName={currentUserName} // Renommé de currentUserName à userFirstName
         showMessage={showMessage}
-        onFinalizeMonth={handleFinalizeMonth}
-        currentUserId={currentUserId}
-        currentUserName={currentUserName}
+        // onFinalizeMonth={handleFinalizeMonth} // Cette prop n'est plus nécessaire ici, la logique est dans CraBoard
       />
 
       <SentCraHistory
