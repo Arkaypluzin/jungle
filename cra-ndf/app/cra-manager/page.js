@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import CraBoard from "@/components/CraBoard";
 import UnifiedManager from "@/components/UnifiedManager";
+import ReceivedCras from "@/components/ReceivedCras"; // <-- NOUVEL IMPORT : le composant réel
 import { startOfMonth, endOfMonth, format } from "date-fns";
 
 // Composant ToastMessage simplifié et inclus directement
@@ -32,28 +33,7 @@ const ToastMessage = ({ message, type, isVisible, onClose }) => {
   );
 };
 
-// Placeholder pour le composant des CRAs reçus
-const ReceivedCraList = ({ userId, showMessage }) => {
-  return (
-    <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">
-        CRAs Reçus (Panel Admin)
-      </h2>
-      <p className="text-gray-600">
-        Cette section affichera la liste des CRAs soumis par les utilisateurs
-        pour validation. La logique de récupération et d'affichage sera
-        implémentée ici.
-      </p>
-      <p className="mt-4 text-sm text-gray-500">
-        Utilisateur actuel ID: {userId}
-      </p>
-      <p className="text-sm text-gray-500">
-        (Fonctionnalité à développer pour afficher les CRAs en attente de
-        validation)
-      </p>
-    </div>
-  );
-};
+// REMOVED: Le placeholder ReceivedCraList n'est plus nécessaire ici.
 
 export default function CRAPage() {
   const { data: session, status } = useSession();
@@ -89,9 +69,12 @@ export default function CRAPage() {
     new Date()
   );
 
-  const currentUserId = session?.user?.id;
+  const currentUserId = session?.user?.id; // L'ID utilisateur réel de la session
   const currentUserName =
     session?.user?.name || session?.user?.email || "Utilisateur";
+  // ATTENTION: Remplacez 'admin' par le rôle réel de l'utilisateur si vous avez une gestion des rôles via Clerk/DB
+  // Pour le test initial, vous pouvez le laisser en dur si vous savez que l'utilisateur est admin/manager.
+  const currentUserRole = "admin"; // Exemple: "admin", "manager", "user"
 
   const fetchAndParse = useCallback(async (url, resourceName) => {
     const res = await fetch(url);
@@ -859,7 +842,13 @@ export default function CRAPage() {
         )}
 
         {activeTab === "receivedCras" && (
-          <ReceivedCraList userId={currentUserId} showMessage={showMessage} />
+          // Remplacement du placeholder par le composant ReceivedCras réel
+          <ReceivedCras
+            userId={currentUserId}
+            userFirstName={currentUserName}
+            userRole={currentUserRole} // Passe le rôle de l'utilisateur
+            showMessage={showMessage}
+          />
         )}
       </div>
 

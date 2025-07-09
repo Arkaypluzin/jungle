@@ -142,7 +142,7 @@ export default function CraBoard({
 
     if (statuses.has("validated")) return "validated";
     if (statuses.has("rejected")) return "rejected";
-    if (statuses.has("pending_review")) return "pending_review"; // <-- AJOUTEZ CETTE LIGNE
+    if (statuses.has("pending_review")) return "pending_review";
 
     if (statuses.has("finalized")) return "finalized";
 
@@ -203,11 +203,11 @@ export default function CraBoard({
         currentMonthStatus === "finalized" ||
         currentMonthStatus === "validated" ||
         currentMonthStatus === "rejected" ||
-        currentMonthStatus === "pending_review" || // <-- AJOUTEZ CETTE LIGNE
+        currentMonthStatus === "pending_review" ||
         currentMonthStatus.startsWith("mixed")
       ) {
         showMessage(
-          "Impossible d'ajouter des activités. Le mois est déjà finalisé, validé, rejeté ou en attente de révision.", // Message plus direct
+          "Impossible d'ajouter des activités. Le mois est déjà finalisé, validé, rejeté ou en attente de révision.",
           "info"
         );
         return;
@@ -235,9 +235,8 @@ export default function CraBoard({
         activity.status === "validated" ||
         activity.status === "pending_review"
       ) {
-        // <-- MODIFIEZ CETTE LIGNE
         showMessage(
-          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut être ni modifiée ni supprimée.", // Message plus direct
+          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut être ni modifiée ni supprimée.",
           "info"
         );
         return;
@@ -311,9 +310,8 @@ export default function CraBoard({
         activity.status === "validated" ||
         activity.status === "pending_review"
       ) {
-        // <-- MODIFIEZ CETTE LIGNE
         showMessage(
-          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être supprimée.", // Message plus direct
+          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être supprimée.",
           "info"
         );
         return;
@@ -369,11 +367,11 @@ export default function CraBoard({
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated" ||
       currentMonthStatus === "rejected" ||
-      currentMonthStatus === "pending_review" || // <-- AJOUTEZ CETTE LIGNE
+      currentMonthStatus === "pending_review" ||
       currentMonthStatus.startsWith("mixed")
     ) {
       showMessage(
-        "Impossible de réinitialiser le mois. Il est déjà finalisé, validé, rejeté ou en attente de révision. Seul un administrateur peut annuler ces statuts.", // Message plus précis
+        "Impossible de réinitialiser le mois. Il est déjà finalisé, validé, rejeté ou en attente de révision. Seul un administrateur peut annuler ces statuts.",
         "info"
       );
       return;
@@ -431,7 +429,7 @@ export default function CraBoard({
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated" ||
-      currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+      currentMonthStatus === "rejected" ||
       currentMonthStatus === "pending_review" ||
       currentMonthStatus.startsWith("mixed")
     ) {
@@ -500,7 +498,6 @@ export default function CraBoard({
       currentMonthStatus !== "finalized" &&
       currentMonthStatus !== "validated"
     ) {
-      // <-- MODIFIEZ CETTE LIGNE
       showMessage(
         "Seuls les mois finalisés ou validés peuvent être envoyés.",
         "info"
@@ -510,66 +507,119 @@ export default function CraBoard({
     setShowSendConfirmModal(true);
   }, [currentMonthStatus, showMessage]);
 
+  // Définition de calculateBillableTime et totalActivitiesTimeInMonth avant confirmSendCra
+  const calculateBillableTime = useCallback(() => {
+    return activitiesForCurrentMonth.reduce((sum, activity) => {
+      const activityType = activityTypeDefinitions.find(
+        (def) => String(def.id) === String(activity.type_activite)
+      );
+      if (activityType?.is_billable) {
+        return sum + (parseFloat(activity.temps_passe) || 0);
+      }
+      return sum;
+    }, 0);
+  }, [activitiesForCurrentMonth, activityTypeDefinitions]);
+
+  const totalActivitiesTimeInMonth = useMemo(() => {
+    return activitiesForCurrentMonth.reduce(
+      (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+      0
+    );
+  }, [activitiesForCurrentMonth]);
+
   const confirmSendCra = useCallback(async () => {
     setShowSendConfirmModal(false);
-    let successCount = 0;
-    let errorCount = 0;
+    let activitiesUpdateSuccessCount = 0;
+    let activitiesUpdateErrorCount = 0;
 
     // Filter activities for the current month that are "finalized"
-    const activitiesToSend = activitiesForCurrentMonth.filter(
+    const activitiesToUpdateStatus = activitiesForCurrentMonth.filter(
       (activity) => activity.status === "finalized"
     );
 
-    if (activitiesToSend.length === 0) {
+    if (activitiesToUpdateStatus.length === 0) {
       showMessage(
-        `No finalized activities to send for ${format(currentMonth, "MMMM", {
-          locale: fr,
-        })}.`,
+        `Aucune activité finalisée à envoyer pour ${format(
+          currentMonth,
+          "MMMM",
+          {
+            locale: fr,
+          }
+        )}.`,
         "info"
       );
       return;
     }
-    for (const activity of activitiesToSend) {
+
+    // 1. Mettre à jour le statut des activités individuelles à 'pending_review'
+    for (const activity of activitiesToUpdateStatus) {
       try {
-        // Update the activity status to "pending_review"
         await onUpdateActivity(
           activity.id,
           {
             ...activity,
             status: "pending_review",
           },
-          true // <-- AJOUTEZ CET ARGUMENT ICI
+          true // Supprime le message de succès individuel
         );
-        successCount++;
+        activitiesUpdateSuccessCount++;
       } catch (error) {
         console.error(
-          `CraBoard: Error sending activity ${activity.id}:`,
+          `CraBoard: Erreur lors de la mise à jour du statut de l'activité ${activity.id}:`,
           error
         );
-        errorCount++;
+        activitiesUpdateErrorCount++;
       }
     }
-    // AJOUTEZ LE BLOC SUIVANT ICI :
-    if (errorCount === 0) {
+
+    // 2. Préparer et envoyer le résumé mensuel au nouveau point de terminaison API
+    const totalBillableDays = calculateBillableTime();
+    const totalDaysWorked = totalActivitiesTimeInMonth;
+
+    const monthlyReportData = {
+      user_id: userId,
+      month: currentMonth.getMonth() + 1, // Mois (1-12)
+      year: currentMonth.getFullYear(),
+      total_days_worked: totalDaysWorked,
+      total_billable_days: totalBillableDays,
+      activities_snapshot: activitiesToUpdateStatus.map((act) => act.id), // IDs des activités incluses dans ce rapport
+      // Le statut initial sera 'pending_review' par le contrôleur backend
+    };
+
+    try {
+      const response = await fetch("/api/monthly_cra_reports", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(monthlyReportData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Échec de l'envoi du rapport mensuel."
+        );
+      }
+
       showMessage(
         `Le CRA de ${format(currentMonth, "MMMM", {
           locale: fr,
-        })} a été envoyé !`,
+        })} a été envoyé et le résumé mensuel créé !`,
         "success"
       );
-    } else if (successCount > 0) {
-      showMessage(
-        `${successCount} activités envoyées, mais ${errorCount} erreurs sont survenues.`,
-        "warning"
+    } catch (reportError) {
+      console.error(
+        "CraBoard: Erreur lors de l'envoi du rapport mensuel:",
+        reportError
       );
-    } else {
       showMessage(
-        `Échec complet de l'envoi du CRA. Aucune activité n'a été envoyée.`,
+        `Erreur lors de l'envoi du rapport mensuel: ${reportError.message}`,
         "error"
       );
     }
 
-    // Refresh activities after sending so that the status is updated in the UI
+    // Rafraîchit les activités après envoi (pour refléter les changements de statut)
     fetchActivitiesForMonth(currentMonth);
   }, [
     currentMonth,
@@ -577,6 +627,9 @@ export default function CraBoard({
     activitiesForCurrentMonth,
     onUpdateActivity,
     fetchActivitiesForMonth,
+    userId,
+    totalActivitiesTimeInMonth,
+    calculateBillableTime,
   ]);
 
   const cancelSendCra = useCallback(() => {
@@ -653,12 +706,13 @@ export default function CraBoard({
     ).length;
   }, [currentMonth, isPublicHoliday]);
 
-  const totalActivitiesTimeInMonth = useMemo(() => {
-    return activitiesForCurrentMonth.reduce(
-      (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
-      0
-    );
-  }, [activitiesForCurrentMonth]);
+  // totalActivitiesTimeInMonth est déjà défini plus haut
+  // const totalActivitiesTimeInMonth = useMemo(() => {
+  //   return activitiesForCurrentMonth.reduce(
+  //     (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+  //     0
+  //   );
+  // }, [activitiesForCurrentMonth]);
 
   const timeDifference = useMemo(() => {
     return (totalActivitiesTimeInMonth - totalWorkingDaysInMonth).toFixed(2);
@@ -684,7 +738,8 @@ export default function CraBoard({
             FINALISÉ
           </span>
         );
-      case "pending_review": // <-- AJOUTEZ CE BLOC
+        break; // IMPORTANT: Ajouté break;
+      case "pending_review":
         statusBadge = (
           <span className={`${badgeClass} text-blue-700 bg-blue-100`}>
             ENVOYÉ (EN ATTENTE)
@@ -811,8 +866,8 @@ export default function CraBoard({
         !isNonWorkingDay &&
         currentMonthStatus !== "finalized" &&
         currentMonthStatus !== "validated" &&
-        currentMonthStatus !== "rejected" && // <-- AJOUTEZ CETTE LIGNE
-        currentMonthStatus !== "pending_review" && // <-- AJOUTEZ CETTE LIGNE
+        currentMonthStatus !== "rejected" &&
+        currentMonthStatus !== "pending_review" &&
         !currentMonthStatus.startsWith("mixed");
 
       allCells.push(
@@ -925,7 +980,6 @@ export default function CraBoard({
                 } else if (activity.status === "validated") {
                   statusColorClass = "bg-purple-300 text-purple-900";
                 } else if (activity.status === "pending_review") {
-                  // <-- AJOUTEZ CE BLOC
                   statusColorClass = "bg-blue-300 text-blue-900";
                 } else {
                   statusColorClass = "bg-gray-300 text-gray-800";
@@ -934,7 +988,7 @@ export default function CraBoard({
                 const isActivityFinalizedOrValidated =
                   activity.status === "finalized" ||
                   activity.status === "validated" ||
-                  activity.status === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+                  activity.status === "rejected" ||
                   activity.status === "pending_review";
 
                 return (
@@ -958,7 +1012,7 @@ export default function CraBoard({
                         : activity.status === "finalized"
                         ? "Finalisé"
                         : activity.status === "pending_review"
-                        ? "En attente de révision" // <-- MODIFIEZ CETTE LIGNE
+                        ? "En attente de révision"
                         : "Brouillon"
                     }\nFacturable: ${
                       activityTypeObj?.is_billable ? "Oui" : "Non"
@@ -990,11 +1044,17 @@ export default function CraBoard({
                             : activity.status === "finalized"
                             ? "F"
                             : activity.status === "pending_review"
-                            ? "A" // <-- AJOUTEZ CETTE LIGNE (A pour En Attente)
+                            ? "A"
                             : ""
                         }
                       >
-                        {activity.status === "validated" ? "V" : "F"}
+                        {activity.status === "validated"
+                          ? "V"
+                          : activity.status === "finalized"
+                          ? "F"
+                          : activity.status === "pending_review"
+                          ? "A"
+                          : ""}
                       </span>
                     )}
                     {!isActivityFinalizedOrValidated && (
@@ -1074,7 +1134,7 @@ export default function CraBoard({
             ${
               currentMonthStatus === "finalized" ||
               currentMonthStatus === "validated" ||
-              currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+              currentMonthStatus === "rejected" ||
               currentMonthStatus === "pending_review" ||
               currentMonthStatus.startsWith("mixed")
                 ? "bg-gray-400 cursor-not-allowed"
@@ -1083,7 +1143,7 @@ export default function CraBoard({
           disabled={
             currentMonthStatus === "finalized" ||
             currentMonthStatus === "validated" ||
-            currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+            currentMonthStatus === "rejected" ||
             currentMonthStatus === "pending_review" ||
             currentMonthStatus.startsWith("mixed")
           }
@@ -1096,7 +1156,7 @@ export default function CraBoard({
             ${
               currentMonthStatus === "finalized" ||
               currentMonthStatus === "validated" ||
-              currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
+              currentMonthStatus === "rejected" ||
               currentMonthStatus === "pending_review" ||
               currentMonthStatus.startsWith("mixed")
                 ? "bg-gray-400 cursor-not-allowed"
@@ -1105,8 +1165,8 @@ export default function CraBoard({
           disabled={
             currentMonthStatus === "finalized" ||
             currentMonthStatus === "validated" ||
-            currentMonthStatus === "rejected" || // <-- AJOUTEZ CETTE LIGNE
-            currentMonthStatus === "pending_review" || // <-- AJOUTEZ CETTE LIGNE
+            currentMonthStatus === "rejected" ||
+            currentMonthStatus === "pending_review" ||
             currentMonthStatus.startsWith("mixed")
           }
         >
@@ -1121,7 +1181,7 @@ export default function CraBoard({
                 : "bg-purple-600 text-white hover:bg-purple-700"
             }`}
           disabled={
-            currentMonthStatus !== "finalized" && // <-- MODIFIEZ CETTE LIGNE
+            currentMonthStatus !== "finalized" &&
             currentMonthStatus !== "validated"
           }
         >
@@ -1176,7 +1236,7 @@ export default function CraBoard({
         isOpen={showConfirmModal}
         onClose={cancelDeleteActivity}
         onConfirm={confirmDeleteActivity}
-        message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible." // Message plus clair
+        message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible."
       />
       <ConfirmationModal
         isOpen={showResetMonthConfirmModal}
@@ -1186,7 +1246,7 @@ export default function CraBoard({
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ? Cette action est irréversible.`} // Message plus clair
+        )} ? Cette action est irréversible.`}
       />
 
       <ConfirmationModal
@@ -1197,7 +1257,7 @@ export default function CraBoard({
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ? Les activités deviendront non modifiables.`} // Message plus clair
+        )} ? Les activités deviendront non modifiables.`}
       />
 
       <ConfirmationModal
@@ -1208,7 +1268,7 @@ export default function CraBoard({
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ? Une fois envoyé, vous ne pourrez plus le modifier.`} // Message plus clair
+        )} ? Une fois envoyé, vous ne pourrez plus le modifier.`}
       />
     </div>
   );
