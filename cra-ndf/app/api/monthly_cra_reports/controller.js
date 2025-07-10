@@ -1,20 +1,20 @@
 // app/api/monthly_cra_reports/controller.js
 import { ObjectId } from "mongodb";
-import { getMongoDb } from "../../../lib/mongo"; // Assurez-vous que ce chemin est correct
+import { getMongoDb } from "../../../lib/mongo";
 
 async function getMonthlyReportsCollection() {
   const db = await getMongoDb();
-  return db.collection("monthly_cra_reports"); // Nom de votre collection pour les rapports mensuels
+  return db.collection("monthly_cra_reports");
 }
 
 async function getUsersCollection() {
   const db = await getMongoDb();
-  return db.collection("users"); // Nom de votre collection d'utilisateurs
+  return db.collection("users");
 }
 
 async function getActivitiesCollection() {
   const db = await getMongoDb();
-  return db.collection("activities"); // Pour récupérer les détails des activités snapshot
+  return db.collection("activities");
 }
 
 // --- Créer ou mettre à jour un rapport mensuel CRA ---
@@ -24,24 +24,14 @@ export async function createOrUpdateMonthlyReportController(reportData) {
     const usersCollection = await getUsersCollection();
     const now = new Date().toISOString();
 
-    // L'ID utilisateur provenant du frontend (reportData.user_id) est une chaîne (ex: "user_xxxx")
-    // Nous allons le stocker tel quel dans le rapport mensuel.
     const userIdString = reportData.user_id;
-
-    // Rechercher l'utilisateur dans la collection 'users' en utilisant le champ 'clerkUserId'
-    // ASSUREZ-VOUS QUE VOTRE COLLECTION 'users' A UN CHAMP 'clerkUserId' QUI CONTIENT CET ID.
-    // Si votre ID utilisateur est l'ObjectId MongoDB de l'utilisateur, alors vous devrez utiliser :
-    // const user = await usersCollection.findOne({ _id: new ObjectId(userIdString) });
-    // MAIS si userIdString n'est PAS un ObjectId valide, cela causera l'erreur.
-    // La solution la plus robuste est de stocker l'ID de Clerk/NextAuth comme une chaîne simple.
-    const user = await usersCollection.findOne({ clerkUserId: userIdString }); // <-- CORRECTION ICI
+    const user = await usersCollection.findOne({ clerkUserId: userIdString });
     const userName = user
       ? `${user.firstName} ${user.lastName}`
       : "Utilisateur inconnu";
 
-    // Vérifier si un rapport pour cet utilisateur et ce mois/année existe déjà
     const existingReport = await collection.findOne({
-      user_id: userIdString, // <-- CORRECTION ICI : Utiliser la chaîne userIdString
+      user_id: userIdString,
       month: reportData.month,
       year: reportData.year,
     });
@@ -56,11 +46,11 @@ export async function createOrUpdateMonthlyReportController(reportData) {
         {
           $set: {
             ...reportData,
-            user_id: userIdString, // <-- CORRECTION ICI : Assurer que l'ID est stocké comme chaîne
+            user_id: userIdString,
             userName: userName,
             activities_snapshot: reportData.activities_snapshot.map(
               (id) => new ObjectId(id)
-            ), // Les IDs d'activités sont toujours des ObjectIds
+            ),
             updatedAt: now,
             status: "pending_review",
             rejection_reason: null,
@@ -79,7 +69,7 @@ export async function createOrUpdateMonthlyReportController(reportData) {
     } else {
       const newReport = {
         ...reportData,
-        user_id: userIdString, // <-- CORRECTION ICI : Stocker l'ID comme chaîne
+        user_id: userIdString,
         userName: userName,
         activities_snapshot: reportData.activities_snapshot.map(
           (id) => new ObjectId(id)
@@ -116,7 +106,7 @@ export async function createOrUpdateMonthlyReportController(reportData) {
 
 // --- Récupérer les rapports mensuels ---
 export async function getMonthlyReportsController({
-  userId, // Cet userId est l'ID Clerk de l'utilisateur connecté (chaîne)
+  userId,
   month,
   year,
   status,
@@ -129,8 +119,7 @@ export async function getMonthlyReportsController({
     let query = {};
 
     if (userId) {
-      // Filtrer par l'ID de l'utilisateur si nécessaire (l'ID est une chaîne)
-      query.user_id = userId; // <-- CORRECTION ICI : Comparer directement la chaîne
+      query.user_id = userId;
     }
     if (month) {
       query.month = parseInt(month, 10);
@@ -153,8 +142,8 @@ export async function getMonthlyReportsController({
       {
         $lookup: {
           from: "users",
-          localField: "user_id", // Champ dans monthly_cra_reports (stocké comme chaîne)
-          foreignField: "clerkUserId", // <-- CORRECTION ICI : Joindre sur le champ 'clerkUserId' dans la collection 'users'
+          localField: "user_id",
+          foreignField: "clerkUserId",
           as: "populatedUser",
         },
       },
@@ -188,11 +177,13 @@ export async function getMonthlyReportsController({
     ];
 
     console.log(
-      "Controller: Exécution de l'agrégation pour les rapports mensuels avec le pipeline:",
+      "Controller (getMonthlyReportsController): Exécution de l'agrégation avec le pipeline:",
       JSON.stringify(pipeline, null, 2)
     );
     const reports = await collection.aggregate(pipeline).toArray();
-    console.log(`Controller: ${reports.length} rapports mensuels trouvés.`);
+    console.log(
+      `Controller (getMonthlyReportsController): ${reports.length} rapports mensuels trouvés.`
+    );
 
     return reports.map((report) => ({ ...report, id: report._id.toString() }));
   } catch (error) {
@@ -211,8 +202,16 @@ export async function updateMonthlyReportStatusController(
   rejectionReason = null
 ) {
   try {
-    const collection = await getMonthlyReportsCollection();
+    const monthlyReportsCollection = await getMonthlyReportsCollection(); // Renommé pour clarté
+    const activitiesCollection = await getActivitiesCollection(); // Obtenir la collection d'activités
     const now = new Date().toISOString();
+
+    console.log(
+      `Controller (updateMonthlyReportStatusController): Tentative de mise à jour du rapport ID: ${reportId} vers statut: ${newStatus}`
+    );
+    console.log(
+      `Controller (updateMonthlyReportStatusController): Relecteur ID: ${reviewerId}, Motif de rejet: ${rejectionReason}`
+    );
 
     const updateDoc = {
       status: newStatus,
@@ -227,23 +226,68 @@ export async function updateMonthlyReportStatusController(
       updateDoc.rejection_reason = null;
     }
 
-    const result = await collection.findOneAndUpdate(
-      { _id: new ObjectId(reportId) },
+    let objectIdReportId;
+    try {
+      objectIdReportId = new ObjectId(reportId);
+      console.log(
+        `Controller (updateMonthlyReportStatusController): ID converti en ObjectId: ${objectIdReportId}`
+      );
+    } catch (e) {
+      console.error(
+        `Controller (updateMonthlyReportStatusController): Erreur de conversion de l'ID '${reportId}' en ObjectId:`,
+        e.message
+      );
+      throw new Error(
+        "ID de rapport invalide fourni (doit être une chaîne hexadécimale de 24 caractères)."
+      );
+    }
+
+    // 1. Mettre à jour le rapport mensuel
+    const result = await monthlyReportsCollection.findOneAndUpdate(
+      // Utilise monthlyReportsCollection
+      { _id: objectIdReportId },
       { $set: updateDoc },
       { returnDocument: "after" }
     );
 
     if (!result.value) {
+      console.warn(
+        `Controller (updateMonthlyReportStatusController): Rapport mensuel avec ID ${reportId} non trouvé pour la mise à jour du statut.`
+      );
       throw new Error(
         "Rapport mensuel non trouvé pour la mise à jour du statut."
       );
     }
+
+    // 2. Propager le nouveau statut aux activités individuelles
+    const activitiesToUpdateIds = result.value.activities_snapshot; // Récupère les IDs des activités snapshotées
+
+    if (activitiesToUpdateIds && activitiesToUpdateIds.length > 0) {
+      console.log(
+        `Controller (updateMonthlyReportStatusController): Propagation du statut '${newStatus}' à ${activitiesToUpdateIds.length} activités.`
+      );
+      const updateActivitiesResult = await activitiesCollection.updateMany(
+        { _id: { $in: activitiesToUpdateIds } }, // Trouve toutes les activités dont l'ID est dans la liste
+        { $set: { status: newStatus, updated_at: now } } // Met à jour leur statut et la date de mise à jour
+      );
+      console.log(
+        `Controller (updateMonthlyReportStatusController): ${updateActivitiesResult.modifiedCount} activités individuelles mises à jour.`
+      );
+    } else {
+      console.log(
+        "Controller (updateMonthlyReportStatusController): Aucune activité à propager pour ce rapport."
+      );
+    }
+
     console.log(
-      `Controller: Monthly report ${reportId} status updated to ${newStatus}.`
+      `Controller (updateMonthlyReportStatusController): Rapport mensuel ${reportId} statut mis à jour à ${newStatus}.`
     );
     return { ...result.value, id: result.value._id.toString() };
   } catch (error) {
     console.error("Erreur dans updateMonthlyReportStatusController:", error);
+    if (error.message.includes("input must be a 24 character hex string")) {
+      throw new Error("ID de rapport invalide fourni.");
+    }
     throw new Error(
       "Impossible de mettre à jour le statut du rapport mensuel: " +
         error.message
@@ -258,14 +302,38 @@ export async function getMonthlyReportByIdController(reportId) {
     const usersCollection = await getUsersCollection();
     const activitiesCollection = await getActivitiesCollection();
 
-    const report = await collection.findOne({ _id: new ObjectId(reportId) });
-    if (!report) {
-      return null;
+    console.log(
+      `Controller (getMonthlyReportByIdController): Tentative de récupération du rapport ID: ${reportId}`
+    );
+    let objectIdReportId;
+    try {
+      objectIdReportId = new ObjectId(reportId);
+      console.log(
+        `Controller (getMonthlyReportByIdController): ID converti en ObjectId: ${objectIdReportId}`
+      );
+    } catch (e) {
+      console.error(
+        `Controller (getMonthlyReportByIdController): Erreur de conversion de l'ID '${reportId}' en ObjectId:`,
+        e.message
+      );
+      throw new Error(
+        "ID de rapport invalide fourni (doit être une chaîne hexadécimale de 24 caractères)."
+      );
     }
 
-    // Populer l'utilisateur et les activités pour le rapport détaillé
-    // Utiliser le champ 'clerkUserId' pour la jointure
-    const user = await usersCollection.findOne({ clerkUserId: report.user_id }); // <-- CORRECTION ICI
+    const report = await collection.findOne({ _id: objectIdReportId });
+    if (!report) {
+      console.warn(
+        `Controller (getMonthlyReportByIdController): Rapport mensuel avec ID ${reportId} non trouvé.`
+      );
+      return null;
+    }
+    console.log(
+      `Controller (getMonthlyReportByIdController): Rapport trouvé pour ID ${reportId}.`
+    );
+
+    const user = await usersCollection.findOne({ clerkUserId: report.user_id });
+
     const populatedActivities = await activitiesCollection
       .find({
         _id: { $in: report.activities_snapshot.map((id) => new ObjectId(id)) },
@@ -282,6 +350,9 @@ export async function getMonthlyReportByIdController(reportId) {
     };
   } catch (error) {
     console.error("Erreur dans getMonthlyReportByIdController:", error);
+    if (error.message.includes("input must be a 24 character hex string")) {
+      throw new Error("ID de rapport invalide fourni.");
+    }
     throw new Error(
       "Impossible de récupérer le rapport mensuel par ID: " + error.message
     );
@@ -292,14 +363,41 @@ export async function getMonthlyReportByIdController(reportId) {
 export async function deleteMonthlyReportController(reportId) {
   try {
     const collection = await getMonthlyReportsCollection();
-    const result = await collection.deleteOne({ _id: new ObjectId(reportId) });
+    console.log(
+      `Controller (deleteMonthlyReportController): Tentative de suppression du rapport ID: ${reportId}`
+    );
+    let objectIdReportId;
+    try {
+      objectIdReportId = new ObjectId(reportId);
+      console.log(
+        `Controller (deleteMonthlyReportController): ID converti en ObjectId: ${objectIdReportId}`
+      );
+    } catch (e) {
+      console.error(
+        `Controller (deleteMonthlyReportController): Erreur de conversion de l'ID '${reportId}' en ObjectId:`,
+        e.message
+      );
+      throw new Error(
+        "ID de rapport invalide fourni (doit être une chaîne hexadécimale de 24 caractères)."
+      );
+    }
+
+    const result = await collection.deleteOne({ _id: objectIdReportId });
     if (result.deletedCount === 0) {
+      console.warn(
+        `Controller (deleteMonthlyReportController): Rapport mensuel avec ID ${reportId} non trouvé pour la suppression.`
+      );
       throw new Error("Rapport mensuel non trouvé pour la suppression.");
     }
-    console.log(`Controller: Monthly report ${reportId} deleted.`);
+    console.log(
+      `Controller (deleteMonthlyReportController): Rapport mensuel ${reportId} supprimé avec succès.`
+    );
     return { message: "Rapport mensuel supprimé avec succès." };
   } catch (error) {
     console.error("Erreur dans deleteMonthlyReportController:", error);
+    if (error.message.includes("input must be a 24 character hex string")) {
+      throw new Error("ID de rapport invalide fourni.");
+    }
     throw new Error(
       "Impossible de supprimer le rapport mensuel: " + error.message
     );

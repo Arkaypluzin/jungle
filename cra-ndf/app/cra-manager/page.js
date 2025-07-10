@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import CraBoard from "@/components/CraBoard";
 import UnifiedManager from "@/components/UnifiedManager";
-import ReceivedCras from "@/components/ReceivedCras"; // <-- NOUVEL IMPORT : le composant réel
+import ReceivedCras from "@/components/ReceivedCras";
 import { startOfMonth, endOfMonth, format } from "date-fns";
 
 // Composant ToastMessage simplifié et inclus directement
@@ -32,8 +32,6 @@ const ToastMessage = ({ message, type, isVisible, onClose }) => {
     </div>
   );
 };
-
-// REMOVED: Le placeholder ReceivedCraList n'est plus nécessaire ici.
 
 export default function CRAPage() {
   const { data: session, status } = useSession();
@@ -72,8 +70,6 @@ export default function CRAPage() {
   const currentUserId = session?.user?.id; // L'ID utilisateur réel de la session
   const currentUserName =
     session?.user?.name || session?.user?.email || "Utilisateur";
-  // ATTENTION: Remplacez 'admin' par le rôle réel de l'utilisateur si vous avez une gestion des rôles via Clerk/DB
-  // Pour le test initial, vous pouvez le laisser en dur si vous savez que l'utilisateur est admin/manager.
   const currentUserRole = "admin"; // Exemple: "admin", "manager", "user"
 
   const fetchAndParse = useCallback(async (url, resourceName) => {
@@ -383,7 +379,7 @@ export default function CRAPage() {
         );
         // Après la mise à jour, on recharge les activités pour s'assurer qu'elles sont populées
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
-        showMessage; //("Activité mise à jour avec succès !", "success"); // Déplacé ici
+        showMessage("Activité mise à jour avec succès !", "success"); // Déplacé ici
         return updatedActivity;
       } catch (error) {
         console.error(
@@ -842,12 +838,13 @@ export default function CRAPage() {
         )}
 
         {activeTab === "receivedCras" && (
-          // Remplacement du placeholder par le composant ReceivedCras réel
           <ReceivedCras
             userId={currentUserId}
             userFirstName={currentUserName}
-            userRole={currentUserRole} // Passe le rôle de l'utilisateur
+            userRole={currentUserRole}
             showMessage={showMessage}
+            clientDefinitions={clientDefinitions} // <-- NOUVELLE PROP
+            activityTypeDefinitions={activityTypeDefinitions} // <-- NOUVELLE PROP
           />
         )}
       </div>

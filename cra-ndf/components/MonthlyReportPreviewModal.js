@@ -2,215 +2,139 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { format } from "date-fns";
+import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
-import MonthlyDetailedReport from "./MonthlyDetailedReport"; // Importez le rapport détaillé
+import CraBoard from "./CraBoard"; // Importez le CraBoard
 
 export default function MonthlyReportPreviewModal({
   isOpen,
   onClose,
-  reportData,
+  reportData, // C'est le tableau des activités snapshotées du rapport mensuel
   year,
   month,
   userName,
-  userId, // <-- AJOUTEZ userId ICI DANS LA DÉSTRUCTURATION DES PROPS
+  userId, // L'ID de l'utilisateur du CRA
+  reportId, // L'ID du rapport mensuel lui-même
+  reportStatus, // Le statut actuel du rapport (ex: pending_review, validated, rejected)
+  rejectionReason, // Motif de rejet si applicable
+
+  clientDefinitions, // Définitions des clients
+  activityTypeDefinitions, // Définitions des types d'activités
+
+  onValidateCra, // Fonction de callback pour valider le CRA
+  onRejectCra, // Fonction de callback pour rejeter le CRA
+  isAdminOrManager, // Indique si l'utilisateur connecté est admin/manager
 }) {
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  const [scriptsLoaded, setScriptsLoaded] = useState(false);
-
-  // Chargement des bibliothèques html2canvas et jspdf via CDN
-  useEffect(() => {
-    if (!isOpen) return; // Ne charge les scripts que si la modal est ouverte
-
-    const loadScript = (src, id, callback) => {
-      if (!document.getElementById(id)) {
-        const script = document.createElement("script");
-        script.src = src;
-        script.id = id;
-        script.onload = () => {
-          console.log(`${id} loaded.`);
-          callback();
-        };
-        script.onerror = () => {
-          console.error(`Failed to load script: ${src}`);
-        };
-        document.head.appendChild(script);
-      } else {
-        console.log(`${id} already loaded.`);
-        callback();
-      }
-    };
-
-    let html2canvasLoaded = false;
-    let jspdfLoaded = false;
-
-    const checkAllLoaded = () => {
-      if (html2canvasLoaded && jspdfLoaded) {
-        setScriptsLoaded(true);
-      }
-    };
-
-    // Utilisez des IDs uniques pour éviter les conflits si d'autres composants chargent les mêmes scripts
-    loadScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
-      "html2canvas-script-preview",
-      () => {
-        html2canvasLoaded = true;
-        checkAllLoaded();
-      }
-    );
-    loadScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-      "jspdf-script-preview",
-      () => {
-        jspdfLoaded = true;
-        checkAllLoaded();
-      }
-    );
-  }, [isOpen]); // Déclenche le chargement lorsque la modal s'ouvre
-
-  // Fonction pour exporter le rapport en PDF
-  const handleExportPdf = useCallback(async () => {
-    if (
-      !scriptsLoaded ||
-      typeof window.html2canvas === "undefined" ||
-      typeof window.jspdf === "undefined"
-    ) {
-      console.error("Bibliothèques html2canvas ou jspdf non chargées.");
-      alert(
-        "Veuillez patienter, les bibliothèques d'exportation PDF sont en cours de chargement. Réessayez dans un instant."
-      );
-      return;
-    }
-
-    setIsGeneratingPdf(true);
-    // Cible le contenu du MonthlyDetailedReport à l'intérieur de cette modal
-    const input = document.getElementById("monthly-report-content");
-
-    if (!input) {
-      console.error(
-        "Élément 'monthly-report-content' non trouvé pour l'exportation PDF."
-      );
-      alert("Erreur: Impossible de trouver le contenu à exporter en PDF.");
-      setIsGeneratingPdf(false);
-      return;
-    }
-
-    try {
-      const canvas = await window.html2canvas(input, {
-        scale: 2, // Augmente la résolution pour une meilleure qualité
-        useCORS: true, // Important si vous avez des images ou des polices externes
-        // Ignorer les éléments qui ne sont pas nécessaires pour le PDF, comme les boutons d'action
-        ignoreElements: (element) => {
-          return element.classList.contains("no-pdf-export");
-        },
-        logging: true, // Pour le débogage
-      });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new window.jspdf.jsPDF({
-        orientation: "p", // 'p' pour portrait, 'l' pour landscape
-        unit: "mm",
-        format: "a4",
-      });
-
-      const imgWidth = 210; // Largeur A4 en mm (A4 portrait)
-      const pageHeight = 297; // Hauteur A4 en mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      const monthDate = new Date(year, month - 1, 1);
-      pdf.save(
-        `Rapport_Detaillé_CRA_${userName}_${format(monthDate, "yyyy_MM", {
-          locale: fr,
-        })}.pdf`
-      );
-    } catch (error) {
-      console.error("Erreur lors de la génération du PDF:", error);
-      alert(
-        "Une erreur est survenue lors de la génération du PDF. Veuillez réessayer. Détails: " +
-          error.message
-      );
-    } finally {
-      setIsGeneratingPdf(false);
-    }
-  }, [year, month, userName, scriptsLoaded]);
-
   if (!isOpen) return null;
 
+  const currentMonthDate = new Date(year, month - 1);
+
+  // Fonction pour les messages (simple console.log pour cette modale)
+  const showMessage = useCallback((message, type = "info") => {
+    console.log(`MonthlyReportPreviewModal Message (${type}): ${message}`);
+    // Vous pouvez intégrer un toast ici si vous le souhaitez
+  }, []);
+
+  // Fonction factice pour onAddActivity, onUpdateActivity, onDeleteActivity
+  // car CraBoard sera en lecture seule dans cette modale.
+  const noOp = useCallback(() => {
+    showMessage(
+      "Opération non autorisée en mode visualisation de CRA.",
+      "info"
+    );
+  }, [showMessage]);
+
+  // Déterminer si les boutons Valider/Rejeter doivent être affichés et actifs
+  const canActOnReport = isAdminOrManager && reportStatus === "pending_review";
+
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl h-[95vh] flex flex-col relative">
-        {/* Header de la modal */}
-        <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-          <h2 className="text-xl font-bold text-gray-800">
-            Prévisualisation du Rapport Détaillé (
-            {format(new Date(year, month - 1, 1), "MMMM", { locale: fr })})
-          </h2>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={handleExportPdf}
-              className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 flex items-center justify-center"
-              disabled={isGeneratingPdf || !scriptsLoaded}
-            >
-              {isGeneratingPdf ? (
-                <>
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Génération...
-                </>
-              ) : (
-                "Exporter en PDF"
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-300"
-              aria-label="Fermer la prévisualisation"
-            >
-              &times;
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto p-6 sm:p-8 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-600 hover:text-gray-900 text-2xl font-bold"
+          aria-label="Fermer"
+        >
+          &times;
+        </button>
+
+        <h2 className="text-3xl font-bold text-gray-800 mb-4 text-center">
+          CRA de {userName} -{" "}
+          {format(currentMonthDate, "MMMM yyyy", { locale: fr })}
+        </h2>
+
+        <div className="mb-6 text-center">
+          <span
+            className={`px-3 py-1 rounded-full text-sm font-semibold
+            ${reportStatus === "validated" ? "bg-green-100 text-green-800" : ""}
+            ${
+              reportStatus === "pending_review"
+                ? "bg-blue-100 text-blue-800"
+                : ""
+            }
+            ${reportStatus === "rejected" ? "bg-red-100 text-red-800" : ""}
+          `}
+          >
+            Statut:{" "}
+            {reportStatus === "validated"
+              ? "Validé"
+              : reportStatus === "pending_review"
+              ? "En attente de révision"
+              : reportStatus === "rejected"
+              ? "Rejeté"
+              : "Inconnu"}
+          </span>
+          {reportStatus === "rejected" && rejectionReason && (
+            <p className="text-red-600 text-sm mt-2">
+              Motif du rejet: {rejectionReason}
+            </p>
+          )}
         </div>
 
-        {/* Corps de la modal (le rapport détaillé) */}
-        <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
-          <MonthlyDetailedReport
-            reportData={reportData}
-            userId={userId} // userId est maintenant correctement passé
-            year={year}
-            month={month}
-            userName={userName}
-          />
-        </div>
+        {/* Intégration du CraBoard */}
+        <CraBoard
+          activities={reportData} // Les activités snapshotées du rapport
+          activityTypeDefinitions={activityTypeDefinitions}
+          clientDefinitions={clientDefinitions}
+          userId={userId} // L'ID de l'utilisateur du CRA
+          userFirstName={userName.split(" ")[0]}
+          showMessage={showMessage} // Passe la fonction showMessage
+          currentMonth={currentMonthDate}
+          onMonthChange={noOp} // Désactive le changement de mois
+          onAddActivity={noOp} // Désactive l'ajout d'activité
+          onUpdateActivity={noOp} // Désactive la modification d'activité
+          onDeleteActivity={noOp} // Désactive la suppression d'activité
+          fetchActivitiesForMonth={useCallback(() => {
+            // Cette fonction est appelée par CraBoard.
+            // En mode lecture seule ici, elle ne doit pas refetcher.
+            console.log(
+              "CraBoard en mode lecture seule : pas de fetch interne."
+            );
+          }, [])}
+          readOnly={true} // Rend le CraBoard en lecture seule
+        />
+
+        {/* Boutons d'action pour le rapport mensuel */}
+        {canActOnReport && (
+          <div className="mt-8 flex justify-center space-x-4">
+            <button
+              onClick={() =>
+                onValidateCra({ id: reportId, userName, year, month })
+              }
+              className="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-300"
+            >
+              Valider le CRA
+            </button>
+            <button
+              onClick={() =>
+                onRejectCra({ id: reportId, userName, year, month })
+              }
+              className="px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-300"
+            >
+              Rejeter le CRA
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
