@@ -31,6 +31,16 @@ export async function handlePost(req) {
     const userName = session?.user?.name;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const { month, year } = await req.json();
+
+    // AJOUT: bloquer si ce n'est pas l'année courante
+    const currentYear = new Date().getFullYear();
+    if (parseInt(year) !== currentYear) {
+        return Response.json(
+            { error: "Impossible de créer une note de frais pour une autre année que l'année en cours." },
+            { status: 400 }
+        );
+    }
+
     const existing = await getNdfByMonthYearUser(month, year, userId);
     if (existing) {
         return Response.json(
