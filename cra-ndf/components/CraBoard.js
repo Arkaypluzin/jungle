@@ -21,7 +21,7 @@ import {
   isBefore,
   isToday,
 } from "date-fns";
-import { fr } from "date-fns/locale";
+import { fr } from "date-fns/locale"; // <-- C'est ici que la correction a été faite
 import ActivityModal from "./ActivityModal";
 import SummaryReport from "./SummaryReport";
 import ConfirmationModal from "./ConfirmationModal";
@@ -37,14 +37,24 @@ export default function CraBoard({
   onAddActivity,
   onUpdateActivity,
   onDeleteActivity,
-  fetchActivitiesForMonth, // Cette prop est maintenant appelée avec le mois interne de CraBoard
+  fetchActivitiesForMonth,
   userId,
-  userFirstName,
+  userFirstName, // Le nom de l'utilisateur connecté
   showMessage,
-  currentMonth: propCurrentMonth, // Reçoit le mois de la prop
-  onMonthChange, // Reçoit la fonction de mise à jour du mois de la prop
+  currentMonth: propCurrentMonth,
+  onMonthChange,
+  readOnly = false,
 }) {
-  // Utilise le mois passé par la prop comme état initial, et le gère localement
+  console.log(
+    "[CraBoard] Activités reçues par le composant:",
+    activities.length,
+    "activités."
+  );
+  console.log(
+    "[CraBoard] userFirstName reçu du parent (CRAPage):",
+    userFirstName
+  ); // Log pour vérifier userFirstName
+
   const [currentMonth, setCurrentMonth] = useState(propCurrentMonth);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -65,14 +75,11 @@ export default function CraBoard({
   const [monthlyReportPreviewData, setMonthlyReportPreviewData] =
     useState(null);
 
-  // Synchronise le mois interne avec la prop si elle change
   useEffect(() => {
     if (!isSameMonth(currentMonth, propCurrentMonth)) {
       setCurrentMonth(propCurrentMonth);
     }
   }, [propCurrentMonth, currentMonth]);
-
-  // --- Effets et Mémos ---
 
   const fetchPublicHolidays = useCallback(async () => {
     const year = currentMonth.getFullYear();
@@ -156,26 +163,36 @@ export default function CraBoard({
     [calculateCurrentMonthStatus]
   );
 
-  // --- Fonctions de navigation et de gestion des dates ---
-
   const goToPreviousMonth = useCallback(() => {
+    if (readOnly) return;
     const newMonth = subMonths(currentMonth, 1);
-    setCurrentMonth(newMonth);
-    onMonthChange(newMonth); // Informe le parent du changement de mois
-  }, [currentMonth, onMonthChange]);
+    if (onMonthChange && typeof onMonthChange === "function") {
+      onMonthChange(newMonth);
+    } else {
+      setCurrentMonth(newMonth);
+    }
+  }, [currentMonth, onMonthChange, readOnly]);
 
   const goToNextMonth = useCallback(() => {
+    if (readOnly) return;
     const newMonth = addMonths(currentMonth, 1);
-    setCurrentMonth(newMonth);
-    onMonthChange(newMonth); // Informe le parent du changement de mois
-  }, [currentMonth, onMonthChange]);
+    if (onMonthChange && typeof onMonthChange === "function") {
+      onMonthChange(newMonth);
+    } else {
+      setCurrentMonth(newMonth);
+    }
+  }, [currentMonth, onMonthChange, readOnly]);
 
   const goToToday = useCallback(() => {
+    if (readOnly) return;
     const today = new Date();
-    setCurrentMonth(today);
-    setSelectedDate(today);
-    onMonthChange(today); // Informe le parent du changement de mois
-  }, [onMonthChange]);
+    if (onMonthChange && typeof onMonthChange === "function") {
+      onMonthChange(today);
+    } else {
+      setCurrentMonth(today);
+      setSelectedDate(today);
+    }
+  }, [onMonthChange, readOnly]);
 
   const getDaysInCalendar = useMemo(() => {
     const monthStart = startOfMonth(currentMonth);
@@ -190,10 +207,15 @@ export default function CraBoard({
     return eachDayOfInterval({ start: startCalendarDay, end: endCalendarDay });
   }, [currentMonth]);
 
-  // --- Gestion des clics sur les jours et activités ---
-
   const handleDayClick = useCallback(
     (dayDate) => {
+      if (readOnly) {
+        showMessage(
+          "Ajout/modification d'activité désactivée en mode lecture seule.",
+          "info"
+        );
+        return;
+      }
       if (!isValid(dayDate)) {
         showMessage("Erreur : Date sélectionnée invalide.", "error");
         return;
@@ -207,21 +229,41 @@ export default function CraBoard({
         currentMonthStatus.startsWith("mixed")
       ) {
         showMessage(
-          "Impossible d'ajouter des activités. Le mois est déjà finalisé, validé, rejeté ou en attente de révision.",
+          "Impossible d'ajouter/modifier des activités. Le mois est déjà finalisé, validé, rejeté ou en attente de révision.",
           "info"
         );
         return;
       }
 
-      setSelectedDate(dayDate);
-      setEditingActivity(null);
-      setIsModalOpen(true);
+      const dateKey = format(dayDate, "yyyy-MM-dd");
+      const existingActivitiesForDay = activitiesByDay.get(dateKey);
+
+      if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
+        showMessage(
+          "Une activité existe déjà pour ce jour. Vous pouvez la modifier.",
+          "info"
+        );
+        setSelectedDate(dayDate);
+        setEditingActivity(existingActivitiesForDay[0]);
+        setIsModalOpen(true);
+      } else {
+        setSelectedDate(dayDate);
+        setEditingActivity(null);
+        setIsModalOpen(true);
+      }
     },
-    [showMessage, currentMonthStatus]
+    [showMessage, currentMonthStatus, activitiesByDay, readOnly]
   );
 
   const handleActivityClick = useCallback(
     (activity) => {
+      if (readOnly) {
+        showMessage(
+          "Modification d'activité désactivée en mode lecture seule.",
+          "info"
+        );
+        return;
+      }
       if (String(activity.user_id) !== String(userId)) {
         showMessage(
           "Vous ne pouvez pas modifier ou supprimer les activités des autres utilisateurs.",
@@ -259,7 +301,7 @@ export default function CraBoard({
       setEditingActivity(activity);
       setIsModalOpen(true);
     },
-    [showMessage, userId]
+    [showMessage, userId, readOnly]
   );
 
   const handleCloseActivityModal = useCallback(() => {
@@ -269,6 +311,13 @@ export default function CraBoard({
 
   const handleSaveActivity = useCallback(
     async (activityData) => {
+      if (readOnly) {
+        showMessage(
+          "Opération de sauvegarde désactivée en mode lecture seule.",
+          "info"
+        );
+        return;
+      }
       try {
         const payload = { ...activityData, user_id: userId };
         if (editingActivity) {
@@ -279,7 +328,7 @@ export default function CraBoard({
           showMessage("Activité ajoutée avec succès !", "success");
         }
         handleCloseActivityModal();
-        fetchActivitiesForMonth(currentMonth); // Utilise le mois interne de CraBoard
+        fetchActivitiesForMonth(currentMonth);
       } catch (error) {
         console.error(
           "CraBoard: Erreur lors de la sauvegarde de l'activité:",
@@ -297,12 +346,20 @@ export default function CraBoard({
       fetchActivitiesForMonth,
       currentMonth,
       userId,
+      readOnly,
     ]
   );
 
   const requestDeleteFromCalendar = useCallback(
     (activityId, event) => {
       event.stopPropagation();
+      if (readOnly) {
+        showMessage(
+          "Suppression d'activité désactivée en mode lecture seule.",
+          "info"
+        );
+        return;
+      }
       const activity = activities.find((act) => act.id === activityId);
 
       if (
@@ -327,16 +384,23 @@ export default function CraBoard({
       setActivityToDelete(activityId);
       setShowConfirmModal(true);
     },
-    [activities, showMessage, userId]
+    [activities, showMessage, userId, readOnly]
   );
 
   const confirmDeleteActivity = useCallback(async () => {
     setShowConfirmModal(false);
+    if (readOnly) {
+      showMessage(
+        "Opération de suppression désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     if (activityToDelete) {
       try {
         await onDeleteActivity(activityToDelete);
         showMessage("Activité supprimée avec succès !", "success");
-        fetchActivitiesForMonth(currentMonth); // Utilise le mois interne de CraBoard
+        fetchActivitiesForMonth(currentMonth);
       } catch (error) {
         console.error(
           "CraBoard: Erreur lors de la suppression de l'activité:",
@@ -353,6 +417,7 @@ export default function CraBoard({
     showMessage,
     fetchActivitiesForMonth,
     currentMonth,
+    readOnly,
   ]);
 
   const cancelDeleteActivity = useCallback(() => {
@@ -360,9 +425,14 @@ export default function CraBoard({
     setActivityToDelete(null);
   }, []);
 
-  // --- Fonctions de gestion du mois (Réinitialiser, Finaliser, Envoyer) ---
-
   const requestResetMonth = useCallback(() => {
+    if (readOnly) {
+      showMessage(
+        "Opération de réinitialisation désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated" ||
@@ -377,10 +447,17 @@ export default function CraBoard({
       return;
     }
     setShowResetMonthConfirmModal(true);
-  }, [currentMonthStatus, showMessage]);
+  }, [currentMonthStatus, showMessage, readOnly]);
 
   const confirmResetMonth = useCallback(async () => {
     setShowResetMonthConfirmModal(false);
+    if (readOnly) {
+      showMessage(
+        "Opération de réinitialisation désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     const activitiesToReset = activitiesForCurrentMonth.filter(
       (activity) => activity.status === "draft"
     );
@@ -419,6 +496,7 @@ export default function CraBoard({
     showMessage,
     currentMonth,
     fetchActivitiesForMonth,
+    readOnly,
   ]);
 
   const cancelResetMonth = useCallback(() => {
@@ -426,6 +504,13 @@ export default function CraBoard({
   }, []);
 
   const requestFinalizeMonth = useCallback(() => {
+    if (readOnly) {
+      showMessage(
+        "Opération de finalisation désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     if (
       currentMonthStatus === "finalized" ||
       currentMonthStatus === "validated" ||
@@ -437,10 +522,17 @@ export default function CraBoard({
       return;
     }
     setShowFinalizeMonthConfirmModal(true);
-  }, [currentMonthStatus, showMessage]);
+  }, [currentMonthStatus, showMessage, readOnly]);
 
   const confirmFinalizeMonth = useCallback(async () => {
     setShowFinalizeMonthConfirmModal(false);
+    if (readOnly) {
+      showMessage(
+        "Opération de finalisation désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     let successCount = 0;
     let errorCount = 0;
     const year = format(currentMonth, "yyyy");
@@ -461,11 +553,10 @@ export default function CraBoard({
           await onUpdateActivity(
             activity.id,
             {
-              // Premier argument: ID de l'activité
               ...activity,
               status: "finalized",
             },
-            true // <-- AJOUTEZ CET ARGUMENT pour suppressMessage
+            true
           );
           successCount++;
         } catch (error) {
@@ -487,6 +578,7 @@ export default function CraBoard({
     activitiesForCurrentMonth,
     onUpdateActivity,
     fetchActivitiesForMonth,
+    readOnly,
   ]);
 
   const cancelFinalizeMonth = useCallback(() => {
@@ -494,6 +586,13 @@ export default function CraBoard({
   }, []);
 
   const requestSendCra = useCallback(() => {
+    if (readOnly) {
+      showMessage(
+        "Opération d'envoi de CRA désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     if (
       currentMonthStatus !== "finalized" &&
       currentMonthStatus !== "validated"
@@ -505,9 +604,8 @@ export default function CraBoard({
       return;
     }
     setShowSendConfirmModal(true);
-  }, [currentMonthStatus, showMessage]);
+  }, [currentMonthStatus, showMessage, readOnly]);
 
-  // Définition de calculateBillableTime et totalActivitiesTimeInMonth avant confirmSendCra
   const calculateBillableTime = useCallback(() => {
     return activitiesForCurrentMonth.reduce((sum, activity) => {
       const activityType = activityTypeDefinitions.find(
@@ -529,10 +627,16 @@ export default function CraBoard({
 
   const confirmSendCra = useCallback(async () => {
     setShowSendConfirmModal(false);
+    if (readOnly) {
+      showMessage(
+        "Opération d'envoi de CRA désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
     let activitiesUpdateSuccessCount = 0;
     let activitiesUpdateErrorCount = 0;
 
-    // Filter activities for the current month that are "finalized"
     const activitiesToUpdateStatus = activitiesForCurrentMonth.filter(
       (activity) => activity.status === "finalized"
     );
@@ -551,7 +655,6 @@ export default function CraBoard({
       return;
     }
 
-    // 1. Mettre à jour le statut des activités individuelles à 'pending_review'
     for (const activity of activitiesToUpdateStatus) {
       try {
         await onUpdateActivity(
@@ -560,7 +663,7 @@ export default function CraBoard({
             ...activity,
             status: "pending_review",
           },
-          true // Supprime le message de succès individuel
+          true
         );
         activitiesUpdateSuccessCount++;
       } catch (error) {
@@ -572,19 +675,23 @@ export default function CraBoard({
       }
     }
 
-    // 2. Préparer et envoyer le résumé mensuel au nouveau point de terminaison API
     const totalBillableDays = calculateBillableTime();
     const totalDaysWorked = totalActivitiesTimeInMonth;
 
     const monthlyReportData = {
       user_id: userId,
-      month: currentMonth.getMonth() + 1, // Mois (1-12)
+      userName: userFirstName, // <-- userFirstName est passé ici. LOG IMPORTANT.
+      month: currentMonth.getMonth() + 1,
       year: currentMonth.getFullYear(),
       total_days_worked: totalDaysWorked,
       total_billable_days: totalBillableDays,
-      activities_snapshot: activitiesToUpdateStatus.map((act) => act.id), // IDs des activités incluses dans ce rapport
-      // Le statut initial sera 'pending_review' par le contrôleur backend
+      activities_snapshot: activitiesToUpdateStatus.map((act) => act.id),
     };
+
+    console.log(
+      "[CraBoard] confirmSendCra: Données de rapport mensuel envoyées:",
+      JSON.stringify(monthlyReportData, null, 2)
+    );
 
     try {
       const response = await fetch("/api/monthly_cra_reports", {
@@ -619,7 +726,6 @@ export default function CraBoard({
       );
     }
 
-    // Rafraîchit les activités après envoi (pour refléter les changements de statut)
     fetchActivitiesForMonth(currentMonth);
   }, [
     currentMonth,
@@ -628,8 +734,10 @@ export default function CraBoard({
     onUpdateActivity,
     fetchActivitiesForMonth,
     userId,
+    userFirstName, // AJOUTÉ aux dépendances
     totalActivitiesTimeInMonth,
     calculateBillableTime,
+    readOnly,
   ]);
 
   const cancelSendCra = useCallback(() => {
@@ -652,8 +760,6 @@ export default function CraBoard({
   }, [currentMonth, showSummaryReport]);
   const handleOpenMonthlyReportPreview = useCallback(() => {
     setShowMonthlyReportPreview(true);
-    // Mapper les activités pour s'assurer que date_activite est un objet Date
-    // ET ajouter les noms de client et de type d'activité pour MonthlyDetailedReport
     const formattedReportData = activitiesForCurrentMonth.map((activity) => {
       const activityType = activityTypeDefinitions.find(
         (def) => String(def.id) === String(activity.type_activite)
@@ -664,20 +770,20 @@ export default function CraBoard({
 
       return {
         ...activity,
-        date_activite: parseISO(activity.date_activite), // Assurez-vous que c'est un objet Date
+        date_activite: parseISO(activity.date_activite),
         activity_type_name_full: activityType
           ? activityType.name
-          : "Type Inconnu", // Nom du type d'activité
-        client_name_full: client ? client.nom_client : "Client Inconnu", // Nom du client
+          : "Type Inconnu",
+        client_name_full: client ? client.nom_client : "Client Inconnu",
       };
     });
 
     setMonthlyReportPreviewData({
-      reportData: formattedReportData, // Les activités du mois courant, avec dates et noms formatés
+      reportData: formattedReportData,
       year: currentMonth.getFullYear(),
-      month: currentMonth.getMonth() + 1, // getMonth() est basé sur 0
+      month: currentMonth.getMonth() + 1,
       userName: userFirstName,
-      userId: userId, // Passez l'ID utilisateur si nécessaire dans le rapport détaillé
+      userId: userId,
     });
   }, [
     activitiesForCurrentMonth,
@@ -686,15 +792,12 @@ export default function CraBoard({
     userId,
     activityTypeDefinitions,
     clientDefinitions,
-  ]); // <-- VÉRIFIEZ BIEN CES DÉPENDANCES
+  ]);
 
-  // Nouvelle fonction pour fermer la modal de prévisualisation du rapport détaillé <-- AJOUTEZ TOUT CE BLOC
   const handleCloseMonthlyReportPreview = useCallback(() => {
     setShowMonthlyReportPreview(false);
     setMonthlyReportPreviewData(null);
   }, []);
-
-  // --- Calculs pour l'affichage ---
 
   const totalWorkingDaysInMonth = useMemo(() => {
     const monthStart = startOfMonth(currentMonth);
@@ -706,19 +809,9 @@ export default function CraBoard({
     ).length;
   }, [currentMonth, isPublicHoliday]);
 
-  // totalActivitiesTimeInMonth est déjà défini plus haut
-  // const totalActivitiesTimeInMonth = useMemo(() => {
-  //   return activitiesForCurrentMonth.reduce(
-  //     (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
-  //     0
-  //   );
-  // }, [activitiesForCurrentMonth]);
-
   const timeDifference = useMemo(() => {
     return (totalActivitiesTimeInMonth - totalWorkingDaysInMonth).toFixed(2);
   }, [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]);
-
-  // --- Rendu des composants ---
 
   const renderHeader = () => {
     let statusBadge = null;
@@ -738,7 +831,7 @@ export default function CraBoard({
             FINALISÉ
           </span>
         );
-        break; // IMPORTANT: Ajouté break;
+        break;
       case "pending_review":
         statusBadge = (
           <span className={`${badgeClass} text-blue-700 bg-blue-100`}>
@@ -775,8 +868,11 @@ export default function CraBoard({
       <div className="flex justify-between items-center mb-4 p-4 bg-blue-100 rounded-lg shadow-md">
         <button
           onClick={goToPreviousMonth}
-          className="p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 transition duration-300"
+          className={`p-2 rounded-full bg-blue-500 text-white transition duration-300 ${
+            readOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-600"
+          }`}
           aria-label="Mois précédent"
+          disabled={readOnly}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -793,13 +889,23 @@ export default function CraBoard({
             />
           </svg>
         </button>
-        <h2 className="text-2xl font-semibold text-blue-800 flex items-center">
-          {format(currentMonth, "MMMM ", { locale: fr })} {statusBadge}
-        </h2>
+        <div className="flex flex-col items-center">
+          <h3 className="text-xl font-semibold text-blue-700 mb-1">
+            {userFirstName}
+          </h3>
+          <h2 className="text-2xl font-semibold text-blue-800 flex items-center">
+            {format(currentMonth, "MMMM ", { locale: fr })}
+            <span className="ml-1">{format(currentMonth, "yyyy")}</span>
+            {statusBadge}
+          </h2>
+        </div>
         <button
           onClick={goToNextMonth}
-          className="p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 transition duration-300"
+          className={`p-2 rounded-full bg-blue-500 text-white transition duration-300 ${
+            readOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-600"
+          }`}
           aria-label="Mois suivant"
+          disabled={readOnly}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -874,7 +980,7 @@ export default function CraBoard({
         <div
           className={cellClasses}
           key={format(day, "yyyy-MM-dd")}
-          onClick={isOutsideCurrentMonth ? null : () => handleDayClick(day)}
+          onClick={readOnly ? null : () => handleDayClick(day)}
         >
           <span
             className={`text-sm font-semibold mb-1 ${
@@ -943,7 +1049,7 @@ export default function CraBoard({
                 const client = clientDefinitions.find(
                   (c) => String(c.id) === String(activity.client_id)
                 );
-                const clientLabel = client ? client.name : "Non attribué";
+                const clientLabel = client ? client.nom_client : "Non attribué";
 
                 const activityTypeObj = activityTypeDefinitions.find(
                   (type) => String(type.id) === String(activity.type_activite)
@@ -988,8 +1094,8 @@ export default function CraBoard({
                 const isActivityFinalizedOrValidated =
                   activity.status === "finalized" ||
                   activity.status === "validated" ||
-                  activity.status === "rejected" ||
-                  activity.status === "pending_review";
+                  activity.status === "pending_review" ||
+                  activity.status === "rejected";
 
                 return (
                   <div
@@ -1000,7 +1106,12 @@ export default function CraBoard({
                     } group`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleActivityClick(activity);
+                      if (!readOnly) handleActivityClick(activity);
+                      else
+                        showMessage(
+                          "Modification d'activité désactivée en mode lecture seule.",
+                          "info"
+                        );
                     }}
                     title={`Client: ${clientLabel}\nType: ${activityTypeLabel}\nTemps: ${timeSpentLabel}\nDescription: ${
                       activity.description_activite || "N/A"
@@ -1013,6 +1124,8 @@ export default function CraBoard({
                         ? "Finalisé"
                         : activity.status === "pending_review"
                         ? "En attente de révision"
+                        : activity.status === "rejected"
+                        ? "Rejeté"
                         : "Brouillon"
                     }\nFacturable: ${
                       activityTypeObj?.is_billable ? "Oui" : "Non"
@@ -1045,6 +1158,8 @@ export default function CraBoard({
                             ? "F"
                             : activity.status === "pending_review"
                             ? "A"
+                            : activity.status === "rejected"
+                            ? "R"
                             : ""
                         }
                       >
@@ -1054,10 +1169,12 @@ export default function CraBoard({
                           ? "F"
                           : activity.status === "pending_review"
                           ? "A"
+                          : activity.status === "rejected"
+                          ? "R"
                           : ""}
                       </span>
                     )}
-                    {!isActivityFinalizedOrValidated && (
+                    {!isActivityFinalizedOrValidated && !readOnly && (
                       <button
                         onClick={(e) =>
                           requestDeleteFromCalendar(activity.id, e)
@@ -1089,9 +1206,13 @@ export default function CraBoard({
     return <div className="w-full">{rows}</div>;
   };
 
-  // Déclenche la récupération des activités lorsque le mois interne change
   useEffect(() => {
-    fetchActivitiesForMonth(currentMonth);
+    if (
+      fetchActivitiesForMonth &&
+      typeof fetchActivitiesForMonth === "function"
+    ) {
+      fetchActivitiesForMonth(currentMonth);
+    }
   }, [currentMonth, fetchActivitiesForMonth]);
 
   return (
@@ -1121,73 +1242,75 @@ export default function CraBoard({
         </p>
       </div>
 
-      <div className="flex justify-center space-x-4 mb-8 flex-wrap gap-2">
-        <button
-          onClick={handleToggleSummaryReport}
-          className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
-        >
-          {showSummaryReport ? "Masquer le rapport" : "Afficher le rapport"}
-        </button>
-        <button
-          onClick={requestFinalizeMonth}
-          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-            ${
+      {!readOnly && (
+        <div className="flex justify-center space-x-4 mb-8 flex-wrap gap-2">
+          <button
+            onClick={handleToggleSummaryReport}
+            className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
+          >
+            {showSummaryReport ? "Masquer le rapport" : "Afficher le rapport"}
+          </button>
+          <button
+            onClick={requestFinalizeMonth}
+            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+              ${
+                currentMonthStatus === "finalized" ||
+                currentMonthStatus === "validated" ||
+                currentMonthStatus === "rejected" ||
+                currentMonthStatus === "pending_review" ||
+                currentMonthStatus.startsWith("mixed")
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-green-600 text-white hover:bg-green-700"
+              }`}
+            disabled={
               currentMonthStatus === "finalized" ||
               currentMonthStatus === "validated" ||
               currentMonthStatus === "rejected" ||
               currentMonthStatus === "pending_review" ||
               currentMonthStatus.startsWith("mixed")
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-green-600 text-white hover:bg-green-700"
-            }`}
-          disabled={
-            currentMonthStatus === "finalized" ||
-            currentMonthStatus === "validated" ||
-            currentMonthStatus === "rejected" ||
-            currentMonthStatus === "pending_review" ||
-            currentMonthStatus.startsWith("mixed")
-          }
-        >
-          Finaliser le mois
-        </button>
-        <button
-          onClick={requestResetMonth}
-          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-            ${
+            }
+          >
+            Finaliser le mois
+          </button>
+          <button
+            onClick={requestResetMonth}
+            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+              ${
+                currentMonthStatus === "finalized" ||
+                currentMonthStatus === "validated" ||
+                currentMonthStatus === "rejected" ||
+                currentMonthStatus === "pending_review" ||
+                currentMonthStatus.startsWith("mixed")
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-orange-600 text-white hover:bg-orange-700"
+              }`}
+            disabled={
               currentMonthStatus === "finalized" ||
               currentMonthStatus === "validated" ||
               currentMonthStatus === "rejected" ||
               currentMonthStatus === "pending_review" ||
               currentMonthStatus.startsWith("mixed")
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-orange-600 text-white hover:bg-orange-700"
-            }`}
-          disabled={
-            currentMonthStatus === "finalized" ||
-            currentMonthStatus === "validated" ||
-            currentMonthStatus === "rejected" ||
-            currentMonthStatus === "pending_review" ||
-            currentMonthStatus.startsWith("mixed")
-          }
-        >
-          Réinitialiser le mois
-        </button>
-        <button
-          onClick={requestSendCra}
-          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-            ${
-              currentMonthStatus === "draft" || currentMonthStatus === "empty"
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-purple-600 text-white hover:bg-purple-700"
-            }`}
-          disabled={
-            currentMonthStatus !== "finalized" &&
-            currentMonthStatus !== "validated"
-          }
-        >
-          Envoyer le CRA
-        </button>
-      </div>
+            }
+          >
+            Réinitialiser le mois
+          </button>
+          <button
+            onClick={requestSendCra}
+            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+              ${
+                currentMonthStatus === "draft" || currentMonthStatus === "empty"
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-purple-600 text-white hover:bg-purple-700"
+              }`}
+            disabled={
+              currentMonthStatus !== "finalized" &&
+              currentMonthStatus !== "validated"
+            }
+          >
+            Envoyer le CRA
+          </button>
+        </div>
+      )}
       {showSummaryReport && summaryReportMonth && (
         <SummaryReport
           month={summaryReportMonth}
@@ -1218,6 +1341,7 @@ export default function CraBoard({
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           showMessage={showMessage}
+          readOnly={readOnly}
         />
       )}
 
@@ -1246,7 +1370,7 @@ export default function CraBoard({
           currentMonth,
           "MMMM ",
           { locale: fr }
-        )} ? Cette action est irréversible.`}
+        )}. Cette action est irréversible.`}
       />
 
       <ConfirmationModal
