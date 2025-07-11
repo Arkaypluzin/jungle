@@ -26,6 +26,14 @@ export async function updateNdf(uuid, { month, year, statut, motif_refus }) {
     return db.collection("ndf").findOne({ uuid });
 }
 
+export async function updateNdfRefus(ndfId, refus_comment) {
+    const db = await getMongoDb();
+    await db.collection("ndf").updateOne(
+        { uuid: ndfId },
+        { $set: { statut: "Provisoire", refus_comment } }
+    );
+}
+
 export async function deleteNdf(uuid) {
     const db = await getMongoDb();
     await db.collection("ndf").deleteOne({ uuid });
