@@ -319,8 +319,20 @@ export default function ClientAdminNdf() {
               {filteredNdfList.map((ndf) => (
                 <li key={ndf.uuid} className="bg-gray-50 p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex-grow">
-                    <span className="font-semibold text-lg text-gray-900">
+                    <span className="font-semibold text-lg text-gray-900 flex items-center gap-1">
                       {ndf.month} {ndf.year}
+                      {ndf.refus_comment && (
+                        <svg
+                          title="Motif de refus présent"
+                          className="w-5 h-5 text-red-500 inline-block"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405C18.37 15.052 18 14.552 18 14V11c0-3.07-1.64-5.64-5-5.96V5a1 1 0 10-2 0v.04C7.64 5.36 6 7.92 6 11v3c0 .552-.37 1.052-.595 1.595L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                      )}
                     </span>
                     <span className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${ndf.statut === "Provisoire"
                       ? "bg-blue-100 text-blue-800"
