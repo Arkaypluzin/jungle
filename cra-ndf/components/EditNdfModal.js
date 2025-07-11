@@ -73,11 +73,10 @@ export default function EditNdfModal({ ndf, onEdited }) {
                                     Année :
                                     <input
                                         type="number"
-                                        className="ml-2 border px-2 py-1 rounded"
+                                        className="ml-2 border px-2 py-1 rounded bg-gray-100 text-gray-700"
                                         value={year}
-                                        min={2000}
-                                        required
-                                        onChange={e => setYear(e.target.value)}
+                                        disabled
+                                        readOnly
                                     />
                                 </label>
                                 <label>
@@ -110,15 +109,6 @@ export default function EditNdfModal({ ndf, onEdited }) {
                                 </div>
                             </form>
                         )}
-                        <div className="flex gap-2 mt-2">
-                            <button
-                                type="button"
-                                className="bg-gray-300 text-gray-800 px-4 py-2 rounded"
-                                onClick={() => setOpen(false)}
-                            >
-                                Fermer
-                            </button>
-                        </div>
                     </div>
                 </div>
             )}

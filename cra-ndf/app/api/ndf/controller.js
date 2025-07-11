@@ -32,7 +32,6 @@ export async function handlePost(req) {
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
     const { month, year } = await req.json();
 
-    // AJOUT: bloquer si ce n'est pas l'année courante
     const currentYear = new Date().getFullYear();
     if (parseInt(year) !== currentYear) {
         return Response.json(
@@ -77,7 +76,7 @@ export async function handlePut(req, { params }) {
     if (ndf.statut === "Provisoire" && isOwner) {
         const updated = await updateNdf(params.id, {
             month: month ?? ndf.month,
-            year: year ?? ndf.year,
+            year: ndf.year,
             statut: statut ?? ndf.statut,
             motif_refus: undefined
         });
