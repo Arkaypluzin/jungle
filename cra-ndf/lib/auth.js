@@ -15,13 +15,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
-      // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-      // LOG CRUCIAL: Inspectez l'objet 'profile' pour trouver le nom de l'utilisateur
       console.log(
         "NextAuth Callback JWT: profile object:",
         JSON.stringify(profile, null, 2)
       );
-      // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
       if (account && profile) {
         token.userId = profile.sub || profile.oid || profile.id;
@@ -43,13 +40,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           profile._json.given_name + " " + profile._json.family_name;
       }
 
-      // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-      // LOG: Vérifiez le token après modification
       console.log(
         "NextAuth Callback JWT: token after modification:",
         JSON.stringify(token, null, 2)
       );
-      // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
       return token;
     },
     async session({ session, token }) {
@@ -57,13 +51,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.user.id = token.userId || null;
       session.user.name = token.name || session.user.name; // Assurez-vous que le nom du token est transféré à la session
 
-      // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-      // LOG: Vérifiez la session après modification
       console.log(
         "NextAuth Callback Session: session object:",
         JSON.stringify(session, null, 2)
       );
-      // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
       return session;
     },
   },

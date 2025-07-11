@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
 import EditNdfModal from "@/components/EditNdfModal";
@@ -13,6 +14,7 @@ const MONTHS = [
 ];
 
 export default function ClientAdminNdf() {
+  const { data: session } = useSession();
   const [tab, setTab] = useState("mes");
   const [ndfList, setNdfList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +192,9 @@ export default function ClientAdminNdf() {
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-lg">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
-          <span className="font-bold text-lg mb-2 sm:mb-0 text-black">Bienvenue, Lucas TEAR</span>
+          <span className="font-bold text-lg mb-2 sm:mb-0 text-black">
+            Bienvenue, {session?.user?.name ? session.user.name : "utilisateur"}
+          </span>
           <BtnRetour fallback="/dashboard" />
         </div>
         <h1 className="text-3xl font-extrabold text-gray-900 mb-6 text-center">
@@ -319,8 +323,20 @@ export default function ClientAdminNdf() {
               {filteredNdfList.map((ndf) => (
                 <li key={ndf.uuid} className="bg-gray-50 p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex-grow">
-                    <span className="font-semibold text-lg text-gray-900">
+                    <span className="font-semibold text-lg text-gray-900 flex items-center gap-1">
                       {ndf.month} {ndf.year}
+                      {ndf.refus_comment && (
+                        <svg
+                          title="Motif de refus présent"
+                          className="w-5 h-5 text-red-500 inline-block"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405C18.37 15.052 18 14.552 18 14V11c0-3.07-1.64-5.64-5-5.96V5a1 1 0 10-2 0v.04C7.64 5.36 6 7.92 6 11v3c0 .552-.37 1.052-.595 1.595L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                      )}
                     </span>
                     <span className={`ml-3 px-3 py-1 rounded-full text-sm font-medium ${ndf.statut === "Provisoire"
                       ? "bg-blue-100 text-blue-800"

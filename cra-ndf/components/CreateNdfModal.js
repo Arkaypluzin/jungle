@@ -152,12 +152,14 @@ export default function CreateNdfModal({ onNdfCreated }) {
                 <input
                   type="number"
                   id="year-input"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   value={year}
-                  min={2000} // Année minimale raisonnable
-                  max={2100} // Année maximale raisonnable
+                  min={2000}
+                  max={2100}
                   required
-                  onChange={(e) => setYear(parseInt(e.target.value))}
+                  readOnly
+                  tabIndex={-1}
+                  style={{ background: "#f3f4f6", cursor: "not-allowed" }}
                 />
               </div>
 
