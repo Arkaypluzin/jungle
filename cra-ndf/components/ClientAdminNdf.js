@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import CreateNdfModal from "@/components/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
 import EditNdfModal from "@/components/EditNdfModal";
@@ -13,6 +14,7 @@ const MONTHS = [
 ];
 
 export default function ClientAdminNdf() {
+  const { data: session } = useSession();
   const [tab, setTab] = useState("mes");
   const [ndfList, setNdfList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +192,9 @@ export default function ClientAdminNdf() {
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-lg">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
-          <span className="font-bold text-lg mb-2 sm:mb-0 text-black">Bienvenue, Lucas TEAR</span>
+          <span className="font-bold text-lg mb-2 sm:mb-0 text-black">
+            Bienvenue, {session?.user?.name ? session.user.name : "utilisateur"}
+          </span>
           <BtnRetour fallback="/dashboard" />
         </div>
         <h1 className="text-3xl font-extrabold text-gray-900 mb-6 text-center">
