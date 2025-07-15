@@ -1,7 +1,13 @@
 // components/CraBoard.js
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
 import {
   format,
   addMonths,
@@ -15,20 +21,22 @@ import {
   isSameMonth,
   isSameDay,
   isWeekend,
-  parseISO,
   isValid,
   eachDayOfInterval,
   isBefore,
   isToday,
+  startOfDay,
 } from "date-fns";
-import { fr } from "date-fns/locale"; // <-- C'est ici que la correction a été faite
-import ActivityModal from "./ActivityModal";
-import SummaryReport from "./SummaryReport";
-import ConfirmationModal from "./ConfirmationModal";
-import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
+import { fr } from "date-fns/locale";
 
-// Noms des jours de la semaine, commençant par Lundi pour la locale fr
-const daysOfWeekDisplay = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+// Import new sub-components
+import CraCalendar from "./cra/CraCalendar";
+import CraControls from "./cra/CraControls";
+import CraSummary from "./cra/CraSummary";
+import ActivityModal from "./ActivityModal";
+import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
+import ConfirmationModal from "./ConfirmationModal";
+import SummaryReport from "./SummaryReport"; // Keep if used elsewhere or for summary modal
 
 export default function CraBoard({
   activities = [],
@@ -39,11 +47,13 @@ export default function CraBoard({
   onDeleteActivity,
   fetchActivitiesForMonth,
   userId,
-  userFirstName, // Le nom de l'utilisateur connecté
+  userFirstName,
   showMessage,
   currentMonth: propCurrentMonth,
   onMonthChange,
   readOnly = false,
+  monthlyReports = [], // NEW: Receive monthly reports
+  rejectionReason = null, // NEW: Receive rejection reason
 }) {
   console.log(
     "[CraBoard] Activités reçues par le composant:",
@@ -51,9 +61,15 @@ export default function CraBoard({
     "activités."
   );
   console.log(
-    "[CraBoard] userFirstName reçu du parent (CRAPage):",
+    "[CraBoard] Prénom de l'utilisateur reçu du parent (CRAPage):",
     userFirstName
-  ); // Log pour vérifier userFirstName
+  );
+  console.log("[CraBoard] Mode lecture seule:", readOnly);
+  console.log("[CraBoard] Rapports mensuels reçus:", monthlyReports.length);
+  console.log(
+    "[CraBoard] Motif de rejet reçu (si affichage d'un rapport détaillé):",
+    rejectionReason
+  );
 
   const [currentMonth, setCurrentMonth] = useState(propCurrentMonth);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -61,19 +77,34 @@ export default function CraBoard({
   const [editingActivity, setEditingActivity] = useState(null);
   const [publicHolidays, setPublicHolidays] = useState([]);
 
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // States for confirmation modals
+  const [showConfirmModal, setShowConfirmModal] = useState(false); // For activity deletion
   const [activityToDelete, setActivityToDelete] = useState(null);
   const [showResetMonthConfirmModal, setShowResetMonthConfirmModal] =
     useState(false);
-  const [showFinalizeMonthConfirmModal, setShowFinalizeMonthConfirmModal] =
-    useState(false);
-  const [showSendConfirmModal, setShowSendConfirmModal] = useState(false);
+  const [showSendConfirmModal, setShowSendConfirmModal] = useState(false); // Used for direct sending
+  const [confirmingActionType, setConfirmingActionType] = useState(null); // 'sendCRA', 'sendPaidLeaves'
+
   const [showSummaryReport, setShowSummaryReport] = useState(false);
   const [summaryReportMonth, setSummaryReportMonth] = useState(null);
   const [showMonthlyReportPreview, setShowMonthlyReportPreview] =
     useState(false);
   const [monthlyReportPreviewData, setMonthlyReportPreviewData] =
     useState(null);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [isMouseDownForDrag, setIsMouseDownForDrag] = useState(false);
+  const [dragStartDay, setDragStartDay] = useState(null);
+  const [tempSelectedDays, setTempSelectedDays] = useState([]);
+  const craBoardRef = useRef(null);
+  const lastMouseDownDay = useRef(null);
+
+  const paidLeaveTypeId = useMemo(() => {
+    const type = activityTypeDefinitions.find(
+      (t) => t.name && t.name.toLowerCase().includes("congé payé")
+    );
+    return type ? type.id : null;
+  }, [activityTypeDefinitions]);
 
   useEffect(() => {
     if (!isSameMonth(currentMonth, propCurrentMonth)) {
@@ -87,7 +118,9 @@ export default function CraBoard({
       const response = await fetch(`/api/public_holidays?year=${year}`);
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch public holidays");
+        throw new Error(
+          errorData.message || "Échec de la récupération des jours fériés."
+        );
       }
       const data = await response.json();
       const formattedHolidays = data.map((holiday) =>
@@ -100,7 +133,7 @@ export default function CraBoard({
         error
       );
       showMessage(
-        `Impossible de charger les jours fériés : ${error.message}`,
+        `Impossible de charger les jours fériés: ${error.message}`,
         "error"
       );
       setPublicHolidays([]);
@@ -121,47 +154,144 @@ export default function CraBoard({
   );
 
   const activitiesForCurrentMonth = useMemo(() => {
-    return activities.filter(
+    console.log(
+      "[CraBoard] Recalcul des activités pour le mois actuel. Nombre d'activités brutes:",
+      activities.length
+    );
+    const filtered = activities.filter(
       (activity) =>
         String(activity.user_id) === String(userId) &&
         activity.date_activite &&
-        isValid(parseISO(activity.date_activite)) &&
-        isSameMonth(parseISO(activity.date_activite), currentMonth)
+        isValid(activity.date_activite) &&
+        isSameMonth(activity.date_activite, currentMonth)
     );
+    console.log(
+      "[CraBoard] Activités filtrées pour le mois et l'utilisateur actuels:",
+      filtered.length,
+      "activités."
+    );
+    return filtered;
   }, [activities, currentMonth, userId]);
+
+  const craActivitiesForCurrentMonth = useMemo(() => {
+    return activitiesForCurrentMonth.filter(
+      (activity) => String(activity.type_activite) !== String(paidLeaveTypeId)
+    );
+  }, [activitiesForCurrentMonth, paidLeaveTypeId]);
+
+  const paidLeaveActivitiesForCurrentMonth = useMemo(() => {
+    return activitiesForCurrentMonth.filter(
+      (activity) => String(activity.type_activite) === String(paidLeaveTypeId)
+    );
+  }, [activitiesForCurrentMonth, paidLeaveTypeId]);
 
   const activitiesByDay = useMemo(() => {
     const activitiesMap = new Map();
     activitiesForCurrentMonth.forEach((activity) => {
-      const dateKey = format(parseISO(activity.date_activite), "yyyy-MM-dd");
+      const dateKey = format(activity.date_activite, "yyyy-MM-dd");
       if (!activitiesMap.has(dateKey)) {
         activitiesMap.set(dateKey, []);
       }
       activitiesMap.get(dateKey).push(activity);
     });
+    console.log(
+      "[CraBoard] activitiesByDay généré. Nombre de jours avec activités:",
+      activitiesMap.size
+    );
     return activitiesMap;
   }, [activitiesForCurrentMonth]);
 
-  const calculateCurrentMonthStatus = useCallback(() => {
+  // Specific statuses for CRA and Paid Leave reports for the current month
+  const { craReport, paidLeaveReport } = useMemo(() => {
+    const currentMonthCraReport = monthlyReports.find(
+      (report) =>
+        String(report.user_id) === String(userId) &&
+        report.month === currentMonth.getMonth() + 1 &&
+        report.year === currentMonth.getFullYear() &&
+        report.report_type === "cra"
+    );
+    const currentMonthPaidLeaveReport = monthlyReports.find(
+      (report) =>
+        String(report.user_id) === String(userId) &&
+        report.month === currentMonth.getMonth() + 1 &&
+        report.year === currentMonth.getFullYear() &&
+        report.report_type === "paid_leave"
+    );
+
+    return {
+      craReport: currentMonthCraReport,
+      paidLeaveReport: currentMonthPaidLeaveReport,
+    };
+  }, [monthlyReports, userId, currentMonth]);
+
+  const craReportStatus = craReport ? craReport.status : "empty";
+  const paidLeaveReportStatus = paidLeaveReport
+    ? paidLeaveReport.status
+    : "empty";
+
+  console.log("[CraBoard] craReportStatus:", craReportStatus);
+  console.log("[CraBoard] paidLeaveReportStatus:", paidLeaveReportStatus);
+
+  const calculateCurrentMonthOverallStatus = useCallback(() => {
+    // This is an overall status for display, not for add permissions
     if (activitiesForCurrentMonth.length === 0) return "empty";
-
     const statuses = new Set(activitiesForCurrentMonth.map((a) => a.status));
-
     if (statuses.has("validated")) return "validated";
     if (statuses.has("rejected")) return "rejected";
     if (statuses.has("pending_review")) return "pending_review";
-
-    if (statuses.has("finalized")) return "finalized";
-
+    if (statuses.has("finalized")) return "finalized"; // Keep for old reports
     if (statuses.size === 1 && statuses.has("draft")) return "draft";
-
     return "mixed";
   }, [activitiesForCurrentMonth]);
 
-  const currentMonthStatus = useMemo(
-    () => calculateCurrentMonthStatus(),
-    [calculateCurrentMonthStatus]
+  const currentMonthOverallStatus = useMemo(
+    () => calculateCurrentMonthOverallStatus(),
+    [calculateCurrentMonthOverallStatus]
   );
+
+  // NEW: Effect for one-time rejection/validation notification
+  useEffect(() => {
+    const notifyReportStatus = (report, type) => {
+      if (!report) return;
+
+      const notificationKeyPrefix = `report_notified_${report.id}_${report.status}`;
+      const notificationKey = `${notificationKeyPrefix}_${
+        report.reviewedAt ? new Date(report.reviewedAt).toISOString() : "noDate"
+      }`;
+
+      if (
+        typeof window !== "undefined" &&
+        !localStorage.getItem(notificationKey)
+      ) {
+        let message = "";
+        let messageType = "info";
+
+        if (report.status === "rejected" && report.rejectionReason) {
+          message = `Votre rapport de ${type} pour ${format(
+            currentMonth,
+            "MMMM yyyy",
+            { locale: fr }
+          )} a été REJETÉ. Motif: ${report.rejectionReason}`;
+          messageType = "error";
+        } else if (report.status === "validated") {
+          message = `Votre rapport de ${type} pour ${format(
+            currentMonth,
+            "MMMM yyyy",
+            { locale: fr }
+          )} a été VALIDÉ avec succès.`;
+          messageType = "success";
+        }
+
+        if (message) {
+          showMessage(message, messageType, 8000); // Display longer for important notifications
+          localStorage.setItem(notificationKey, "true");
+        }
+      }
+    };
+
+    notifyReportStatus(craReport, "CRA"); // Use craReport from useMemo
+    notifyReportStatus(paidLeaveReport, "congés payés"); // Use paidLeaveReport from useMemo
+  }, [craReport, paidLeaveReport, currentMonth, showMessage]); // Dependencies updated
 
   const goToPreviousMonth = useCallback(() => {
     if (readOnly) return;
@@ -194,72 +324,285 @@ export default function CraBoard({
     }
   }, [onMonthChange, readOnly]);
 
-  const getDaysInCalendar = useMemo(() => {
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
+  const handleToggleSummaryReport = useCallback(() => {
+    setShowSummaryReport((prev) => !prev);
+    if (!showSummaryReport) {
+      setSummaryReportMonth(currentMonth);
+    } else {
+      setSummaryReportMonth(null);
+    }
+  }, [showSummaryReport, currentMonth]);
 
-    const startCalendarDay = startOfWeek(monthStart, {
-      locale: fr,
-      weekStartsOn: 1,
+  const handleOpenMonthlyReportPreview = useCallback(() => {
+    setShowMonthlyReportPreview(true);
+    const formattedReportData = activitiesForCurrentMonth.map((activity) => {
+      const activityType = activityTypeDefinitions.find(
+        (def) => String(def.id) === String(activity.type_activite)
+      );
+      const client = clientDefinitions.find(
+        (def) => String(def.id) === String(activity.client_id)
+      );
+      return {
+        ...activity,
+        date_activite: activity.date_activite, // Already a Date object
+        activity_type_name_full: activityType
+          ? activityType.name
+          : "Type Inconnu",
+        client_name_full: client ? client.nom_client : "Client Inconnu",
+      };
     });
-    const endCalendarDay = endOfWeek(monthEnd, { locale: fr, weekStartsOn: 1 });
+    setMonthlyReportPreviewData({
+      reportData: formattedReportData,
+      year: currentMonth.getFullYear(),
+      month: currentMonth.getMonth() + 1,
+      userName: userFirstName,
+      userId: userId,
+    });
+  }, [
+    activitiesForCurrentMonth,
+    currentMonth,
+    userFirstName,
+    userId,
+    activityTypeDefinitions,
+    clientDefinitions,
+  ]);
 
-    return eachDayOfInterval({ start: startCalendarDay, end: endCalendarDay });
-  }, [currentMonth]);
+  const handleCloseMonthlyReportPreview = useCallback(() => {
+    setShowMonthlyReportPreview(false);
+    setMonthlyReportPreviewData(null);
+  }, []);
+
+  // Determine if adding activities is allowed for CRA or Paid Leave based on report status
+  const canAddCRA = useMemo(() => {
+    // Allow adding if not readOnly AND report is NOT pending_review, validated, or finalized.
+    // If rejected, adding new CRA activities is allowed to correct the report.
+    return (
+      !readOnly &&
+      !["pending_review", "validated", "finalized"].includes(craReportStatus)
+    );
+  }, [readOnly, craReportStatus]);
+
+  const canAddPaidLeave = useMemo(() => {
+    // Allow adding if not readOnly AND report is NOT pending_review, validated, or finalized.
+    // If rejected, adding new paid leaves is allowed to correct the report.
+    return (
+      !readOnly &&
+      !["pending_review", "validated", "finalized"].includes(
+        paidLeaveReportStatus
+      )
+    );
+  }, [readOnly, paidLeaveReportStatus]);
+
+  const handleAddPaidLeave = useCallback(
+    async (daysToProcess) => {
+      if (!canAddPaidLeave) {
+        showMessage(
+          "Impossible d'ajouter des congés. Le rapport de congés payés est déjà en attente de révision, validé ou finalisé.",
+          "info"
+        );
+        return;
+      }
+
+      if (!paidLeaveTypeId) {
+        showMessage(
+          "Le type d'activité 'Congé Payé' est introuvable. Veuillez le créer via la section 'Gestion' ou contacter l'administrateur.",
+          "error"
+        );
+        return;
+      }
+
+      let addedCount = 0;
+      let skipCount = 0;
+      let errorOccurred = false;
+
+      for (const dateForLeave of daysToProcess) {
+        const formattedDate = format(dateForLeave, "yyyy-MM-dd");
+        const existingActivitiesForDay = activitiesByDay.get(formattedDate);
+        const isWeekendDay = isWeekend(dateForLeave, { weekStartsOn: 1 });
+        const isPublicHolidayDay = isPublicHoliday(dateForLeave);
+        const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
+        const shouldOverrideNonWorkingDay = isNonWorkingDay;
+
+        if (
+          (existingActivitiesForDay && existingActivitiesForDay.length > 0) ||
+          !isSameMonth(dateForLeave, currentMonth)
+        ) {
+          skipCount++;
+          continue;
+        }
+
+        const newLeaveActivity = {
+          date_activite: formattedDate, // Send as string to API
+          temps_passe: 1,
+          description_activite: "Congé Payé",
+          type_activite: paidLeaveTypeId,
+          client_id: null,
+          override_non_working_day: shouldOverrideNonWorkingDay,
+          status: "draft",
+        };
+
+        try {
+          await onAddActivity(newLeaveActivity);
+          addedCount++;
+        } catch (error) {
+          console.error(
+            "CraBoard: Erreur lors de l'ajout du congé payé pour " +
+              formattedDate +
+              ":",
+            error
+          );
+          errorOccurred = true;
+        }
+      }
+
+      if (addedCount > 0) {
+        showMessage(`Congé(s) payé(s) ajouté(s): ${addedCount}.`, "success");
+      }
+      if (skipCount > 0) {
+        showMessage(
+          `Certains jours ont été ignorés (déjà une activité ou hors du mois actuel): ${skipCount}.`,
+          "warning"
+        );
+      }
+      if (errorOccurred) {
+        showMessage(
+          "Des erreurs sont survenues lors de l'ajout de certains congés payés.",
+          "error"
+        );
+      }
+    },
+    [
+      canAddPaidLeave,
+      showMessage,
+      activitiesByDay,
+      onAddActivity,
+      currentMonth,
+      isWeekend,
+      isPublicHoliday,
+      paidLeaveTypeId,
+    ]
+  );
 
   const handleDayClick = useCallback(
     (dayDate) => {
-      if (readOnly) {
-        showMessage(
-          "Ajout/modification d'activité désactivée en mode lecture seule.",
-          "info"
-        );
-        return;
-      }
-      if (!isValid(dayDate)) {
-        showMessage("Erreur : Date sélectionnée invalide.", "error");
-        return;
-      }
-
-      if (
-        currentMonthStatus === "finalized" ||
-        currentMonthStatus === "validated" ||
-        currentMonthStatus === "rejected" ||
-        currentMonthStatus === "pending_review" ||
-        currentMonthStatus.startsWith("mixed")
-      ) {
-        showMessage(
-          "Impossible d'ajouter/modifier des activités. Le mois est déjà finalisé, validé, rejeté ou en attente de révision.",
-          "info"
-        );
-        return;
-      }
-
       const dateKey = format(dayDate, "yyyy-MM-dd");
       const existingActivitiesForDay = activitiesByDay.get(dateKey);
 
       if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
-        showMessage(
-          "Une activité existe déjà pour ce jour. Vous pouvez la modifier.",
-          "info"
-        );
+        // If activity exists, allow modification only if not readOnly AND activity status allows
+        if (readOnly) {
+          showMessage(
+            "La modification d'activité est désactivée en mode lecture seule.",
+            "info"
+          );
+          return;
+        }
+        const activity = existingActivitiesForDay[0];
+        // An activity can be modified/deleted if it's a draft OR if it's rejected.
+        // It CANNOT be modified/deleted if finalized, validated, or pending_review.
+        if (
+          activity.status === "finalized" ||
+          activity.status === "validated" ||
+          activity.status === "pending_review"
+        ) {
+          showMessage(
+            "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être modifiée.",
+            "info"
+          );
+          return;
+        }
         setSelectedDate(dayDate);
-        setEditingActivity(existingActivitiesForDay[0]);
+        setEditingActivity(activity);
         setIsModalOpen(true);
       } else {
+        // If no activity, allow adding only if canAddCRA
+        if (!canAddCRA) {
+          showMessage(
+            "Impossible d'ajouter des activités. Le rapport CRA est déjà en attente de révision, validé ou finalisé.",
+            "info"
+          );
+          return;
+        }
         setSelectedDate(dayDate);
         setEditingActivity(null);
         setIsModalOpen(true);
       }
     },
-    [showMessage, currentMonthStatus, activitiesByDay, readOnly]
+    [showMessage, activitiesByDay, canAddCRA, readOnly]
   );
+
+  const handleMouseDown = useCallback(
+    (e, dayDate) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (readOnly || !isSameMonth(dayDate, currentMonth)) {
+        return;
+      }
+      // Removed the canAddPaidLeave check here to prevent premature messages.
+      // The check will happen in handleAddPaidLeave when the drag is confirmed.
+
+      setIsMouseDownForDrag(true);
+      setDragStartDay(dayDate);
+      setTempSelectedDays([dayDate]);
+      lastMouseDownDay.current = dayDate;
+    },
+    [readOnly, currentMonth]
+  ); // Removed canAddPaidLeave, showMessage from dependencies
+
+  const handleMouseEnter = useCallback(
+    (dayDate) => {
+      if (isMouseDownForDrag && dragStartDay) {
+        if (!isDragging) {
+          setIsDragging(true);
+        }
+        const start = dragStartDay < dayDate ? dragStartDay : dayDate;
+        const end = dragStartDay < dayDate ? dayDate : dragStartDay;
+        const days = eachDayOfInterval({ start, end });
+        const filteredDays = days.filter((d) => isSameMonth(d, currentMonth));
+        setTempSelectedDays(filteredDays);
+      }
+    },
+    [isMouseDownForDrag, isDragging, dragStartDay, currentMonth]
+  );
+
+  const handleMouseUp = useCallback(async () => {
+    if (!isMouseDownForDrag) return;
+    setIsMouseDownForDrag(false);
+    if (isDragging) {
+      if (tempSelectedDays.length > 0) {
+        // This is where the actual attempt to add paid leave happens
+        await handleAddPaidLeave(tempSelectedDays);
+      }
+    } else {
+      // This is a simple click, delegate to handleDayClick
+      if (lastMouseDownDay.current) {
+        handleDayClick(lastMouseDownDay.current);
+      }
+    }
+    setIsDragging(false);
+    setDragStartDay(null);
+    setTempSelectedDays([]);
+    lastMouseDownDay.current = null;
+  }, [
+    isMouseDownForDrag,
+    isDragging,
+    tempSelectedDays,
+    handleAddPaidLeave,
+    handleDayClick,
+  ]);
+
+  useEffect(() => {
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [handleMouseUp]);
 
   const handleActivityClick = useCallback(
     (activity) => {
       if (readOnly) {
         showMessage(
-          "Modification d'activité désactivée en mode lecture seule.",
+          "La modification d'activité est désactivée en mode lecture seule.",
           "info"
         );
         return;
@@ -271,33 +614,31 @@ export default function CraBoard({
         );
         return;
       }
-
+      // An activity can be modified/deleted if it's a draft OR if it's rejected.
+      // It CANNOT be modified/deleted if finalized, validated, or pending_review.
       if (
         activity.status === "finalized" ||
         activity.status === "validated" ||
         activity.status === "pending_review"
       ) {
         showMessage(
-          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut être ni modifiée ni supprimée.",
+          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être modifiée ou supprimée.",
           "info"
         );
         return;
       }
-
-      const activityDate = parseISO(activity.date_activite);
-      if (!activityDate || !isValid(activityDate)) {
+      if (!activity.date_activite || !isValid(activity.date_activite)) {
         console.error(
-          "CraBoard: Date d'activité invalide de la base de données",
+          "CraBoard: Date d'activité invalide depuis la base de données",
           activity.date_activite
         );
         showMessage(
-          "Erreur : Date d'activité existante invalide. Impossible de modifier.",
+          "Erreur: Date d'activité existante invalide. Impossible de modifier.",
           "error"
         );
         return;
       }
-
-      setSelectedDate(activityDate);
+      setSelectedDate(activity.date_activite);
       setEditingActivity(activity);
       setIsModalOpen(true);
     },
@@ -313,13 +654,39 @@ export default function CraBoard({
     async (activityData) => {
       if (readOnly) {
         showMessage(
-          "Opération de sauvegarde désactivée en mode lecture seule.",
+          "L'opération de sauvegarde est désactivée en mode lecture seule.",
           "info"
         );
         return;
       }
+      const isCRAActivity =
+        String(activityData.type_activite) !== String(paidLeaveTypeId);
+      const isPaidLeaveActivity =
+        String(activityData.type_activite) === String(paidLeaveTypeId);
+
+      if (isCRAActivity && !canAddCRA) {
+        showMessage(
+          "Impossible de sauvegarder cette activité. Le rapport CRA est déjà en attente de révision, validé ou finalisé.",
+          "info"
+        );
+        return;
+      }
+      if (isPaidLeaveActivity && !canAddPaidLeave) {
+        showMessage(
+          "Impossible de sauvegarder cette activité. Le rapport de congés payés est déjà en attente de révision, validé ou finalisé.",
+          "info"
+        );
+        return;
+      }
+
       try {
-        const payload = { ...activityData, user_id: userId };
+        const payload = {
+          ...activityData,
+          user_id: userId,
+          date_activite: activityData.date_activite
+            ? format(activityData.date_activite, "yyyy-MM-dd")
+            : null,
+        };
         if (editingActivity) {
           await onUpdateActivity(editingActivity.id, payload);
           showMessage("Activité modifiée avec succès !", "success");
@@ -347,6 +714,9 @@ export default function CraBoard({
       currentMonth,
       userId,
       readOnly,
+      canAddCRA,
+      canAddPaidLeave,
+      paidLeaveTypeId,
     ]
   );
 
@@ -355,13 +725,12 @@ export default function CraBoard({
       event.stopPropagation();
       if (readOnly) {
         showMessage(
-          "Suppression d'activité désactivée en mode lecture seule.",
+          "La suppression d'activité est désactivée en mode lecture seule.",
           "info"
         );
         return;
       }
       const activity = activities.find((act) => act.id === activityId);
-
       if (
         activity.status === "finalized" ||
         activity.status === "validated" ||
@@ -373,7 +742,6 @@ export default function CraBoard({
         );
         return;
       }
-
       if (String(activity.user_id) !== String(userId)) {
         showMessage(
           "Vous ne pouvez pas supprimer les activités des autres utilisateurs.",
@@ -391,7 +759,7 @@ export default function CraBoard({
     setShowConfirmModal(false);
     if (readOnly) {
       showMessage(
-        "Opération de suppression désactivée en mode lecture seule.",
+        "L'opération de suppression est désactivée en mode lecture seule.",
         "info"
       );
       return;
@@ -406,7 +774,7 @@ export default function CraBoard({
           "CraBoard: Erreur lors de la suppression de l'activité:",
           error
         );
-        showMessage(`Erreur de suppression : ${error.message}`, "error");
+        showMessage(`Erreur de suppression: ${error.message}`, "error");
       } finally {
         setActivityToDelete(null);
       }
@@ -428,32 +796,31 @@ export default function CraBoard({
   const requestResetMonth = useCallback(() => {
     if (readOnly) {
       showMessage(
-        "Opération de réinitialisation désactivée en mode lecture seule.",
+        "L'opération de réinitialisation est désactivée en mode lecture seule.",
         "info"
       );
       return;
     }
+    // Month reset should only be possible if NO report (CRA or Leave) is
+    // validated, rejected, or pending_review.
     if (
-      currentMonthStatus === "finalized" ||
-      currentMonthStatus === "validated" ||
-      currentMonthStatus === "rejected" ||
-      currentMonthStatus === "pending_review" ||
-      currentMonthStatus.startsWith("mixed")
+      ["validated", "pending_review"].includes(craReportStatus) ||
+      ["validated", "pending_review"].includes(paidLeaveReportStatus)
     ) {
       showMessage(
-        "Impossible de réinitialiser le mois. Il est déjà finalisé, validé, rejeté ou en attente de révision. Seul un administrateur peut annuler ces statuts.",
+        "Impossible de réinitialiser le mois. Un rapport (CRA ou Congés) est déjà validé ou en attente de révision. Seul un administrateur peut annuler ces statuts.",
         "info"
       );
       return;
     }
     setShowResetMonthConfirmModal(true);
-  }, [currentMonthStatus, showMessage, readOnly]);
+  }, [craReportStatus, paidLeaveReportStatus, showMessage, readOnly]);
 
   const confirmResetMonth = useCallback(async () => {
     setShowResetMonthConfirmModal(false);
     if (readOnly) {
       showMessage(
-        "Opération de réinitialisation désactivée en mode lecture seule.",
+        "L'opération de réinitialisation est désactivée en mode lecture seule.",
         "info"
       );
       return;
@@ -461,29 +828,26 @@ export default function CraBoard({
     const activitiesToReset = activitiesForCurrentMonth.filter(
       (activity) => activity.status === "draft"
     );
-
     if (activitiesToReset.length === 0) {
       showMessage(
         `Aucune activité brouillon à réinitialiser pour ${format(
           currentMonth,
-          "MMMM",
+          "MMMM ",
           { locale: fr }
         )}.`,
         "info"
       );
       return;
     }
-
     let successCount = 0;
     let errorCount = 0;
-
     for (const activity of activitiesToReset) {
       try {
         await onDeleteActivity(activity.id);
         successCount++;
       } catch (error) {
         console.error(
-          `CraBoard: Erreur lors de la suppression de l'activité ${activity.id} lors de la réinitialisation:`,
+          `CraBoard: Erreur lors de la suppression de l'activité ${activity.id} pendant la réinitialisation:`,
           error
         );
         errorCount++;
@@ -503,120 +867,275 @@ export default function CraBoard({
     setShowResetMonthConfirmModal(false);
   }, []);
 
-  const requestFinalizeMonth = useCallback(() => {
-    if (readOnly) {
-      showMessage(
-        "Opération de finalisation désactivée en mode lecture seule.",
-        "info"
-      );
-      return;
-    }
-    if (
-      currentMonthStatus === "finalized" ||
-      currentMonthStatus === "validated" ||
-      currentMonthStatus === "rejected" ||
-      currentMonthStatus === "pending_review" ||
-      currentMonthStatus.startsWith("mixed")
-    ) {
-      showMessage("Ce mois est déjà finalisé ou validé.", "info");
-      return;
-    }
-    setShowFinalizeMonthConfirmModal(true);
-  }, [currentMonthStatus, showMessage, readOnly]);
+  // Single send function (replaces finalization + send)
+  const sendActivities = useCallback(
+    async (activitiesToSend, reportType) => {
+      if (readOnly) {
+        showMessage(
+          `L'opération d'envoi pour ${
+            reportType === "cra" ? "CRA" : "Congés"
+          } est désactivée en mode lecture seule.`,
+          "info"
+        );
+        return;
+      }
+      if (activitiesToSend.length === 0) {
+        showMessage(
+          `Aucune activité brouillon de ${
+            reportType === "cra" ? "CRA" : "Congés Payés"
+          } à envoyer.`,
+          "info"
+        );
+        return;
+      }
 
-  const confirmFinalizeMonth = useCallback(async () => {
-    setShowFinalizeMonthConfirmModal(false);
-    if (readOnly) {
-      showMessage(
-        "Opération de finalisation désactivée en mode lecture seule.",
-        "info"
+      // Check if a report of the same type is already in "pending_review", "validated" or "rejected"
+      const existingReportForType = monthlyReports.find(
+        (report) =>
+          String(report.user_id) === String(userId) &&
+          report.month === currentMonth.getMonth() + 1 &&
+          report.year === currentMonth.getFullYear() &&
+          report.report_type === reportType
       );
-      return;
-    }
-    let successCount = 0;
-    let errorCount = 0;
-    const year = format(currentMonth, "yyyy");
-    const month = parseInt(format(currentMonth, "MM"));
 
-    try {
-      showMessage(
-        `Le mois de ${format(currentMonth, "MMMM", {
-          locale: fr,
-        })} a été finalisé avec succès!`,
-        "success"
-      );
-      const activitiesToFinalize = activitiesForCurrentMonth.filter(
-        (activity) => activity.status === "draft"
-      );
-      for (const activity of activitiesToFinalize) {
+      if (
+        existingReportForType &&
+        ["pending_review", "validated", "rejected"].includes(
+          existingReportForType.status
+        )
+      ) {
+        showMessage(
+          `Un rapport '${
+            reportType === "cra" ? "CRA" : "Congés Payés"
+          }' pour ce mois est déjà au statut '${
+            existingReportForType.status
+          }'. Vous ne pouvez pas en envoyer un nouveau.`,
+          "warning"
+        );
+        return;
+      }
+
+      // Update individual activity status from "draft" to "pending_review"
+      for (const activity of activitiesToSend) {
         try {
-          await onUpdateActivity(
-            activity.id,
-            {
-              ...activity,
-              status: "finalized",
-            },
-            true
-          );
-          successCount++;
+          const payload = {
+            ...activity,
+            status: "pending_review",
+            date_activite: activity.date_activite
+              ? format(activity.date_activite, "yyyy-MM-dd")
+              : null,
+          };
+          await onUpdateActivity(activity.id, payload, true);
         } catch (error) {
           console.error(
-            `CraBoard: Erreur lors de la finalisation de l'activité ${activity.id}:`,
+            `CraBoard: Erreur lors de la mise à jour du statut de l'activité pour ${
+              reportType === "cra" ? "CRA" : "Congés Payés"
+            } ${activity.id}:`,
             error
           );
-          errorCount++;
+          showMessage(
+            `Erreur de mise à jour de l'activité ${activity.id}: ${error.message}`,
+            "error"
+          );
+          return;
         }
       }
+
+      const totalBillableDays = activitiesToSend.reduce((sum, activity) => {
+        const activityType = activityTypeDefinitions.find(
+          (def) => String(def.id) === String(activity.type_activite)
+        );
+        if (activityType?.is_billable) {
+          return sum + (parseFloat(activity.temps_passe) || 0);
+        }
+        return sum;
+      }, 0);
+
+      const totalDaysWorked = activitiesToSend.reduce(
+        (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+        0
+      );
+
+      const monthlyReportData = {
+        user_id: userId,
+        userName: userFirstName,
+        month: currentMonth.getMonth() + 1,
+        year: currentMonth.getFullYear(),
+        total_days_worked: totalDaysWorked,
+        total_billable_days: totalBillableDays,
+        activities_snapshot: activitiesToSend.map((act) => act.id),
+        status: "pending_review", // Ensure status is set correctly on creation/update
+        report_type: reportType, // 'cra' or 'paid_leave'
+      };
+
+      console.log(
+        `[CraBoard] sendActivities: Données du rapport mensuel pour ${
+          reportType === "cra" ? "CRA" : "Congés Payés"
+        } envoyées:`,
+        JSON.stringify(monthlyReportData, null, 2)
+      );
+
+      try {
+        const response = await fetch("/api/monthly_cra_reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(monthlyReportData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message ||
+              `Échec de l'envoi du rapport mensuel ${
+                reportType === "cra" ? "CRA" : "Congés Payés"
+              }.`
+          );
+        }
+
+        showMessage(
+          `La demande de ${
+            reportType === "cra" ? "CRA" : "Congés Payés"
+          } pour ${format(currentMonth, "MMMM", {
+            locale: fr,
+          })} a été envoyée et le récapitulatif mensuel créé !`,
+          "success"
+        );
+      } catch (reportError) {
+        console.error(
+          `CraBoard: Erreur lors de l'envoi du rapport mensuel ${
+            reportType === "cra" ? "CRA" : "Congés Payés"
+          }:`,
+          reportError
+        );
+        showMessage(
+          `Erreur lors de l'envoi du rapport mensuel ${
+            reportType === "cra" ? "CRA" : "Congés Payés"
+          }: ${reportError.message}`,
+          "error"
+        );
+      }
       fetchActivitiesForMonth(currentMonth);
-    } catch (error) {
-      console.error("CraBoard: Erreur lors de la finalisation du mois:", error);
-      showMessage(`Échec de la finalisation: ${error.message}`, "error");
-    }
-  }, [
-    currentMonth,
-    showMessage,
-    activitiesForCurrentMonth,
-    onUpdateActivity,
-    fetchActivitiesForMonth,
-    readOnly,
-  ]);
+    },
+    [
+      readOnly,
+      showMessage,
+      onUpdateActivity,
+      activityTypeDefinitions,
+      userId,
+      userFirstName,
+      currentMonth,
+      fetchActivitiesForMonth,
+      monthlyReports,
+    ]
+  );
 
-  const cancelFinalizeMonth = useCallback(() => {
-    setShowFinalizeMonthConfirmModal(false);
-  }, []);
-
-  const requestSendCra = useCallback(() => {
+  // Request functions for send buttons (now direct)
+  const requestSendCRA = useCallback(() => {
     if (readOnly) {
       showMessage(
-        "Opération d'envoi de CRA désactivée en mode lecture seule.",
+        "L'opération d'envoi de CRA est désactivée en mode lecture seule.",
         "info"
       );
       return;
     }
-    if (
-      currentMonthStatus !== "finalized" &&
-      currentMonthStatus !== "validated"
-    ) {
+    const craDrafts = craActivitiesForCurrentMonth.filter(
+      (a) => a.status === "draft"
+    ); // Check drafts
+    if (craDrafts.length === 0) {
       showMessage(
-        "Seuls les mois finalisés ou validés peuvent être envoyés.",
+        "Aucune activité CRA brouillon à envoyer ce mois-ci.",
         "info"
       );
       return;
     }
-    setShowSendConfirmModal(true);
-  }, [currentMonthStatus, showMessage, readOnly]);
 
-  const calculateBillableTime = useCallback(() => {
-    return activitiesForCurrentMonth.reduce((sum, activity) => {
-      const activityType = activityTypeDefinitions.find(
-        (def) => String(def.id) === String(activity.type_activite)
+    if (["pending_review", "validated", "rejected"].includes(craReportStatus)) {
+      showMessage(
+        `Un rapport CRA pour ce mois est déjà au statut '${craReportStatus}'. Vous ne pouvez pas en envoyer un nouveau.`,
+        "warning"
       );
-      if (activityType?.is_billable) {
-        return sum + (parseFloat(activity.temps_passe) || 0);
-      }
-      return sum;
-    }, 0);
-  }, [activitiesForCurrentMonth, activityTypeDefinitions]);
+      return;
+    }
+
+    setConfirmingActionType("sendCRA");
+    setShowSendConfirmModal(true);
+  }, [readOnly, showMessage, craActivitiesForCurrentMonth, craReportStatus]);
+
+  const requestSendPaidLeaves = useCallback(() => {
+    if (readOnly) {
+      showMessage(
+        "L'opération d'envoi de congés est désactivée en mode lecture seule.",
+        "info"
+      );
+      return;
+    }
+    const paidLeaveDrafts = paidLeaveActivitiesForCurrentMonth.filter(
+      (a) => a.status === "draft"
+    ); // Check drafts
+    if (paidLeaveDrafts.length === 0) {
+      showMessage(
+        "Aucune activité de congés payés brouillon à envoyer ce mois-ci.",
+        "info"
+      );
+      return;
+    }
+
+    if (
+      ["pending_review", "rejected", "validated"].includes(
+        paidLeaveReportStatus
+      )
+    ) {
+      // 'validated' is included here to prevent sending new leave if already validated
+      showMessage(
+        `Un rapport de Congés Payés pour ce mois est déjà au statut '${paidLeaveReportStatus}'. Vous ne pouvez pas en envoyer un nouveau.`,
+        "warning"
+      );
+      return;
+    }
+
+    setConfirmingActionType("sendPaidLeaves");
+    setShowSendConfirmModal(true);
+  }, [
+    readOnly,
+    showMessage,
+    paidLeaveActivitiesForCurrentMonth,
+    paidLeaveReportStatus,
+  ]);
+
+  const handleConfirmSend = useCallback(() => {
+    setShowSendConfirmModal(false);
+    if (confirmingActionType === "sendCRA") {
+      sendActivities(
+        craActivitiesForCurrentMonth.filter((a) => a.status === "draft"),
+        "cra"
+      ); // Send CRA drafts
+    } else if (confirmingActionType === "sendPaidLeaves") {
+      sendActivities(
+        paidLeaveActivitiesForCurrentMonth.filter((a) => a.status === "draft"),
+        "paid_leave"
+      ); // Send leave drafts
+    }
+    setConfirmingActionType(null);
+  }, [
+    confirmingActionType,
+    sendActivities,
+    craActivitiesForCurrentMonth,
+    paidLeaveActivitiesForCurrentMonth,
+  ]);
+
+  const handleCancelSend = useCallback(() => {
+    setShowSendConfirmModal(false);
+    setConfirmingActionType(null);
+  }, []);
+
+  const totalWorkingDaysInMonth = useMemo(() => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    return days.filter(
+      (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
+    ).length;
+  }, [currentMonth, isPublicHoliday]);
 
   const totalActivitiesTimeInMonth = useMemo(() => {
     return activitiesForCurrentMonth.reduce(
@@ -625,692 +1144,118 @@ export default function CraBoard({
     );
   }, [activitiesForCurrentMonth]);
 
-  const confirmSendCra = useCallback(async () => {
-    setShowSendConfirmModal(false);
-    if (readOnly) {
-      showMessage(
-        "Opération d'envoi de CRA désactivée en mode lecture seule.",
-        "info"
-      );
-      return;
-    }
-    let activitiesUpdateSuccessCount = 0;
-    let activitiesUpdateErrorCount = 0;
-
-    const activitiesToUpdateStatus = activitiesForCurrentMonth.filter(
-      (activity) => activity.status === "finalized"
-    );
-
-    if (activitiesToUpdateStatus.length === 0) {
-      showMessage(
-        `Aucune activité finalisée à envoyer pour ${format(
-          currentMonth,
-          "MMMM",
-          {
-            locale: fr,
-          }
-        )}.`,
-        "info"
-      );
-      return;
-    }
-
-    for (const activity of activitiesToUpdateStatus) {
-      try {
-        await onUpdateActivity(
-          activity.id,
-          {
-            ...activity,
-            status: "pending_review",
-          },
-          true
-        );
-        activitiesUpdateSuccessCount++;
-      } catch (error) {
-        console.error(
-          `CraBoard: Erreur lors de la mise à jour du statut de l'activité ${activity.id}:`,
-          error
-        );
-        activitiesUpdateErrorCount++;
-      }
-    }
-
-    const totalBillableDays = calculateBillableTime();
-    const totalDaysWorked = totalActivitiesTimeInMonth;
-
-    const monthlyReportData = {
-      user_id: userId,
-      userName: userFirstName, // <-- userFirstName est passé ici. LOG IMPORTANT.
-      month: currentMonth.getMonth() + 1,
-      year: currentMonth.getFullYear(),
-      total_days_worked: totalDaysWorked,
-      total_billable_days: totalBillableDays,
-      activities_snapshot: activitiesToUpdateStatus.map((act) => act.id),
-    };
-
-    console.log(
-      "[CraBoard] confirmSendCra: Données de rapport mensuel envoyées:",
-      JSON.stringify(monthlyReportData, null, 2)
-    );
-
-    try {
-      const response = await fetch("/api/monthly_cra_reports", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(monthlyReportData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message || "Échec de l'envoi du rapport mensuel."
-        );
-      }
-
-      showMessage(
-        `Le CRA de ${format(currentMonth, "MMMM", {
-          locale: fr,
-        })} a été envoyé et le résumé mensuel créé !`,
-        "success"
-      );
-    } catch (reportError) {
-      console.error(
-        "CraBoard: Erreur lors de l'envoi du rapport mensuel:",
-        reportError
-      );
-      showMessage(
-        `Erreur lors de l'envoi du rapport mensuel: ${reportError.message}`,
-        "error"
-      );
-    }
-
-    fetchActivitiesForMonth(currentMonth);
-  }, [
-    currentMonth,
-    showMessage,
-    activitiesForCurrentMonth,
-    onUpdateActivity,
-    fetchActivitiesForMonth,
-    userId,
-    userFirstName, // AJOUTÉ aux dépendances
-    totalActivitiesTimeInMonth,
-    calculateBillableTime,
-    readOnly,
-  ]);
-
-  const cancelSendCra = useCallback(() => {
-    setShowSendConfirmModal(false);
-  }, []);
-
-  const handleToggleSummaryReport = useCallback(() => {
-    setShowSummaryReport((prev) => !prev);
-    if (!showSummaryReport) {
-      setSummaryReportMonth(currentMonth);
-    } else {
-      setSummaryReportMonth(null);
-    }
-  }, [showSummaryReport, currentMonth]);
-
-  useEffect(() => {
-    if (showSummaryReport) {
-      setSummaryReportMonth(currentMonth);
-    }
-  }, [currentMonth, showSummaryReport]);
-  const handleOpenMonthlyReportPreview = useCallback(() => {
-    setShowMonthlyReportPreview(true);
-    const formattedReportData = activitiesForCurrentMonth.map((activity) => {
-      const activityType = activityTypeDefinitions.find(
-        (def) => String(def.id) === String(activity.type_activite)
-      );
-      const client = clientDefinitions.find(
-        (def) => String(def.id) === String(activity.client_id)
-      );
-
-      return {
-        ...activity,
-        date_activite: parseISO(activity.date_activite),
-        activity_type_name_full: activityType
-          ? activityType.name
-          : "Type Inconnu",
-        client_name_full: client ? client.nom_client : "Client Inconnu",
-      };
-    });
-
-    setMonthlyReportPreviewData({
-      reportData: formattedReportData,
-      year: currentMonth.getFullYear(),
-      month: currentMonth.getMonth() + 1,
-      userName: userFirstName,
-      userId: userId,
-    });
-  }, [
-    activitiesForCurrentMonth,
-    currentMonth,
-    userFirstName,
-    userId,
-    activityTypeDefinitions,
-    clientDefinitions,
-  ]);
-
-  const handleCloseMonthlyReportPreview = useCallback(() => {
-    setShowMonthlyReportPreview(false);
-    setMonthlyReportPreviewData(null);
-  }, []);
-
-  const totalWorkingDaysInMonth = useMemo(() => {
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
-    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-
-    return days.filter(
-      (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
-    ).length;
-  }, [currentMonth, isPublicHoliday]);
-
   const timeDifference = useMemo(() => {
     return (totalActivitiesTimeInMonth - totalWorkingDaysInMonth).toFixed(2);
   }, [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]);
-
-  const renderHeader = () => {
-    let statusBadge = null;
-    let badgeClass = "ml-3 text-sm font-bold px-2 py-1 rounded-full";
-
-    switch (currentMonthStatus) {
-      case "validated":
-        statusBadge = (
-          <span className={`${badgeClass} text-green-700 bg-green-100`}>
-            VALIDÉ
-          </span>
-        );
-        break;
-      case "finalized":
-        statusBadge = (
-          <span className={`${badgeClass} text-yellow-700 bg-yellow-100`}>
-            FINALISÉ
-          </span>
-        );
-        break;
-      case "pending_review":
-        statusBadge = (
-          <span className={`${badgeClass} text-blue-700 bg-blue-100`}>
-            ENVOYÉ (EN ATTENTE)
-          </span>
-        );
-        break;
-      case "mixed":
-      case "mixed_finalized":
-      case "mixed_validated":
-      case "mixed_rejected":
-      case "mixed_pending_review":
-        statusBadge = (
-          <span className={`${badgeClass} text-purple-700 bg-purple-100`}>
-            PARTIEL
-          </span>
-        );
-        break;
-      case "rejected":
-        statusBadge = (
-          <span className={`${badgeClass} text-red-700 bg-red-100`}>
-            REJETÉ
-          </span>
-        );
-        break;
-      case "draft":
-      case "empty":
-      default:
-        statusBadge = null;
-        break;
-    }
-
-    return (
-      <div className="flex justify-between items-center mb-4 p-4 bg-blue-100 rounded-lg shadow-md">
-        <button
-          onClick={goToPreviousMonth}
-          className={`p-2 rounded-full bg-blue-500 text-white transition duration-300 ${
-            readOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-600"
-          }`}
-          aria-label="Mois précédent"
-          disabled={readOnly}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </button>
-        <div className="flex flex-col items-center">
-          <h3 className="text-xl font-semibold text-blue-700 mb-1">
-            {userFirstName}
-          </h3>
-          <h2 className="text-2xl font-semibold text-blue-800 flex items-center">
-            {format(currentMonth, "MMMM ", { locale: fr })}
-            <span className="ml-1">{format(currentMonth, "yyyy")}</span>
-            {statusBadge}
-          </h2>
-        </div>
-        <button
-          onClick={goToNextMonth}
-          className={`p-2 rounded-full bg-blue-500 text-white transition duration-300 ${
-            readOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-600"
-          }`}
-          aria-label="Mois suivant"
-          disabled={readOnly}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
-    );
-  };
-
-  const renderDaysOfWeek = () => {
-    return (
-      <div className="grid grid-cols-7 border-b border-gray-200">
-        {daysOfWeekDisplay.map((dayName, i) => (
-          <div className="text-center font-bold text-gray-700 p-2" key={i}>
-            {dayName}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderCells = () => {
-    const allCells = [];
-
-    getDaysInCalendar.forEach((day) => {
-      const formattedDate = format(day, "d");
-      const activitiesForDay =
-        activitiesByDay.get(format(day, "yyyy-MM-dd")) || [];
-
-      const isTodayHighlight = isToday(day);
-      const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-      const isPublicHolidayDay = isPublicHoliday(day);
-      const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
-      const isOutsideCurrentMonth = !isSameMonth(day, currentMonth);
-
-      let cellClasses = `
-        p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5
-        transition duration-200 overflow-hidden relative
-      `;
-
-      if (isOutsideCurrentMonth) {
-        cellClasses += " bg-gray-100 opacity-50 cursor-not-allowed";
-      } else if (isTodayHighlight) {
-        cellClasses += " bg-blue-100 border-blue-500 shadow-md text-blue-800";
-      } else if (isNonWorkingDay) {
-        cellClasses += " bg-gray-200 text-gray-500 cursor-not-allowed";
-      } else {
-        cellClasses +=
-          " bg-white text-gray-900 hover:bg-blue-50 cursor-pointer";
-      }
-      const canAddActivity =
-        !isOutsideCurrentMonth &&
-        !isNonWorkingDay &&
-        currentMonthStatus !== "finalized" &&
-        currentMonthStatus !== "validated" &&
-        currentMonthStatus !== "rejected" &&
-        currentMonthStatus !== "pending_review" &&
-        !currentMonthStatus.startsWith("mixed");
-
-      allCells.push(
-        <div
-          className={cellClasses}
-          key={format(day, "yyyy-MM-dd")}
-          onClick={readOnly ? null : () => handleDayClick(day)}
-        >
-          <span
-            className={`text-sm font-semibold mb-1 ${
-              isTodayHighlight ? "text-blue-800" : ""
-            }`}
-          >
-            {formattedDate}
-          </span>
-          {isNonWorkingDay && isOutsideCurrentMonth === false && (
-            <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
-              {isWeekendDay && isPublicHolidayDay
-                ? "Férié & W-E"
-                : isWeekendDay
-                ? "Week-end"
-                : "Férié"}
-            </span>
-          )}
-
-          {activitiesForDay.length > 0 && (
-            <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
-              {activitiesForDay
-                .reduce(
-                  (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-                  0
-                )
-                .toFixed(1)}
-              j
-            </div>
-          )}
-
-          <div className="flex-grow overflow-y-auto w-full pr-1 custom-scrollbar">
-            {activitiesForDay
-              .sort((a, b) => {
-                const typeA =
-                  activityTypeDefinitions.find(
-                    (t) => String(t.id) === String(a.type_activite)
-                  )?.name ||
-                  a.type_activite_name ||
-                  a.type_activite;
-                const typeB =
-                  activityTypeDefinitions.find(
-                    (t) => String(t.id) === String(b.type_activite)
-                  )?.name ||
-                  b.type_activite_name ||
-                  b.type_activite;
-                if ((typeA || "") < (typeB || "")) return -1;
-                if ((typeA || "") > (typeB || "")) return 1;
-
-                const clientA =
-                  clientDefinitions.find(
-                    (c) => String(c.id) === String(a.client_id)
-                  )?.name ||
-                  a.client_name ||
-                  "";
-                const clientB =
-                  clientDefinitions.find(
-                    (c) => String(c.id) === String(b.client_id)
-                  )?.name ||
-                  b.client_name ||
-                  "";
-                if (clientA < clientB) return -1;
-                if (clientA > clientB) return 1;
-                return 0;
-              })
-              .map((activity) => {
-                const client = clientDefinitions.find(
-                  (c) => String(c.id) === String(activity.client_id)
-                );
-                const clientLabel = client ? client.nom_client : "Non attribué";
-
-                const activityTypeObj = activityTypeDefinitions.find(
-                  (type) => String(type.id) === String(activity.type_activite)
-                );
-                const activityTypeLabel = activityTypeObj
-                  ? activityTypeObj.name
-                  : "Activité inconnue";
-
-                const timeSpentLabel = activity.temps_passe
-                  ? `${parseFloat(activity.temps_passe)}j`
-                  : "";
-                const displayLabel = `${activityTypeLabel}${
-                  timeSpentLabel ? ` (${timeSpentLabel})` : ""
-                }`;
-
-                const typeColorClass = activityTypeLabel
-                  .toLowerCase()
-                  .includes("absence")
-                  ? "bg-red-200 text-red-800"
-                  : activityTypeLabel
-                      .toLowerCase()
-                      .includes("heure supplémentaire") ||
-                    activityTypeObj?.is_overtime
-                  ? "bg-purple-200 text-purple-800"
-                  : "bg-blue-200 text-blue-800";
-
-                const overrideLabel = activity.override_non_working_day
-                  ? " (Dérogation)"
-                  : "";
-
-                let statusColorClass = "";
-                if (activity.status === "finalized") {
-                  statusColorClass = "bg-green-300 text-green-900";
-                } else if (activity.status === "validated") {
-                  statusColorClass = "bg-purple-300 text-purple-900";
-                } else if (activity.status === "pending_review") {
-                  statusColorClass = "bg-blue-300 text-blue-900";
-                } else {
-                  statusColorClass = "bg-gray-300 text-gray-800";
-                }
-
-                const isActivityFinalizedOrValidated =
-                  activity.status === "finalized" ||
-                  activity.status === "validated" ||
-                  activity.status === "pending_review" ||
-                  activity.status === "rejected";
-
-                return (
-                  <div
-                    key={activity.id}
-                    className={`relative text-xs px-1 py-0.5 rounded-md mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis
-                                ${typeColorClass} ${
-                      isActivityFinalizedOrValidated ? "opacity-70" : ""
-                    } group`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!readOnly) handleActivityClick(activity);
-                      else
-                        showMessage(
-                          "Modification d'activité désactivée en mode lecture seule.",
-                          "info"
-                        );
-                    }}
-                    title={`Client: ${clientLabel}\nType: ${activityTypeLabel}\nTemps: ${timeSpentLabel}\nDescription: ${
-                      activity.description_activite || "N/A"
-                    }${
-                      overrideLabel ? "\nDérogation jour non ouvrable" : ""
-                    }\nStatut: ${
-                      activity.status === "validated"
-                        ? "Validé"
-                        : activity.status === "finalized"
-                        ? "Finalisé"
-                        : activity.status === "pending_review"
-                        ? "En attente de révision"
-                        : activity.status === "rejected"
-                        ? "Rejeté"
-                        : "Brouillon"
-                    }\nFacturable: ${
-                      activityTypeObj?.is_billable ? "Oui" : "Non"
-                    }\nClient requis: ${
-                      activityTypeObj?.requires_client ? "Oui" : "Non"
-                    }\nHeures sup: ${
-                      activityTypeObj?.is_overtime ? "Oui" : "Non"
-                    }\nUtilisateur: ${userFirstName}`}
-                  >
-                    {`${displayLabel} - ${clientLabel}${overrideLabel}`}
-                    {activityTypeObj?.is_billable ? (
-                      <span className="ml-1 text-green-600" title="Facturable">
-                        ✔
-                      </span>
-                    ) : (
-                      <span
-                        className="ml-1 text-red-600"
-                        title="Non facturable"
-                      >
-                        ✖
-                      </span>
-                    )}
-                    {isActivityFinalizedOrValidated && (
-                      <span
-                        className={`absolute top-0 right-0 h-full flex items-center justify-center p-1 text-xs font-semibold rounded-tr-md rounded-br-md ${statusColorClass}`}
-                        title={
-                          activity.status === "validated"
-                            ? "V"
-                            : activity.status === "finalized"
-                            ? "F"
-                            : activity.status === "pending_review"
-                            ? "A"
-                            : activity.status === "rejected"
-                            ? "R"
-                            : ""
-                        }
-                      >
-                        {activity.status === "validated"
-                          ? "V"
-                          : activity.status === "finalized"
-                          ? "F"
-                          : activity.status === "pending_review"
-                          ? "A"
-                          : activity.status === "rejected"
-                          ? "R"
-                          : ""}
-                      </span>
-                    )}
-                    {!isActivityFinalizedOrValidated && !readOnly && (
-                      <button
-                        onClick={(e) =>
-                          requestDeleteFromCalendar(activity.id, e)
-                        }
-                        className="absolute top-0 right-0 h-full flex items-center justify-center p-1 bg-red-600 hover:bg-red-700 text-white rounded-tr-md rounded-br-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        title="Supprimer l'activité"
-                        aria-label="Supprimer l'activité"
-                      >
-                        &times;
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-      );
-    });
-
-    const rows = [];
-    for (let i = 0; i < allCells.length; i += 7) {
-      rows.push(
-        <div className="grid grid-cols-7 w-full" key={`row-${i}`}>
-          {allCells.slice(i, i + 7)}
-        </div>
-      );
-    }
-
-    return <div className="w-full">{rows}</div>;
-  };
 
   useEffect(() => {
     if (
       fetchActivitiesForMonth &&
       typeof fetchActivitiesForMonth === "function"
     ) {
+      console.log(
+        "[CraBoard] useEffect: Appel de fetchActivitiesForMonth pour",
+        format(currentMonth, "MMMM yyyy")
+      );
       fetchActivitiesForMonth(currentMonth);
     }
   }, [currentMonth, fetchActivitiesForMonth]);
 
   return (
-    <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
-      {renderHeader()}
+    <div
+      className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8"
+      ref={craBoardRef}
+    >
+      <CraControls
+        currentMonth={currentMonth}
+        userFirstName={userFirstName}
+        // Pass specific report statuses for more accurate badge display
+        craReportStatus={craReportStatus}
+        paidLeaveReportStatus={paidLeaveReportStatus}
+        readOnly={readOnly}
+        goToPreviousMonth={goToPreviousMonth}
+        goToNextMonth={goToNextMonth}
+        handleToggleSummaryReport={handleToggleSummaryReport}
+        showSummaryReport={showSummaryReport}
+        requestSendCRA={requestSendCRA}
+        requestSendPaidLeaves={requestSendPaidLeaves}
+        requestResetMonth={requestResetMonth}
+        craDraftsCount={
+          craActivitiesForCurrentMonth.filter((a) => a.status === "draft")
+            .length
+        }
+        paidLeaveDraftsCount={
+          paidLeaveActivitiesForCurrentMonth.filter((a) => a.status === "draft")
+            .length
+        }
+      />
 
-      <div className="bg-gray-50 p-4 rounded-lg shadow-inner mb-6 flex flex-col sm:flex-row justify-around text-center">
-        <p className="text-gray-700 font-medium">
-          Jours ouvrés dans le mois:{" "}
-          <span className="font-bold">{totalWorkingDaysInMonth}</span>
-        </p>
-        <p className="text-gray-700 font-medium">
-          Temps total déclaré (jours):{" "}
-          <span className="font-bold">
-            {totalActivitiesTimeInMonth.toFixed(2)}
-          </span>
-        </p>
-        <p className="text-gray-700 font-medium">
-          Écart:{" "}
-          <span
-            className={`font-bold ${
-              parseFloat(timeDifference) < 0 ? "text-red-500" : "text-green-600"
-            }`}
-          >
-            {timeDifference}
-          </span>
-        </p>
-      </div>
+      <CraSummary
+        totalWorkingDaysInMonth={totalWorkingDaysInMonth}
+        totalActivitiesTimeInMonth={totalActivitiesTimeInMonth}
+        timeDifference={timeDifference}
+      />
 
-      {!readOnly && (
-        <div className="flex justify-center space-x-4 mb-8 flex-wrap gap-2">
-          <button
-            onClick={handleToggleSummaryReport}
-            className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
-          >
-            {showSummaryReport ? "Masquer le rapport" : "Afficher le rapport"}
-          </button>
-          <button
-            onClick={requestFinalizeMonth}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-              ${
-                currentMonthStatus === "finalized" ||
-                currentMonthStatus === "validated" ||
-                currentMonthStatus === "rejected" ||
-                currentMonthStatus === "pending_review" ||
-                currentMonthStatus.startsWith("mixed")
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-green-600 text-white hover:bg-green-700"
-              }`}
-            disabled={
-              currentMonthStatus === "finalized" ||
-              currentMonthStatus === "validated" ||
-              currentMonthStatus === "rejected" ||
-              currentMonthStatus === "pending_review" ||
-              currentMonthStatus.startsWith("mixed")
-            }
-          >
-            Finaliser le mois
-          </button>
-          <button
-            onClick={requestResetMonth}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-              ${
-                currentMonthStatus === "finalized" ||
-                currentMonthStatus === "validated" ||
-                currentMonthStatus === "rejected" ||
-                currentMonthStatus === "pending_review" ||
-                currentMonthStatus.startsWith("mixed")
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-orange-600 text-white hover:bg-orange-700"
-              }`}
-            disabled={
-              currentMonthStatus === "finalized" ||
-              currentMonthStatus === "validated" ||
-              currentMonthStatus === "rejected" ||
-              currentMonthStatus === "pending_review" ||
-              currentMonthStatus.startsWith("mixed")
-            }
-          >
-            Réinitialiser le mois
-          </button>
-          <button
-            onClick={requestSendCra}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-              ${
-                currentMonthStatus === "draft" || currentMonthStatus === "empty"
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-purple-600 text-white hover:bg-purple-700"
-              }`}
-            disabled={
-              currentMonthStatus !== "finalized" &&
-              currentMonthStatus !== "validated"
-            }
-          >
-            Envoyer le CRA
-          </button>
+      {/* Display messages for CRA Report Status */}
+      {craReportStatus === "rejected" && craReport?.rejectionReason && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-4">
+          <strong className="font-bold">Rapport CRA Rejeté:</strong>
+          <span className="block sm:inline ml-2">
+            {craReport.rejectionReason}
+          </span>
         </div>
       )}
+      {craReportStatus === "validated" && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-md relative mb-4">
+          <strong className="font-bold">Rapport CRA Validé:</strong>
+          <span className="block sm:inline ml-2">
+            Votre rapport CRA a été validé avec succès.
+          </span>
+        </div>
+      )}
+      {craReportStatus === "pending_review" && (
+        <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-md relative mb-4">
+          <strong className="font-bold">
+            Rapport CRA en attente de révision:
+          </strong>
+          <span className="block sm:inline ml-2">
+            Votre rapport CRA a été envoyé et est en attente de révision.
+          </span>
+        </div>
+      )}
+
+      {/* Display messages for Paid Leave Report Status */}
+      {paidLeaveReportStatus === "rejected" &&
+        paidLeaveReport?.rejectionReason && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-4">
+            <strong className="font-bold">
+              Rapport de Congés Payés Rejeté:
+            </strong>
+            <span className="block sm:inline ml-2">
+              {paidLeaveReport.rejectionReason}
+            </span>
+          </div>
+        )}
+      {paidLeaveReportStatus === "validated" && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-md relative mb-4">
+          <strong className="font-bold">Rapport de Congés Payés Validé:</strong>
+          <span className="block sm:inline ml-2">
+            Votre rapport de congés payés a été validé avec succès.
+          </span>
+        </div>
+      )}
+      {paidLeaveReportStatus === "pending_review" && (
+        <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-md relative mb-4">
+          <strong className="font-bold">
+            Rapport de Congés Payés en attente de révision:
+          </strong>
+          <span className="block sm:inline ml-2">
+            Votre rapport de congés payés a été envoyé et est en attente de
+            révision.
+          </span>
+        </div>
+      )}
+
       {showSummaryReport && summaryReportMonth && (
         <SummaryReport
           month={summaryReportMonth}
@@ -1327,8 +1272,24 @@ export default function CraBoard({
         />
       )}
 
-      {renderDaysOfWeek()}
-      {renderCells()}
+      <CraCalendar
+        currentMonth={currentMonth}
+        activitiesByDay={activitiesByDay}
+        activityTypeDefinitions={activityTypeDefinitions}
+        clientDefinitions={clientDefinitions}
+        isPublicHoliday={isPublicHoliday}
+        readOnly={readOnly}
+        isDragging={isDragging}
+        tempSelectedDays={tempSelectedDays}
+        handleMouseDown={handleMouseDown}
+        handleMouseEnter={handleMouseEnter}
+        handleDayClick={handleDayClick}
+        handleActivityClick={handleActivityClick}
+        requestDeleteFromCalendar={requestDeleteFromCalendar}
+        showMessage={showMessage}
+        userId={userId}
+        userFirstName={userFirstName}
+      />
 
       {isModalOpen && (
         <ActivityModal
@@ -1366,33 +1327,21 @@ export default function CraBoard({
         isOpen={showResetMonthConfirmModal}
         onClose={cancelResetMonth}
         onConfirm={confirmResetMonth}
-        message={`Confirmez-vous la suppression de TOUTES les activités brouillons pour ${format(
+        message={`Confirmer la suppression de TOUTES les activités brouillon pour ${format(
           currentMonth,
           "MMMM ",
           { locale: fr }
         )}. Cette action est irréversible.`}
       />
 
-      <ConfirmationModal
-        isOpen={showFinalizeMonthConfirmModal}
-        onClose={cancelFinalizeMonth}
-        onConfirm={confirmFinalizeMonth}
-        message={`Confirmez-vous la finalisation du CRA pour ${format(
-          currentMonth,
-          "MMMM ",
-          { locale: fr }
-        )} ? Les activités deviendront non modifiables.`}
-      />
-
+      {/* Confirmation for direct sending */}
       <ConfirmationModal
         isOpen={showSendConfirmModal}
-        onClose={cancelSendCra}
-        onConfirm={confirmSendCra}
-        message={`Confirmez-vous l'envoi du CRA pour ${format(
-          currentMonth,
-          "MMMM ",
-          { locale: fr }
-        )} ? Une fois envoyé, vous ne pourrez plus le modifier.`}
+        onClose={handleCancelSend}
+        onConfirm={handleConfirmSend}
+        message={`Confirmer l'envoi des ${
+          confirmingActionType === "sendCRA" ? "CRAs" : "Congés Payés"
+        }? Une fois envoyés, vous ne pourrez plus les modifier.`}
       />
     </div>
   );

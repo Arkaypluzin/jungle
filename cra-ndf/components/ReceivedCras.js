@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, isValid as isValidDateFns } from "date-fns"; // Import isValid from date-fns
 import { fr } from "date-fns/locale";
 import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
 import ConfirmationModal from "./ConfirmationModal";
@@ -27,6 +27,7 @@ export default function ReceivedCras({
   const [filterStatus, setFilterStatus] = useState(
     "pending_review,validated,rejected"
   );
+  const [filterReportType, setFilterReportType] = useState(""); // State for report type filter
 
   const [selectedReportForPreview, setSelectedReportForPreview] =
     useState(null);
@@ -56,11 +57,11 @@ export default function ReceivedCras({
       setAllUsersForFilter(data);
     } catch (err) {
       console.error(
-        "ReceivedCras: Erreur de fetch des utilisateurs pour le filtre:",
+        "ReceivedCras: Erreur lors de la récupération des utilisateurs pour le filtre:",
         err
       );
       showMessage(
-        `Erreur de chargement des utilisateurs pour le filtre : ${err.message}`,
+        `Erreur lors du chargement des utilisateurs pour le filtre: ${err.message}`,
         "error"
       );
     }
@@ -75,6 +76,14 @@ export default function ReceivedCras({
       if (filterMonth) queryParams.append("month", filterMonth);
       if (filterYear) queryParams.append("year", filterYear);
       if (filterStatus) queryParams.append("status", filterStatus);
+      if (filterReportType) queryParams.append("reportType", filterReportType); // Le paramètre reportType est correctement envoyé au backend
+
+      console.log(
+        "[ReceivedCras] fetchMonthlyReports: Envoi de la requête avec filterReportType:",
+        filterReportType,
+        "et queryParams:",
+        queryParams.toString()
+      );
 
       const response = await fetch(
         `/api/monthly_cra_reports?${queryParams.toString()}`
@@ -87,7 +96,7 @@ export default function ReceivedCras({
       }
       const data = await response.json();
       console.log(
-        "ReceivedCras: Réponse brute de l'API monthly_cra_reports (liste):",
+        "ReceivedCras: Réponse API brute monthly_cra_reports (liste):",
         data
       );
 
@@ -95,44 +104,69 @@ export default function ReceivedCras({
         setMonthlyReports(data.data);
       } else {
         console.warn(
-          "ReceivedCras: La réponse de l'API pour la liste ne contient pas un tableau valide dans 'data.data'. Réponse:",
+          "ReceivedCras: La réponse API pour la liste ne contient pas un tableau valide dans 'data.data'. Réponse:",
           data
         );
         setMonthlyReports([]);
       }
     } catch (err) {
       console.error(
-        "ReceivedCras: Erreur de fetch des rapports mensuels (liste):",
+        "ReceivedCras: Erreur lors de la récupération des rapports mensuels (liste):",
         err
       );
       setError(err.message);
       showMessage(
-        `Erreur de chargement des rapports : ${err.message}`,
+        `Erreur lors du chargement des rapports: ${err.message}`,
         "error"
       );
       setMonthlyReports([]);
     } finally {
       setLoading(false);
     }
-  }, [showMessage, filterUserId, filterMonth, filterYear, filterStatus]);
+  }, [
+    showMessage,
+    filterUserId,
+    filterMonth,
+    filterYear,
+    filterStatus,
+    filterReportType,
+  ]);
 
   useEffect(() => {
-    // Suppression de la vérification de rôle pour l'affichage initial
-    // La vérification d'autorisation est gérée au niveau de l'API route (/api/cras_users et /api/monthly_cra_reports)
     fetchUsersForFilter();
     fetchMonthlyReports();
   }, [fetchMonthlyReports, fetchUsersForFilter]);
 
   useEffect(() => {
-    // Cette useEffect est déclenchée par les changements de filtre
     fetchMonthlyReports();
   }, [
     filterUserId,
     filterMonth,
     filterYear,
     filterStatus,
+    filterReportType,
     fetchMonthlyReports,
   ]);
+
+  // NOUVEAU: Notification pour les CRAs en attente
+  useEffect(() => {
+    if (
+      !loading &&
+      !error &&
+      monthlyReports.length > 0 &&
+      filterStatus.includes("pending_review")
+    ) {
+      const pendingReportsCount = monthlyReports.filter(
+        (report) => report.status === "pending_review"
+      ).length;
+      if (pendingReportsCount > 0) {
+        showMessage(
+          `Vous avez ${pendingReportsCount} rapport(s) en attente de révision.`,
+          "info"
+        );
+      }
+    }
+  }, [monthlyReports, loading, error, filterStatus, showMessage]);
 
   const handleOpenMonthlyReportPreview = useCallback((report) => {
     setSelectedReportForPreview(report);
@@ -152,8 +186,9 @@ export default function ReceivedCras({
 
       try {
         console.log(
-          `ReceivedCras: Tentative de mise à jour du statut du rapport ID: ${reportId} vers '${newStatus}'`
+          `ReceivedCras: Tentative de mise à jour du statut du rapport ID: ${reportId} à '${newStatus}'`
         );
+        // Utilisation du nouveau chemin d'API pour la mise à jour du statut
         const response = await fetch(
           `/api/monthly_cra_reports/${reportId}/status`,
           {
@@ -193,7 +228,7 @@ export default function ReceivedCras({
           err
         );
         showMessage(
-          `Erreur de mise à jour du statut : ${err.message}`,
+          `Erreur lors de la mise à jour du statut: ${err.message}`,
           "error"
         );
       }
@@ -247,19 +282,54 @@ export default function ReceivedCras({
             errorData.message || "Échec de la récupération du CRA détaillé."
           );
         }
-        const result = await response.json();
-        const detailedReport = result.data;
+        const detailedReport = await response.json(); // La route API renvoie l'objet de données directement
 
         console.log(
-          "[Frontend] CRA détaillé reçu pour CraBoard:",
+          "[Frontend] CRA détaillé reçu pour CraBoard (avant formatage):",
           detailedReport
         );
 
+        // Assurez-vous que detailedReport n'est pas nul/indéfini avant d'accéder à ses propriétés
+        if (!detailedReport) {
+          console.error("[Frontend] detailedReport est nul ou indéfini.");
+          showMessage("Erreur: Rapport détaillé non trouvé.", "error");
+          return;
+        }
+
+        // --- DÉBUT DE LA CORRECTION POUR "Invalid time value" ---
+        // Valider l'année et le mois avant de créer l'objet Date
+        const reportYear = parseInt(detailedReport.year);
+        const reportMonth = parseInt(detailedReport.month); // Le mois est indexé à partir de 1 depuis la DB
+
+        let craBoardCurrentMonth;
+        if (
+          !isNaN(reportYear) &&
+          !isNaN(reportMonth) &&
+          reportMonth >= 1 &&
+          reportMonth <= 12
+        ) {
+          craBoardCurrentMonth = new Date(reportYear, reportMonth - 1, 1); // Date-fns utilise des mois indexés à partir de 0
+          console.log(
+            `[Frontend] Date valide créée pour CraBoard: ${format(
+              craBoardCurrentMonth,
+              "yyyy-MM-dd"
+            )}`
+          );
+        } else {
+          console.warn(
+            `[Frontend] Année (${detailedReport.year}) ou mois (${detailedReport.month}) invalide(s) trouvé(s) dans le rapport détaillé. Utilisation de la date actuelle par défaut.`
+          );
+          craBoardCurrentMonth = new Date(); // Fallback à la date actuelle pour éviter "Invalid time value"
+        }
+        // --- FIN DE LA CORRECTION ---
+
         const activitiesToPass =
-          detailedReport && Array.isArray(detailedReport.activities_snapshot)
+          detailedReport.activities_snapshot &&
+          Array.isArray(detailedReport.activities_snapshot)
             ? detailedReport.activities_snapshot
             : [];
 
+        // Assurez-vous que les IDs d'activité sont des chaînes pour CraBoard
         const formattedActivities = activitiesToPass.map((activity) => ({
           ...activity,
           date_activite: activity.date_activite
@@ -267,23 +337,38 @@ export default function ReceivedCras({
             : null,
           client_id: String(activity.client_id),
           type_activite: String(activity.type_activite),
+          id: activity.id || activity._id?.toString(), // Assurez-vous que l'ID est une chaîne
         }));
+
+        console.log(
+          "[Frontend] Activités formatées passées à CraBoard:",
+          formattedActivities.length,
+          "activités. Premières activités:",
+          formattedActivities
+            .slice(0, 3)
+            .map((a) => ({
+              id: a.id,
+              type: a.type_activite,
+              date: a.date_activite,
+            }))
+        );
 
         if (formattedActivities.length === 0) {
           console.warn(
-            "[Frontend] Aucune activité formatée trouvée pour le CRA détaillé. Vérifiez les logs backend."
+            "[Frontend] Aucune activité formatée trouvée pour le CRA détaillé. Vérifiez les logs du backend."
           );
         }
 
         setCraBoardReportData({
           userId: detailedReport.user_id,
           userFirstName: detailedReport.userName,
-          currentMonth: new Date(
-            detailedReport.year,
-            detailedReport.month - 1,
-            1
-          ),
+          currentMonth: craBoardCurrentMonth, // Utilise la date validée/par défaut
           activities: formattedActivities,
+          // NEW: Passe le motif de rejet si le rapport est rejeté
+          rejectionReason:
+            detailedReport.status === "rejected"
+              ? detailedReport.rejectionReason
+              : null,
         });
         setShowCraBoardModal(true);
       } catch (err) {
@@ -320,9 +405,18 @@ export default function ReceivedCras({
   const statusOptions = useMemo(
     () => [
       { name: "Tous les statuts", value: "pending_review,validated,rejected" },
-      { name: "En attente de révision", value: "pending_review" },
+      { name: "En attente", value: "pending_review" }, // Traduit
       { name: "Validé", value: "validated" },
       { name: "Rejeté", value: "rejected" },
+    ],
+    []
+  );
+
+  const reportTypeOptions = useMemo(
+    () => [
+      { name: "Tous les types", value: "" },
+      { name: "CRA", value: "cra" },
+      { name: "Congés Payés", value: "paid_leave" },
     ],
     []
   );
@@ -338,7 +432,7 @@ export default function ReceivedCras({
   if (error) {
     return (
       <div className="text-red-500 text-center py-8 text-lg">
-        Erreur : {error}
+        Erreur: {error}
       </div>
     );
   }
@@ -346,11 +440,11 @@ export default function ReceivedCras({
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
       <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
-        CRAs Reçus (En attente de révision et validés)
+        CRAs Reçus (En attente de révision et Validés)
       </h2>
 
       <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner flex flex-wrap gap-4 justify-center items-center">
-        {/* Réintégration du filtre Utilisateur */}
+        {/* Réintégration du filtre utilisateur */}
         <div className="flex flex-col">
           <label
             htmlFor="filterUser"
@@ -437,17 +531,42 @@ export default function ReceivedCras({
             ))}
           </select>
         </div>
+
+        {/* Filtrer par type de rapport (CRA ou Congés Payés) */}
+        <div className="flex flex-col">
+          <label
+            htmlFor="filterReportType"
+            className="text-sm font-medium text-gray-700 mb-1"
+          >
+            Type de rapport:
+          </label>
+          <select
+            id="filterReportType"
+            value={filterReportType}
+            onChange={(e) => setFilterReportType(e.target.value)}
+            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          >
+            {reportTypeOptions.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {Array.isArray(monthlyReports) && monthlyReports.length === 0 ? (
         <div className="text-gray-600 text-center py-8 text-lg">
-          Aucun CRA trouvé avec les filtres actuels.
+          Aucun rapport trouvé avec les filtres actuels.
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full bg-white border border-gray-200 rounded-lg">
             <thead className="bg-gray-100">
               <tr>
+                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                  Type
+                </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Mois
                 </th>
@@ -458,10 +577,10 @@ export default function ReceivedCras({
                   Utilisateur
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Jours Travaillés
+                  Jours travaillés
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Jours Facturables
+                  Jours facturables
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Statut
@@ -477,6 +596,20 @@ export default function ReceivedCras({
                   key={report.id}
                   className="border-b border-gray-200 hover:bg-gray-50"
                 >
+                  {/* Afficher le type de rapport */}
+                  <td className="py-3 px-4 text-sm text-gray-800">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        report.report_type === "paid_leave"
+                          ? "bg-teal-100 text-teal-800"
+                          : "bg-blue-100 text-blue-800"
+                      }`}
+                    >
+                      {report.report_type === "paid_leave"
+                        ? "Congés Payés"
+                        : "CRA"}
+                    </span>
+                  </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {format(new Date(report.year, report.month - 1), "MMMM", {
                       locale: fr,
@@ -507,7 +640,7 @@ export default function ReceivedCras({
                       }`}
                     >
                       {report.status === "pending_review"
-                        ? "En attente de révision"
+                        ? "En attente" // Traduit
                         : report.status === "validated"
                         ? "Validé"
                         : "Rejeté"}
@@ -519,7 +652,7 @@ export default function ReceivedCras({
                         onClick={() => handleViewCra(report)}
                         className="px-3 py-1 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition duration-200 text-xs"
                       >
-                        Voir le CRA
+                        Voir les détails
                       </button>
                       {report.status === "pending_review" && (
                         <>
@@ -564,14 +697,18 @@ export default function ReceivedCras({
         onConfirm={confirmValidation}
         message={
           reportToUpdate
-            ? `Confirmez-vous la validation du CRA pour ${
+            ? `Confirmer la validation du rapport de ${
+                reportToUpdate.report_type === "paid_leave"
+                  ? "Congés Payés"
+                  : "CRA"
+              } pour ${
                 reportToUpdate.userName || "cet utilisateur"
               } pour ${format(
                 new Date(reportToUpdate.year, reportToUpdate.month - 1),
                 "MMMM yyyy",
                 { locale: fr }
-              )} ?`
-            : `Confirmez-vous la validation du CRA ?`
+              )}?`
+            : `Confirmer la validation du rapport ?`
         }
       />
 
@@ -583,8 +720,11 @@ export default function ReceivedCras({
           reportToUpdate ? (
             <div>
               <p className="mb-4">
-                Confirmez-vous le rejet du CRA pour{" "}
-                {reportToUpdate.userName || "cet utilisateur"} pour{" "}
+                Confirmer le rejet du rapport de{" "}
+                {reportToUpdate.report_type === "paid_leave"
+                  ? "Congés Payés"
+                  : "CRA"}{" "}
+                pour {reportToUpdate.userName || "cet utilisateur"} pour{" "}
                 {format(
                   new Date(reportToUpdate.year, reportToUpdate.month - 1),
                   "MMMM yyyy",
@@ -602,7 +742,7 @@ export default function ReceivedCras({
             </div>
           ) : (
             <div>
-              <p className="mb-4">Confirmez-vous le rejet du CRA ?</p>
+              <p className="mb-4">Confirmer le rejet du rapport ?</p>
               <textarea
                 className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Veuillez indiquer le motif du rejet..."
@@ -620,7 +760,7 @@ export default function ReceivedCras({
           <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl h-[90vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h3 className="text-xl font-semibold text-gray-800">
-                CRA Détaillé pour {craBoardReportData.userFirstName} -{" "}
+                Détails du rapport pour {craBoardReportData.userFirstName} -{" "}
                 {format(craBoardReportData.currentMonth, "MMMM yyyy", {
                   locale: fr,
                 })}
@@ -633,15 +773,18 @@ export default function ReceivedCras({
               </button>
             </div>
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
+              {/* Le composant CraBoard est utilisé ici en mode lecture seule */}
               <CraBoard
                 userId={craBoardReportData.userId}
                 userFirstName={craBoardReportData.userFirstName}
-                activities={craBoardReportData.activities}
+                activities={craBoardReportData.activities} // Les activités sont passées ici
                 activityTypeDefinitions={activityTypeDefinitions}
                 clientDefinitions={clientDefinitions}
                 currentMonth={craBoardReportData.currentMonth}
                 showMessage={showMessage}
-                readOnly={true}
+                readOnly={true} // Important: assurez-vous qu'il est en lecture seule
+                monthlyReports={monthlyReports} // Passe les rapports mensuels pour la logique de statut
+                rejectionReason={craBoardReportData.rejectionReason} // Passe le motif de rejet
               />
             </div>
           </div>

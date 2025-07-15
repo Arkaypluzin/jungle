@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import CraBoard from "@/components/CraBoard";
 import UnifiedManager from "@/components/UnifiedManager";
 import ReceivedCras from "@/components/ReceivedCras";
-import { startOfMonth, endOfMonth, format } from "date-fns";
+import CraHistory from "@/components/CraHistory";
+import { startOfMonth, endOfMonth, format, parseISO, isValid } from "date-fns";
 
 // Composant ToastMessage simplifié et inclus directement
 const ToastMessage = ({ message, type, isVisible, onClose }) => {
@@ -58,7 +59,8 @@ export default function CRAPage() {
   const [craActivities, setCraActivities] = useState([]);
   const [clientDefinitions, setClientDefinitions] = useState([]);
   const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
-  const [loadingAppData, setLoadingAppData] = useState(true); // Renommé pour distinguer du chargement de session
+  const [loadingAppData, setLoadingAppData] = useState(true);
+  const [monthlyReports, setMonthlyReports] = useState([]);
 
   const [error, setError] = useState(null);
 
@@ -66,9 +68,7 @@ export default function CRAPage() {
     new Date()
   );
 
-  // currentUserId ne sera défini que si la session est authentifiée
   const currentUserId = status === "authenticated" ? session?.user?.id : null;
-  // currentUserName sera le nom si authentifié, sinon "Chargement..."
   const currentUserName =
     status === "authenticated"
       ? session?.user?.name || "Utilisateur Inconnu"
@@ -83,7 +83,6 @@ export default function CRAPage() {
 
   const currentUserRole = session?.user?.roles?.[0] || "user";
 
-  // Log l'objet session complet quand il change
   useEffect(() => {
     if (session) {
       console.log(
@@ -136,7 +135,6 @@ export default function CRAPage() {
         "Mois à récupérer:",
         format(monthToFetch, "yyyy-MM")
       );
-      // S'assure que currentUserId est défini avant de faire la requête
       if (!currentUserId) {
         setCraActivities([]);
         return [];
@@ -151,17 +149,34 @@ export default function CRAPage() {
           `/api/cra_activities?userId=${currentUserId}&startDate=${startDate}&endDate=${endDate}`,
           "activités CRA"
         );
+        // Robustly convert date_activite to a Date object
+        const processedActivities = activitiesData
+          .map((activity) => {
+            let dateObj = null;
+            if (typeof activity.date_activite === "string") {
+              dateObj = parseISO(activity.date_activite);
+            } else if (activity.date_activite) {
+              // If it's already a Date object or other date-like
+              dateObj = new Date(activity.date_activite);
+            }
+            return {
+              ...activity,
+              date_activite: isValid(dateObj) ? dateObj : null,
+            };
+          })
+          .filter((activity) => activity.date_activite !== null); // Filter out activities with invalid dates
+
         console.log(
           "CRAPage: Données d'activités CRA reçues (après API transformation et lookup):",
-          JSON.stringify(activitiesData, null, 2)
+          JSON.stringify(processedActivities, null, 2)
         );
-        setCraActivities(activitiesData);
+        setCraActivities(processedActivities);
         console.log(
           "CRAPage: >>> Activités CRA chargées (fetchCraActivitiesForMonth):",
-          activitiesData.length,
+          processedActivities.length,
           "activités. État craActivities mis à jour."
         );
-        return activitiesData;
+        return processedActivities;
       } catch (err) {
         console.error(
           "CRAPage: Erreur lors du chargement des activités CRA:",
@@ -249,6 +264,37 @@ export default function CRAPage() {
     }
   }, [showMessage, fetchAndParse]);
 
+  const fetchMonthlyReportsForUser = useCallback(async () => {
+    if (!currentUserId) {
+      setMonthlyReports([]);
+      return;
+    }
+    try {
+      const queryParams = new URLSearchParams({ userId: currentUserId });
+      const response = await fetch(
+        `/api/monthly_cra_reports?${queryParams.toString()}`
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Échec de la récupération des rapports mensuels."
+        );
+      }
+      const data = await response.json();
+      setMonthlyReports(data.data || []);
+    } catch (err) {
+      console.error(
+        "CRAPage: Erreur lors de la récupération des rapports mensuels de l'utilisateur:",
+        err
+      );
+      showMessage(
+        `Erreur lors du chargement de vos rapports mensuels: ${err.message}`,
+        "error"
+      );
+      setMonthlyReports([]);
+    }
+  }, [currentUserId, showMessage]);
+
   useEffect(() => {
     console.log(
       "CRAPage: useEffect principal déclenché. Status:",
@@ -256,9 +302,8 @@ export default function CRAPage() {
       "UserId:",
       currentUserId
     );
-    // Attend que la session soit authentifiée avant de charger les données de l'application
     if (status === "loading") {
-      setLoadingAppData(true); // Assure que l'état de chargement est actif pendant que la session se charge
+      setLoadingAppData(true);
       return;
     }
 
@@ -267,14 +312,17 @@ export default function CRAPage() {
       setError(null);
       try {
         if (status === "authenticated" && currentUserId) {
-          // Charge les données seulement si authentifié
-          await Promise.all([fetchClients(), fetchActivityTypes()]);
+          await Promise.all([
+            fetchClients(),
+            fetchActivityTypes(),
+            fetchMonthlyReportsForUser(),
+          ]);
           await fetchCraActivitiesForMonth(currentDisplayedMonth);
         } else {
-          // Si non authentifié ou userId non disponible, vide les données
           setClientDefinitions([]);
           setActivityTypeDefinitions([]);
           setCraActivities([]);
+          setMonthlyReports([]);
         }
       } catch (err) {
         console.error(
@@ -293,11 +341,12 @@ export default function CRAPage() {
 
     loadInitialData();
   }, [
-    status, // Dépend du statut de la session
+    status,
     currentUserId,
     fetchClients,
     fetchActivityTypes,
     fetchCraActivitiesForMonth,
+    fetchMonthlyReportsForUser,
     showMessage,
     currentDisplayedMonth,
   ]);
@@ -305,7 +354,6 @@ export default function CRAPage() {
   const handleAddCraActivity = useCallback(
     async (activityData) => {
       if (!currentUserId) {
-        // Vérifie si l'ID utilisateur est disponible
         showMessage(
           "Veuillez vous connecter pour ajouter des activités.",
           "error"
@@ -313,7 +361,14 @@ export default function CRAPage() {
         throw new Error("Utilisateur non authentifié ou ID non disponible.");
       }
       try {
-        const payload = { ...activityData, user_id: currentUserId };
+        // Ensure date_activite is formatted as a string for the API
+        const payload = {
+          ...activityData,
+          user_id: currentUserId,
+          date_activite: activityData.date_activite
+            ? format(activityData.date_activite, "yyyy-MM-dd")
+            : null,
+        };
         console.log(
           "CRAPage: handleAddCraActivity - Payload envoyé:",
           JSON.stringify(payload, null, 2)
@@ -342,6 +397,7 @@ export default function CRAPage() {
           newActivity
         );
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        await fetchMonthlyReportsForUser();
         showMessage("Activité ajoutée avec succès !", "success");
         return newActivity;
       } catch (error) {
@@ -361,13 +417,13 @@ export default function CRAPage() {
       currentUserId,
       fetchCraActivitiesForMonth,
       currentDisplayedMonth,
+      fetchMonthlyReportsForUser,
     ]
   );
 
   const handleUpdateCraActivity = useCallback(
     async (id, activityData) => {
       if (!currentUserId) {
-        // Vérifie si l'ID utilisateur est disponible
         showMessage(
           "Veuillez vous connecter pour modifier des activités.",
           "error"
@@ -375,7 +431,14 @@ export default function CRAPage() {
         throw new Error("Utilisateur non authentifié ou ID non disponible.");
       }
       try {
-        const payload = { ...activityData, user_id: currentUserId };
+        // Ensure date_activite is formatted as a string for the API
+        const payload = {
+          ...activityData,
+          user_id: currentUserId,
+          date_activite: activityData.date_activite
+            ? format(activityData.date_activite, "yyyy-MM-dd")
+            : null,
+        };
         console.log(
           "CRAPage: handleUpdateCraActivity - Payload envoyé:",
           JSON.stringify(payload, null, 2)
@@ -404,7 +467,8 @@ export default function CRAPage() {
           updatedActivity
         );
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
-        showMessage; //("Activité mise à jour avec succès !", "success");
+        await fetchMonthlyReportsForUser();
+        showMessage("Activité mise à jour avec succès !", "success");
         return updatedActivity;
       } catch (error) {
         console.error(
@@ -423,13 +487,13 @@ export default function CRAPage() {
       currentUserId,
       fetchCraActivitiesForMonth,
       currentDisplayedMonth,
+      fetchMonthlyReportsForUser,
     ]
   );
 
   const handleDeleteActivity = useCallback(
     async (id) => {
       if (!currentUserId) {
-        // Vérifie si l'ID utilisateur est disponible
         showMessage(
           "Veuillez vous connecter pour supprimer des activités.",
           "error"
@@ -458,6 +522,7 @@ export default function CRAPage() {
         }
         console.log(`CRAPage: Activité CRA ${id} supprimée avec succès.`);
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        await fetchMonthlyReportsForUser();
         showMessage("Activité supprimée avec succès !", "success");
       } catch (error) {
         console.error(
@@ -476,6 +541,7 @@ export default function CRAPage() {
       currentUserId,
       fetchCraActivitiesForMonth,
       currentDisplayedMonth,
+      fetchMonthlyReportsForUser,
     ]
   );
 
@@ -718,7 +784,6 @@ export default function CRAPage() {
     ]
   );
 
-  // Affiche un état de chargement tant que la session n'est pas authentifiée ou que les données de l'application chargent
   if (status === "loading" || loadingAppData) {
     return (
       <div className="flex justify-center items-center h-screen text-xl text-gray-700">
@@ -727,7 +792,6 @@ export default function CRAPage() {
     );
   }
 
-  // Si non authentifié après chargement (status est 'unauthenticated'), redirige
   if (status === "unauthenticated") {
     router.push("/api/auth/signin");
     return (
@@ -816,7 +880,7 @@ export default function CRAPage() {
         {activeTab === "craManager" && (
           <CraBoard
             userId={currentUserId}
-            userFirstName={currentUserName} // Passe le nom de l'utilisateur
+            userFirstName={currentUserName}
             activities={craActivities}
             activityTypeDefinitions={activityTypeDefinitions}
             clientDefinitions={clientDefinitions}
@@ -827,13 +891,18 @@ export default function CRAPage() {
             showMessage={showMessage}
             currentMonth={currentDisplayedMonth}
             onMonthChange={setCurrentDisplayedMonth}
+            monthlyReports={monthlyReports}
           />
         )}
 
         {activeTab === "sentCraHistory" && (
-          <p className="text-center text-gray-600 text-lg">
-            Historique des CRAs envoyés à implémenter.
-          </p>
+          <CraHistory
+            userId={currentUserId}
+            userFirstName={currentUserName}
+            showMessage={showMessage}
+            clientDefinitions={clientDefinitions}
+            activityTypeDefinitions={activityTypeDefinitions}
+          />
         )}
 
         {activeTab === "gestion" && (
@@ -853,7 +922,7 @@ export default function CRAPage() {
         {activeTab === "receivedCras" && (
           <ReceivedCras
             userId={currentUserId}
-            userFirstName={currentUserName} // Passe le nom de l'utilisateur
+            userFirstName={currentUserName}
             userRole={currentUserRole}
             showMessage={showMessage}
             clientDefinitions={clientDefinitions}
