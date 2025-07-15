@@ -270,9 +270,8 @@ export default function NdfDetailTable({
       }
     }
 
-    const fileName = `note-de-frais_${month || ""}_${year || ""}_${
-      name ? name.replace(/\s+/g, "_") : ""
-    }.pdf`;
+    const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""
+      }.pdf`;
     doc.save(fileName);
   };
 
@@ -449,33 +448,30 @@ export default function NdfDetailTable({
               </div>
               <div className="flex flex-wrap gap-3 mb-4">
                 <button
-                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${
-                    sortBy === "date"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                  }`}
+                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortBy === "date"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
                   onClick={() => setSortBy("date")}
                   type="button"
                 >
                   Date
                 </button>
                 <button
-                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${
-                    sortBy === "tva"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                  }`}
+                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortBy === "tva"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
                   onClick={() => setSortBy("tva")}
                   type="button"
                 >
                   TVA
                 </button>
                 <button
-                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${
-                    sortBy === "montant"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                  }`}
+                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortBy === "montant"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
                   onClick={() => setSortBy("montant")}
                   type="button"
                 >
@@ -485,22 +481,20 @@ export default function NdfDetailTable({
               {sortBy && (
                 <div className="mt-2 flex gap-3">
                   <button
-                    className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${
-                      sortDir === "asc"
-                        ? "bg-green-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                    className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortDir === "asc"
+                      ? "bg-green-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
                     onClick={() => setSortDir("asc")}
                     type="button"
                   >
                     <ArrowUp size={16} /> Croissant
                   </button>
                   <button
-                    className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${
-                      sortDir === "desc"
-                        ? "bg-red-600 text-white shadow-md"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                    className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortDir === "desc"
+                      ? "bg-red-600 text-white shadow-md"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
                     onClick={() => setSortDir("desc")}
                     type="button"
                   >
@@ -648,25 +642,46 @@ export default function NdfDetailTable({
                     key={detail.uuid}
                     className="hover:bg-gray-50 transition-colors duration-150"
                   >
-                    <td className="py-3 px-4 whitespace-nowrap text-sm text-gray-800">
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
                       {detail.date_str}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-sm text-gray-800">
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
                       {detail.nature}
                     </td>
-                    <td className="py-3 px-4 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
+                    <td className="py-3 px-3 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
                       {detail.description}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-sm text-gray-800">
-                      {detail.tva}
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
+                      {detail.tva && detail.tva.includes("/") ? (
+                        <div>
+                          {detail.tva.split("/").map((t, idx) => {
+                            const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
+                            const ht = parseFloat(detail.montant) || 0;
+                            if (!isNaN(taux)) {
+                              const tvaMontant = ht * taux / 100;
+                              return (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <span className="font-semibold">{taux}%</span>
+                                  <span className="text-gray-500">⇒ +{tvaMontant.toFixed(2)}€</span>
+                                </div>
+                              );
+                            } else {
+                              return null;
+                            }
+                          })}
+                        </div>
+                      ) : (
+                        <span>{detail.tva}</span>
+                      )}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-right text-sm text-gray-800">
+
+                    <td className="py-3 px-3 whitespace-nowrap text-right text-sm text-gray-800">
                       {parseFloat(detail.montant).toFixed(2)}€
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-right text-sm font-bold text-gray-900">
+                    <td className="py-3 px-3 whitespace-nowrap text-right text-sm font-bold text-gray-900">
                       {montantTTC.toFixed(2)}€
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-3 px-3 text-center">
                       {detail.img_url ? (
                         <a
                           href={detail.img_url}
@@ -686,7 +701,7 @@ export default function NdfDetailTable({
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                    <td className="py-3 px-3 text-center whitespace-nowrap">
                       {ndfStatut === "Provisoire" && (
                         <div className="flex justify-center gap-2">
                           <EditNdfDetailModal
@@ -753,11 +768,10 @@ export default function NdfDetailTable({
               : "Exporter le tableau en PDF"
           }
           className={`inline-flex items-center px-8 py-3 rounded-lg font-semibold transition-colors duration-200 shadow-md
-                        ${
-                          ndfStatut === "Provisoire"
-                            ? "bg-gray-300 text-gray-600 cursor-not-allowed opacity-75"
-                            : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                        }`}
+                        ${ndfStatut === "Provisoire"
+              ? "bg-gray-300 text-gray-600 cursor-not-allowed opacity-75"
+              : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            }`}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
