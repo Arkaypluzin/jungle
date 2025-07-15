@@ -167,6 +167,11 @@ export default function NdfDetailTable({
           { content: "" },
         ],
         [
+          { content: "Total TVA", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: `${totalTVA.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
+          { content: "" },
+        ],
+        [
           { content: "Total TTC", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
@@ -189,8 +194,6 @@ export default function NdfDetailTable({
       },
     });
 
-
-    // --- JUSTIFICATIFS ---
     async function toDataUrl(url) {
       const response = await fetch(url);
       const blob = await response.blob();
@@ -379,6 +382,23 @@ export default function NdfDetailTable({
       </p>
     );
   }
+
+  // Calcul du total TVA appliqué sur tous les détails filtrés
+  const totalTVA = useMemo(() => {
+    return filteredDetails.reduce((acc, d) => {
+      const base = parseFloat(d.montant) || 0;
+      if (!d.tva || d.tva === "0%") return acc;
+      // Multi-taux : additionne tous les taux
+      const tauxList = d.tva
+        .split("/")
+        .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
+        .filter((x) => !isNaN(x));
+      if (tauxList.length === 0) return acc;
+      const tva = tauxList.reduce((sum, taux) => sum + (base * taux) / 100, 0);
+      const result = Math.ceil(tva * 100) / 100;
+      return acc + result;
+    }, 0);
+  }, [filteredDetails]);
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
@@ -710,6 +730,14 @@ export default function NdfDetailTable({
                 </td>
               </tr>
               <tr>
+                <td colSpan={5} className="py-3 px-4 text-right text-base font-semibold text-gray-900">
+                  Total TVA
+                </td>
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                  {totalTVA.toFixed(2)}€
+                </td>
+              </tr>
+              <tr>
                 <td colSpan={5} className="py-3 px-4 text-right text-base font-bold text-gray-900">
                   Total TTC
                 </td>
@@ -723,7 +751,6 @@ export default function NdfDetailTable({
                 </td>
               </tr>
             </tfoot>
-
           </table>
         </div>
       )}
