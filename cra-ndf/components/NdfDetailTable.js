@@ -10,6 +10,10 @@ import autoTable from "jspdf-autotable";
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
+function roundUpToCent(value) {
+  return Math.ceil(value * 100) / 100;
+}
+
 export default function NdfDetailTable({
   details: initialDetails,
   ndfStatut,
@@ -100,7 +104,7 @@ export default function NdfDetailTable({
             const ht = parseFloat(detail.montant) || 0;
             if (!isNaN(taux)) {
               const tvaMontant = ht * taux / 100;
-              return `${taux}% -> +${tvaMontant.toFixed(2)}€`;
+              return `${taux}% ⇒ +${tvaMontant.toFixed(2)}€`;
             }
             return null;
           })
@@ -108,7 +112,7 @@ export default function NdfDetailTable({
           .join('\n')
         : detail.tva,
       `${parseFloat(detail.montant).toFixed(2)}€`, // Montant HT
-      `${getTTC(detail.montant, detail.tva).toFixed(2)}€`, // Montant TTC
+      `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
       detail.img_url ? "Oui" : "Non",
     ]);
 
@@ -126,7 +130,7 @@ export default function NdfDetailTable({
         textColor: [50, 50, 50],
         lineColor: [220, 220, 220],
         lineWidth: 0.1,
-        overflow: 'linebreak', 
+        overflow: 'linebreak',  // IMPORTANT POUR AFFICHER \n
         cellWidth: 'auto',
       },
       headStyles: {
@@ -284,24 +288,20 @@ export default function NdfDetailTable({
     doc.save(fileName);
   };
 
-  // Fonction pour calculer le montant TTC
-  const getTTC = useCallback((montant, tvaStr) => {
+  // Montant TTC ligne, arrondi au centime supérieur
+  const getTTCLineRounded = useCallback((montant, tvaStr) => {
     const base = parseFloat(montant) || 0;
     if (!tvaStr || tvaStr === "0%") return base;
-
-    // Gérer les multi-taux
     const tauxList = tvaStr
       .split("/")
       .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
       .filter((x) => !isNaN(x));
-
     if (tauxList.length === 0) return base;
-
     const totalTva = tauxList.reduce(
       (sum, taux) => sum + (base * taux) / 100,
       0
     );
-    return base + totalTva;
+    return roundUpToCent(base + totalTva);
   }, []);
 
   // Logique de filtrage et de tri (utilisant useMemo pour optimiser les performances)
@@ -377,7 +377,7 @@ export default function NdfDetailTable({
     tvaMultiValue,
     sortBy,
     sortDir,
-    getTTC,
+    getTTCLineRounded,
   ]);
 
   // Calcul des totaux HT et TTC des détails filtrés
@@ -387,8 +387,8 @@ export default function NdfDetailTable({
     [filteredDetails]
   );
   const totalTTC = useMemo(
-    () => filteredDetails.reduce((acc, d) => acc + getTTC(d.montant, d.tva), 0),
-    [filteredDetails, getTTC]
+    () => filteredDetails.reduce((acc, d) => acc + getTTCLineRounded(d.montant, d.tva), 0),
+    [filteredDetails, getTTCLineRounded]
   );
 
   // Fonction de réinitialisation des filtres
@@ -645,7 +645,7 @@ export default function NdfDetailTable({
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {filteredDetails.map((detail) => {
-                const montantTTC = getTTC(detail.montant, detail.tva);
+                const montantTTC = getTTCLineRounded(detail.montant, detail.tva);
                 return (
                   <tr
                     key={detail.uuid}
