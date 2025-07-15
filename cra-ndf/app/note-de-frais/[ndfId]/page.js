@@ -20,7 +20,7 @@ export default async function NdfDetailsPage({ params }) {
     const details = await getAllDetailsByNdf(ndfId);
 
     return (
-        <div className="max-w-4xl mx-auto mt-10">
+        <div className="max-w-5xl mx-auto mt-10">
             <h1 className="text-xl font-bold mb-4">Détails de la note de frais</h1>
             {ndf.refus_comment && (
                 <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-800 rounded flex items-center gap-2">
