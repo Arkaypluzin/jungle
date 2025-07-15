@@ -5,6 +5,8 @@ import { useState, useMemo, useCallback } from "react";
 import { Search, SlidersHorizontal, X, ArrowUp, ArrowDown } from "lucide-react"; // Importation des icônes
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import ViewNdfDetailModal from "@/components/ViewNdfDetailModal";
+
 
 // Constantes pour les options de sélection
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
@@ -698,23 +700,20 @@ export default function NdfDetailTable({
                       )}
                     </td>
                     <td className="py-3 px-3 text-center whitespace-nowrap">
-                      {ndfStatut === "Provisoire" && (
-                        <div className="flex justify-center gap-2">
-                          <EditNdfDetailModal
-                            detail={detail}
-                            onEdited={refresh}
-                          />
-                          <DeleteNdfDetailButton
-                            detailId={detail.uuid}
-                            onDeleted={refresh}
-                          />
-                        </div>
-                      )}
-                      {ndfStatut !== "Provisoire" && (
-                        <span className="text-gray-500 text-xs italic">
-                          Non modifiable
-                        </span>
-                      )}
+                      <div className="flex justify-center gap-2">
+                        <ViewNdfDetailModal detail={detail} />
+                        {ndfStatut === "Provisoire" && (
+                          <>
+                            <EditNdfDetailModal detail={detail} onEdited={refresh} />
+                            <DeleteNdfDetailButton detailId={detail.uuid} onDeleted={refresh} />
+                          </>
+                        )}
+                        {ndfStatut !== "Provisoire" && (
+                          <span className="text-gray-500 text-xs italic">
+                            Non modifiable
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

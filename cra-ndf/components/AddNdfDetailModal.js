@@ -34,11 +34,23 @@ export default function AddNdfDetailModal({
   const [tva, setTva] = useState("0%");
   const [montant, setMontant] = useState(""); // Global montant (HT)
   const [autreTaux, setAutreTaux] = useState("");
-  // Multi-taux: [{ taux: "10", montant: "12.34" }]
   const [multiTaux, setMultiTaux] = useState([{ taux: "", montant: "" }]);
   const [imgFile, setImgFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Ajout ANALYTIQUES - Client
+  const [clients, setClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState("");
+
+  // Charger la liste des clients au montage de la modale
+  useEffect(() => {
+    if (open) {
+      fetch("/api/client")
+        .then((res) => res.json())
+        .then((data) => setClients(Array.isArray(data) ? data : []));
+    }
+  }, [open]);
 
   // Dates min/max
   const monthIndex = parentNdfMonth ? MONTHS_MAP[parentNdfMonth] : null;
@@ -77,6 +89,7 @@ export default function AddNdfDetailModal({
     setMultiTaux([{ taux: "", montant: "" }]);
     setImgFile(null);
     setError("");
+    setSelectedClient(""); // ← reset client aussi
   }
 
   // Calcul du montant HT global (si multi-taux)
@@ -103,6 +116,13 @@ export default function AddNdfDetailModal({
 
     if (ndfStatut !== "Provisoire") {
       setError("Impossible d’ajouter une dépense sur une note de frais qui n'est pas au statut 'Provisoire'.");
+      setLoading(false);
+      return;
+    }
+
+    // Validation client
+    if (!selectedClient) {
+      setError("Veuillez sélectionner un client.");
       setLoading(false);
       return;
     }
@@ -160,6 +180,7 @@ export default function AddNdfDetailModal({
       tva: tvaValue,
       montant: montantValue,
       img_url,
+      client_id: selectedClient,
       ...extra,
     };
 
@@ -304,6 +325,34 @@ export default function AddNdfDetailModal({
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
+
+              {/* ANALYTIQUES */}
+              <div className="pt-4 border-t border-gray-200 mt-4">
+                <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
+                <div>
+                  <label
+                    htmlFor="client-select"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Client :
+                  </label>
+                  <select
+                    id="client-select"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={selectedClient}
+                    onChange={(e) => setSelectedClient(e.target.value)}
+                    required
+                  >
+                    <option value="">Sélectionner un client</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom_client}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {/* --- fin ANALYTIQUES --- */}
 
               <div>
                 <label
