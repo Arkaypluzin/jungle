@@ -1,18 +1,18 @@
 // components/cra/CraDayCell.js
 import React from "react";
-import { format } from "date-fns";
+import { format, isSameMonth, isSameDay, isValid } from "date-fns"; // Import isValid
 import CraActivityItem from "./CraActivityItem";
 
 export default function CraDayCell({
   day,
-  formattedDate,
+  formattedDate, // This is already formatted, but we still need to check 'day' for data-date
   activitiesForDay,
   isTodayHighlight,
   isWeekendDay,
   isPublicHolidayDay,
   isNonWorkingDay,
   isOutsideCurrentMonth,
-  isPastDay, // Toujours passé comme prop, mais non utilisé pour le style direct
+  isPastDay,
   isTempSelected,
   handleMouseDown,
   handleMouseEnter,
@@ -24,11 +24,17 @@ export default function CraDayCell({
   readOnly,
   userId,
   userFirstName,
+  currentMonth,
+  isDragging,
 }) {
-  let cellClasses = `
-    p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5
-    transition duration-200 overflow-hidden relative
-  `;
+  // Defensive check for day validity
+  if (!isValid(day)) {
+    console.error("CraDayCell: Received an invalid 'day' prop:", day);
+    return null; // Don't render anything for an invalid day
+  }
+
+  let cellClasses =
+    "relative p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5 transition duration-200 overflow-hidden relative";
 
   if (isOutsideCurrentMonth) {
     cellClasses += " bg-gray-100 opacity-50 cursor-not-allowed";
@@ -42,11 +48,23 @@ export default function CraDayCell({
     cellClasses += " bg-white text-gray-900 hover:bg-blue-50 cursor-pointer";
   }
 
+  if (!readOnly && isSameMonth(day, currentMonth) && !isDragging) {
+    cellClasses += " cursor-pointer";
+  } else if (isDragging && isSameMonth(day, currentMonth)) {
+    cellClasses += " cursor-grabbing";
+  } else {
+    cellClasses += " cursor-not-allowed";
+  }
+
   return (
     <div
       className={cellClasses}
+      onClick={() =>
+        isSameMonth(day, currentMonth) && !readOnly && handleDayClick(day)
+      }
       onMouseDown={(e) => handleMouseDown(e, day)}
       onMouseEnter={() => handleMouseEnter(day)}
+      data-date={format(day, "yyyy-MM-dd")} // This is the line that was causing the error
     >
       <span
         className={`text-sm font-semibold mb-1 ${
