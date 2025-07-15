@@ -1,10 +1,10 @@
 // app/api/monthly_cra_reports/[id]/route.js
 import { NextResponse } from "next/server";
-import { getMonthlyReportByIdController } from "../controller"; // Chemin corrigé
+import { getMonthlyReportByIdController } from "../controller";
 
+// Correct way to access params in Next.js App Router Route Handlers
 export async function GET(request, { params }) {
-  // Assurez-vous d'attendre les paramètres pour éviter l'erreur "Unexpected token '<'"
-  const { id } = await params;
+  const { id } = params; // 'params' is directly an object, no 'await' needed here.
 
   if (!id) {
     return NextResponse.json(
@@ -23,7 +23,6 @@ export async function GET(request, { params }) {
       );
     }
 
-    // Retourne la propriété 'data', car le frontend attend l'objet rapport directement
     return NextResponse.json(reportResult.data, { status: 200 });
   } catch (error) {
     console.error(`Erreur API /api/monthly_cra_reports/${id} (GET):`, error);
@@ -33,6 +32,3 @@ export async function GET(request, { params }) {
     );
   }
 }
-
-// La fonction PUT pour la mise à jour du statut a été déplacée vers
-// app/api/monthly_cra_reports/[id]/status/route.js

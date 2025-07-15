@@ -52,24 +52,21 @@ export default function CraBoard({
   currentMonth: propCurrentMonth,
   onMonthChange,
   readOnly = false,
-  monthlyReports = [], // NEW: Receive monthly reports
+  monthlyReports = [], // NEW: Receive monthly reports (can be one or many)
   rejectionReason = null, // NEW: Receive rejection reason
 }) {
+  console.log("[CraBoard] --- Rendu du CraBoard ---");
   console.log(
-    "[CraBoard] Activités reçues par le composant:",
+    "[CraBoard] Props reçues: activities.length:",
     activities.length,
-    "activités."
+    "userId:",
+    userId,
+    "currentMonth:",
+    format(propCurrentMonth, "yyyy-MM-dd"),
+    "readOnly:",
+    readOnly
   );
-  console.log(
-    "[CraBoard] Prénom de l'utilisateur reçu du parent (CRAPage):",
-    userFirstName
-  );
-  console.log("[CraBoard] Mode lecture seule:", readOnly);
-  console.log("[CraBoard] Rapports mensuels reçus:", monthlyReports.length);
-  console.log(
-    "[CraBoard] Motif de rejet reçu (si affichage d'un rapport détaillé):",
-    rejectionReason
-  );
+  console.log("[CraBoard] monthlyReports reçus:", monthlyReports);
 
   const [currentMonth, setCurrentMonth] = useState(propCurrentMonth);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -107,12 +104,31 @@ export default function CraBoard({
   }, [activityTypeDefinitions]);
 
   useEffect(() => {
-    if (!isSameMonth(currentMonth, propCurrentMonth)) {
+    // Ensure currentMonth is a valid Date object before setting it
+    if (
+      propCurrentMonth instanceof Date &&
+      isValid(propCurrentMonth) &&
+      !isSameMonth(currentMonth, propCurrentMonth)
+    ) {
       setCurrentMonth(propCurrentMonth);
+    } else if (
+      !(propCurrentMonth instanceof Date) ||
+      !isValid(propCurrentMonth)
+    ) {
+      console.warn(
+        "CraBoard: propCurrentMonth is invalid or not a Date object. Using current date as fallback."
+      );
+      setCurrentMonth(new Date()); // Fallback to current date if prop is invalid
     }
   }, [propCurrentMonth, currentMonth]);
 
   const fetchPublicHolidays = useCallback(async () => {
+    if (!isValid(currentMonth)) {
+      console.warn(
+        "CraBoard: currentMonth is invalid, skipping public holidays fetch."
+      );
+      return;
+    }
     const year = currentMonth.getFullYear();
     try {
       const response = await fetch(`/api/public_holidays?year=${year}`);
@@ -154,21 +170,58 @@ export default function CraBoard({
   );
 
   const activitiesForCurrentMonth = useMemo(() => {
+    console.log("[CraBoard] activitiesForCurrentMonth - Début du calcul.");
     console.log(
-      "[CraBoard] Recalcul des activités pour le mois actuel. Nombre d'activités brutes:",
-      activities.length
-    );
-    const filtered = activities.filter(
-      (activity) =>
-        String(activity.user_id) === String(userId) &&
-        activity.date_activite &&
-        isValid(activity.date_activite) &&
-        isSameMonth(activity.date_activite, currentMonth)
+      "[CraBoard] activitiesForCurrentMonth - Activités brutes reçues:",
+      activities.length,
+      activities
     );
     console.log(
-      "[CraBoard] Activités filtrées pour le mois et l'utilisateur actuels:",
+      "[CraBoard] activitiesForCurrentMonth - userId pour le filtre:",
+      userId
+    );
+    console.log(
+      "[CraBoard] activitiesForCurrentMonth - currentMonth pour le filtre:",
+      format(currentMonth, "yyyy-MM-dd")
+    );
+
+    const filtered = activities.filter((activity) => {
+      const isUserMatch = String(activity.user_id) === String(userId);
+      const isDateValid =
+        activity.date_activite && isValid(activity.date_activite);
+      const isMonthMatch =
+        isDateValid && isSameMonth(activity.date_activite, currentMonth);
+
+      // Log each activity's filter status
+      if (!isUserMatch) {
+        console.log(
+          `  - Activité ID ${activity.id || "N/A"}: Utilisateur (${
+            activity.user_id
+          }) ne correspond pas à ${userId}`
+        );
+      }
+      if (!isDateValid) {
+        console.log(
+          `  - Activité ID ${activity.id || "N/A"}: Date invalide (${
+            activity.date_activite
+          })`
+        );
+      }
+      if (isDateValid && !isMonthMatch) {
+        console.log(
+          `  - Activité ID ${activity.id || "N/A"}: Mois (${format(
+            activity.date_activite,
+            "yyyy-MM"
+          )}) ne correspond pas à ${format(currentMonth, "yyyy-MM")}`
+        );
+      }
+
+      return isUserMatch && isDateValid && isMonthMatch;
+    });
+    console.log(
+      "[CraBoard] activitiesForCurrentMonth - Activités filtrées:",
       filtered.length,
-      "activités."
+      filtered
     );
     return filtered;
   }, [activities, currentMonth, userId]);
@@ -186,23 +239,50 @@ export default function CraBoard({
   }, [activitiesForCurrentMonth, paidLeaveTypeId]);
 
   const activitiesByDay = useMemo(() => {
+    console.log("[CraBoard] activitiesByDay - Début du calcul.");
+    console.log(
+      "[CraBoard] activitiesByDay - Activités en entrée:",
+      activitiesForCurrentMonth.length,
+      activitiesForCurrentMonth
+    );
     const activitiesMap = new Map();
     activitiesForCurrentMonth.forEach((activity) => {
-      const dateKey = format(activity.date_activite, "yyyy-MM-dd");
-      if (!activitiesMap.has(dateKey)) {
-        activitiesMap.set(dateKey, []);
+      if (activity.date_activite && isValid(activity.date_activite)) {
+        // Ensure date is valid before formatting
+        const dateKey = format(activity.date_activite, "yyyy-MM-dd");
+        if (!activitiesMap.has(dateKey)) {
+          activitiesMap.set(dateKey, []);
+        }
+        activitiesMap.get(dateKey).push(activity);
+      } else {
+        console.warn(
+          "CraBoard: activitiesByDay - Skipping activity with invalid date_activite:",
+          activity
+        );
       }
-      activitiesMap.get(dateKey).push(activity);
     });
     console.log(
-      "[CraBoard] activitiesByDay généré. Nombre de jours avec activités:",
-      activitiesMap.size
+      "[CraBoard] activitiesByDay - Map générée. Nombre de jours avec activités:",
+      activitiesMap.size,
+      activitiesMap
     );
     return activitiesMap;
   }, [activitiesForCurrentMonth]);
 
   // Specific statuses for CRA and Paid Leave reports for the current month
   const { craReport, paidLeaveReport } = useMemo(() => {
+    // When readOnly is true (from ReceivedCras), monthlyReports will contain only the single report being viewed.
+    // In this case, we want to use that specific report's status.
+    if (readOnly && monthlyReports.length === 1) {
+      const singleReport = monthlyReports[0];
+      if (singleReport.report_type === "cra") {
+        return { craReport: singleReport, paidLeaveReport: null };
+      } else if (singleReport.report_type === "paid_leave") {
+        return { craReport: null, paidLeaveReport: singleReport };
+      }
+    }
+
+    // Otherwise, for the user's own CRA management, find reports for the current month.
     const currentMonthCraReport = monthlyReports.find(
       (report) =>
         String(report.user_id) === String(userId) &&
@@ -222,7 +302,7 @@ export default function CraBoard({
       craReport: currentMonthCraReport,
       paidLeaveReport: currentMonthPaidLeaveReport,
     };
-  }, [monthlyReports, userId, currentMonth]);
+  }, [monthlyReports, userId, currentMonth, readOnly]); // Added readOnly to dependencies
 
   const craReportStatus = craReport ? craReport.status : "empty";
   const paidLeaveReportStatus = paidLeaveReport
@@ -289,9 +369,12 @@ export default function CraBoard({
       }
     };
 
-    notifyReportStatus(craReport, "CRA"); // Use craReport from useMemo
-    notifyReportStatus(paidLeaveReport, "congés payés"); // Use paidLeaveReport from useMemo
-  }, [craReport, paidLeaveReport, currentMonth, showMessage]); // Dependencies updated
+    // Only notify if not in readOnly mode (i.e., when managing own CRA)
+    if (!readOnly) {
+      notifyReportStatus(craReport, "CRA"); // Use craReport from useMemo
+      notifyReportStatus(paidLeaveReport, "congés payés"); // Use paidLeaveReport from useMemo
+    }
+  }, [craReport, paidLeaveReport, currentMonth, showMessage, readOnly]); // Dependencies updated
 
   const goToPreviousMonth = useCallback(() => {
     if (readOnly) return;
@@ -506,7 +589,7 @@ export default function CraBoard({
           activity.status === "pending_review"
         ) {
           showMessage(
-            "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être modifiée.",
+            "Activité verrouillée: statut finalisé, validé ou en attente. Modification impossible.",
             "info"
           );
           return;
@@ -622,7 +705,7 @@ export default function CraBoard({
         activity.status === "pending_review"
       ) {
         showMessage(
-          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être modifiée ou supprimée.",
+          "Activité verrouillée: statut finalisé, validé ou en attente. Modification ou suppression impossible.",
           "info"
         );
         return;
@@ -695,7 +778,10 @@ export default function CraBoard({
           showMessage("Activité ajoutée avec succès !", "success");
         }
         handleCloseActivityModal();
-        fetchActivitiesForMonth(currentMonth);
+        // Only fetch activities if not in readOnly mode (i.e., not viewing a received report)
+        if (!readOnly && fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
       } catch (error) {
         console.error(
           "CraBoard: Erreur lors de la sauvegarde de l'activité:",
@@ -737,7 +823,7 @@ export default function CraBoard({
         activity.status === "pending_review"
       ) {
         showMessage(
-          "Cette activité est finalisée, validée ou en attente de révision. Elle ne peut pas être supprimée.",
+          "Activité verrouillée: statut finalisé, validé ou en attente. Suppression impossible.",
           "info"
         );
         return;
@@ -768,7 +854,10 @@ export default function CraBoard({
       try {
         await onDeleteActivity(activityToDelete);
         showMessage("Activité supprimée avec succès !", "success");
-        fetchActivitiesForMonth(currentMonth);
+        // Only fetch activities if not in readOnly mode
+        if (!readOnly && fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
       } catch (error) {
         console.error(
           "CraBoard: Erreur lors de la suppression de l'activité:",
@@ -1014,7 +1103,10 @@ export default function CraBoard({
           "error"
         );
       }
-      fetchActivitiesForMonth(currentMonth);
+      // Only fetch activities if not in readOnly mode (i.e., not viewing a received report)
+      if (!readOnly && fetchActivitiesForMonth) {
+        fetchActivitiesForMonth(currentMonth);
+      }
     },
     [
       readOnly,
@@ -1129,6 +1221,7 @@ export default function CraBoard({
   }, []);
 
   const totalWorkingDaysInMonth = useMemo(() => {
+    if (!isValid(currentMonth)) return 0; // Defensive check
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -1148,8 +1241,10 @@ export default function CraBoard({
     return (totalActivitiesTimeInMonth - totalWorkingDaysInMonth).toFixed(2);
   }, [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]);
 
+  // Only fetch activities if not in readOnly mode
   useEffect(() => {
     if (
+      !readOnly &&
       fetchActivitiesForMonth &&
       typeof fetchActivitiesForMonth === "function"
     ) {
@@ -1159,7 +1254,7 @@ export default function CraBoard({
       );
       fetchActivitiesForMonth(currentMonth);
     }
-  }, [currentMonth, fetchActivitiesForMonth]);
+  }, [currentMonth, fetchActivitiesForMonth, readOnly]); // Added readOnly to dependencies
 
   return (
     <div

@@ -150,6 +150,21 @@ export async function createOrUpdateMonthlyReportController(
       );
     }
 
+    // Log l'ID de l'activité si elle est créée via ce contrôleur
+    if (
+      result.upsertedId &&
+      report.activities_snapshot &&
+      report.activities_snapshot.length > 0
+    ) {
+      console.log(
+        `[Backend DEBUG] Newly created/upserted monthly report ID: ${result.upsertedId.toString()}`
+      );
+      console.log(
+        `[Backend DEBUG] Activities snapshot in newly created/upserted report:`,
+        report.activities_snapshot.map((id) => id.toString())
+      );
+    }
+
     return {
       success: true,
       data: {
@@ -173,6 +188,14 @@ export async function getMonthlyReportByIdController(reportId) {
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
     const activitiesCollection = await getActivitiesCollection(db);
 
+    console.log(`[Backend DEBUG] Connected to DB Name: "${db.databaseName}"`);
+    console.log(
+      `[Backend DEBUG] Activities Collection Name: "${activitiesCollection.collectionName}"`
+    );
+    console.log(
+      `[Backend DEBUG] Initial reportId received: "${reportId}" (Type: ${typeof reportId})`
+    );
+
     console.log(
       `[Backend] getMonthlyReportByIdController: Tentative de récupération du rapport mensuel pour l'ID: ${reportId}`
     );
@@ -195,6 +218,7 @@ export async function getMonthlyReportByIdController(reportId) {
         report.activities_snapshot ? report.activities_snapshot.length : 0
       }`
     );
+    console.log(`[Backend DEBUG] Monthly Report _id: ${report._id.toString()}`);
 
     let populatedActivities = [];
     if (
@@ -203,11 +227,17 @@ export async function getMonthlyReportByIdController(reportId) {
       report.activities_snapshot.length > 0
     ) {
       const activityObjectIds = report.activities_snapshot
-        .map((id) => {
+        .map((id, index) => {
+          console.log(
+            `[Backend DEBUG] Processing activities_snapshot[${index}]: "${id}" (Type: ${typeof id})`
+          );
           try {
-            // Assurez-vous que l'ID est une chaîne valide avant de tenter la conversion
             if (typeof id === "string" && ObjectId.isValid(id)) {
-              return new ObjectId(id);
+              const objectId = new ObjectId(id);
+              console.log(
+                `[Backend DEBUG] Converted to ObjectId: "${objectId.toString()}"`
+              );
+              return objectId;
             } else {
               console.warn(
                 `[Backend] ID d'activité invalide ou non-ObjectId trouvé dans activities_snapshot: ${id}. Ce document sera ignoré.`
@@ -224,26 +254,92 @@ export async function getMonthlyReportByIdController(reportId) {
         })
         .filter((id) => id !== null); // Filtre les IDs nuls ou invalides
 
+      console.log(
+        `[Backend] getMonthlyReportByIdController: Après conversion/filtrage, IDs d'objets valides à rechercher: ${activityObjectIds.length}`,
+        activityObjectIds.map((o) => o.toString())
+      );
+
       if (activityObjectIds.length > 0) {
+        const firstIdToTest = activityObjectIds[0];
+        const firstIdToTestString = firstIdToTest.toString();
+
+        // --- TEST 1: findOne avec ObjectId ---
         console.log(
-          `[Backend] getMonthlyReportByIdController: Tentative de récupération de ${activityObjectIds.length} activités. IDs à rechercher:`,
-          activityObjectIds.map((o) => o.toString())
+          `[Backend DEBUG] Test 1: Performing findOne with ObjectId for ID: ${firstIdToTestString}`
         );
-        populatedActivities = await activitiesCollection
-          .find({ _id: { $in: activityObjectIds } })
-          .map((doc) => ({ ...doc, id: doc._id.toString() }))
+        const singleActivityTestObjectId = await activitiesCollection.findOne({
+          _id: firstIdToTest,
+        });
+        console.log(
+          `[Backend DEBUG] Test 1 Result (ObjectId):`,
+          singleActivityTestObjectId
+            ? `Found (ID: ${singleActivityTestObjectId._id.toString()})`
+            : `Not Found`
+        );
+
+        // --- TEST 2: findOne avec String ---
+        console.log(
+          `[Backend DEBUG] Test 2: Performing findOne with String for ID: ${firstIdToTestString}`
+        );
+        const singleActivityTestString = await activitiesCollection.findOne({
+          _id: firstIdToTestString,
+        });
+        console.log(
+          `[Backend DEBUG] Test 2 Result (String):`,
+          singleActivityTestString
+            ? `Found (ID: ${singleActivityTestString._id.toString()})`
+            : `Not Found`
+        );
+
+        // --- NOUVEAU TEST 3: findOne avec Regex ---
+        console.log(
+          `[Backend DEBUG] Test 3: Performing findOne with Regex for ID: /${firstIdToTestString}/`
+        );
+        const singleActivityTestRegex = await activitiesCollection.findOne({
+          _id: { $regex: `^${firstIdToTestString}$` },
+        });
+        console.log(
+          `[Backend DEBUG] Test 3 Result (Regex):`,
+          singleActivityTestRegex
+            ? `Found (ID: ${singleActivityTestRegex._id.toString()})`
+            : `Not Found`
+        );
+
+        const findQuery = { _id: { $in: activityObjectIds } };
+        console.log(
+          `[Backend DEBUG] Executing activitiesCollection.find() with query:`,
+          findQuery
+        );
+
+        const rawActivitiesFromDb = await activitiesCollection
+          .find(findQuery)
           .toArray();
+
+        console.log(
+          `[Backend DEBUG] Raw activities from toArray() (before mapping to add 'id'): ${rawActivitiesFromDb.length} documents. First 3:`,
+          rawActivitiesFromDb
+            .slice(0, 3)
+            .map((d) => ({
+              _id: d._id,
+              date_activite: d.date_activite,
+              temps_passe: d.temps_passe,
+            }))
+        );
+
+        populatedActivities = rawActivitiesFromDb.map((doc) => ({
+          ...doc,
+          id: doc._id.toString(),
+        }));
+
         console.log(
           `[Backend] getMonthlyReportByIdController: Activités récupérées de la base de données:`,
           populatedActivities.length,
           "activités. Premières activités (ID, type, date):",
-          populatedActivities
-            .slice(0, 3)
-            .map((a) => ({
-              id: a.id,
-              type: a.type_activite,
-              date: a.date_activite,
-            }))
+          populatedActivities.slice(0, 3).map((a) => ({
+            id: a.id,
+            type: a.type_activite,
+            date: a.date_activite,
+          }))
         );
         if (populatedActivities.length !== activityObjectIds.length) {
           console.warn(
@@ -332,4 +428,116 @@ export async function updateMonthlyReportStatusController(
     );
     return { success: false, message: error.message };
   }
+}
+
+// NOUVELLE FONCTION DE TEST POUR LA LECTURE DES ACTIVITÉS
+export async function testActivityRead() {
+  let db;
+  let activitiesCollection;
+  let testActivityId = null;
+  const testResults = {
+    success: false,
+    message: "Test de lecture d'activité terminé.",
+    insertedId: null,
+    findOneResult: null,
+    findInResultCount: 0,
+  };
+
+  try {
+    db = await getMongoDb();
+    activitiesCollection = await getActivitiesCollection(db);
+
+    console.log(`[Backend TEST] Starting activity read test.`);
+    console.log(
+      `[Backend TEST] Connected to DB: "${db.databaseName}", Collection: "${activitiesCollection.collectionName}"`
+    );
+
+    // 1. Insérer une activité de test
+    const dummyActivity = {
+      date_activite: new Date(),
+      temps_passe: 8,
+      description_activite: "Activité de test temporaire",
+      type_activite: "test_type", // Utilisez un ID de type d'activité qui existe ou est factice
+      client_id: "test_client", // Utilisez un ID de client qui existe ou est factice
+      user_id: "test_user_id",
+      status: "draft",
+      created_at: new Date(),
+    };
+    const insertResult = await activitiesCollection.insertOne(dummyActivity);
+    testActivityId = insertResult.insertedId;
+    testResults.insertedId = testActivityId.toString();
+    console.log(
+      `[Backend TEST] Inserted dummy activity with _id: ${testActivityId.toString()}`
+    );
+
+    // 2. Tenter de lire l'activité avec findOne par ObjectId
+    const findOneResult = await activitiesCollection.findOne({
+      _id: testActivityId,
+    });
+    testResults.findOneResult = findOneResult
+      ? findOneResult._id.toString()
+      : "Not Found";
+    console.log(
+      `[Backend TEST] findOne result for ${testActivityId.toString()}: ${
+        testResults.findOneResult
+      }`
+    );
+
+    // 3. Tenter de lire l'activité avec find et $in par ObjectId
+    const findInResult = await activitiesCollection
+      .find({ _id: { $in: [testActivityId] } })
+      .toArray();
+    testResults.findInResultCount = findInResult.length;
+    console.log(
+      `[Backend TEST] find with $in result count for ${testActivityId.toString()}: ${
+        testResults.findInResultCount
+      }`
+    );
+    if (findInResult.length > 0) {
+      console.log(
+        `[Backend TEST] First document from find with $in: ${findInResult[0]._id.toString()}`
+      );
+    }
+
+    if (
+      findOneResult &&
+      findInResult.length > 0 &&
+      findOneResult._id.equals(testActivityId)
+    ) {
+      testResults.success = true;
+      testResults.message =
+        "Test de lecture d'activité réussi : findOne et find avec $in ont trouvé le document.";
+    } else {
+      testResults.success = false;
+      testResults.message =
+        "Test de lecture d'activité échoué : les documents n'ont pas été trouvés comme attendu.";
+    }
+  } catch (error) {
+    console.error(
+      "[Backend TEST] Erreur lors du test de lecture d'activité:",
+      error
+    );
+    testResults.success = false;
+    testResults.message = `Erreur lors du test de lecture: ${error.message}`;
+  } finally {
+    // 4. Supprimer l'activité de test
+    if (testActivityId && activitiesCollection) {
+      try {
+        const deleteResult = await activitiesCollection.deleteOne({
+          _id: testActivityId,
+        });
+        console.log(
+          `[Backend TEST] Deleted dummy activity ${testActivityId.toString()}. Count: ${
+            deleteResult.deletedCount
+          }`
+        );
+      } catch (deleteError) {
+        console.error(
+          `[Backend TEST] Erreur lors de la suppression de l'activité de test ${testActivityId.toString()}:`,
+          deleteError
+        );
+      }
+    }
+  }
+  return testResults;
 }

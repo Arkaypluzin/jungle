@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { format, parseISO, isValid as isValidDateFns } from "date-fns"; // Import isValid from date-fns
+import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
 import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
 import ConfirmationModal from "./ConfirmationModal";
@@ -42,6 +42,8 @@ export default function ReceivedCras({
   const [rejectionReason, setRejectionReason] = useState("");
   const [showCraBoardModal, setShowCraBoardModal] = useState(false);
   const [craBoardReportData, setCraBoardReportData] = useState(null);
+
+  const isAdmin = useMemo(() => userRole === "admin", [userRole]);
 
   const fetchUsersForFilter = useCallback(async () => {
     try {
@@ -273,7 +275,10 @@ export default function ReceivedCras({
 
   const handleViewCra = useCallback(
     async (report) => {
-      console.log("[Frontend] handleViewCra appelé avec le rapport:", report);
+      console.log(
+        "[ReceivedCras] handleViewCra appelé avec le rapport:",
+        report
+      );
       try {
         const response = await fetch(`/api/monthly_cra_reports/${report.id}`);
         if (!response.ok) {
@@ -282,24 +287,25 @@ export default function ReceivedCras({
             errorData.message || "Échec de la récupération du CRA détaillé."
           );
         }
-        const detailedReport = await response.json(); // La route API renvoie l'objet de données directement
+        const detailedReport = await response.json();
 
         console.log(
-          "[Frontend] CRA détaillé reçu pour CraBoard (avant formatage):",
+          "[ReceivedCras] CRA détaillé reçu pour CraBoard (avant formatage):",
           detailedReport
         );
+        console.log(
+          "[ReceivedCras] detailedReport.activities_snapshot (raw):",
+          detailedReport.activities_snapshot
+        );
 
-        // Assurez-vous que detailedReport n'est pas nul/indéfini avant d'accéder à ses propriétés
         if (!detailedReport) {
-          console.error("[Frontend] detailedReport est nul ou indéfini.");
+          console.error("[ReceivedCras] detailedReport est nul ou indéfini.");
           showMessage("Erreur: Rapport détaillé non trouvé.", "error");
           return;
         }
 
-        // --- DÉBUT DE LA CORRECTION POUR "Invalid time value" ---
-        // Valider l'année et le mois avant de créer l'objet Date
         const reportYear = parseInt(detailedReport.year);
-        const reportMonth = parseInt(detailedReport.month); // Le mois est indexé à partir de 1 depuis la DB
+        const reportMonth = parseInt(detailedReport.month);
 
         let craBoardCurrentMonth;
         if (
@@ -308,20 +314,13 @@ export default function ReceivedCras({
           reportMonth >= 1 &&
           reportMonth <= 12
         ) {
-          craBoardCurrentMonth = new Date(reportYear, reportMonth - 1, 1); // Date-fns utilise des mois indexés à partir de 0
-          console.log(
-            `[Frontend] Date valide créée pour CraBoard: ${format(
-              craBoardCurrentMonth,
-              "yyyy-MM-dd"
-            )}`
-          );
+          craBoardCurrentMonth = new Date(reportYear, reportMonth - 1, 1);
         } else {
           console.warn(
-            `[Frontend] Année (${detailedReport.year}) ou mois (${detailedReport.month}) invalide(s) trouvé(s) dans le rapport détaillé. Utilisation de la date actuelle par défaut.`
+            `[ReceivedCras] Année (${detailedReport.year}) ou mois (${detailedReport.month}) invalide(s) trouvé(s) dans le rapport détaillé. Utilisation de la date actuelle par défaut.`
           );
-          craBoardCurrentMonth = new Date(); // Fallback à la date actuelle pour éviter "Invalid time value"
+          craBoardCurrentMonth = new Date();
         }
-        // --- FIN DE LA CORRECTION ---
 
         const activitiesToPass =
           detailedReport.activities_snapshot &&
@@ -329,46 +328,93 @@ export default function ReceivedCras({
             ? detailedReport.activities_snapshot
             : [];
 
-        // Assurez-vous que les IDs d'activité sont des chaînes pour CraBoard
-        const formattedActivities = activitiesToPass.map((activity) => ({
-          ...activity,
-          date_activite: activity.date_activite
-            ? format(parseISO(activity.date_activite), "yyyy-MM-dd")
-            : null,
-          client_id: String(activity.client_id),
-          type_activite: String(activity.type_activite),
-          id: activity.id || activity._id?.toString(), // Assurez-vous que l'ID est une chaîne
-        }));
+        console.log(
+          `[ReceivedCras] Nombre d'activités brutes dans activitiesToPass: ${activitiesToPass.length}`
+        );
+
+        const formattedActivities = activitiesToPass
+          .map((activity, index) => {
+            console.log(
+              `[ReceivedCras]   Processing activity index ${index}, ID: ${
+                activity.id || activity._id
+              }, raw date_activite: ${activity.date_activite}`
+            );
+            let dateObj = null;
+            if (typeof activity.date_activite === "string") {
+              // Try parsing as ISO string first
+              dateObj = parseISO(activity.date_activite);
+              if (!isValidDateFns(dateObj)) {
+                // If ISO parsing fails, try generic Date constructor
+                dateObj = new Date(activity.date_activite);
+              }
+            } else if (activity.date_activite instanceof Date) {
+              dateObj = activity.date_activite;
+            } else if (activity.date_activite) {
+              // Fallback for other potential formats
+              dateObj = new Date(activity.date_activite);
+            }
+            console.log(
+              `[ReceivedCras]   Parsed date_activite: ${dateObj}, isValid: ${isValidDateFns(
+                dateObj
+              )}`
+            );
+
+            const processedActivity = {
+              ...activity,
+              // Ensure date_activite is a valid Date object or null
+              date_activite: isValidDateFns(dateObj) ? dateObj : null,
+              client_id: activity.client_id ? String(activity.client_id) : null,
+              type_activite: String(activity.type_activite),
+              status: activity.status || "draft", // Ensure status is always present
+              id: activity.id || activity._id?.toString(), // Ensure ID is a string
+            };
+            console.log(
+              `[ReceivedCras]   Processed activity (date, status, id): ${processedActivity.date_activite}, ${processedActivity.status}, ${processedActivity.id}`
+            );
+            return processedActivity;
+          })
+          .filter((activity) => {
+            const isActivityValid =
+              activity.date_activite !== null &&
+              isValidDateFns(activity.date_activite);
+            if (!isActivityValid) {
+              console.warn(
+                `[ReceivedCras]   Filtering out activity ID ${
+                  activity.id || activity._id
+                } due to invalid date.`
+              );
+            }
+            return isActivityValid;
+          });
 
         console.log(
-          "[Frontend] Activités formatées passées à CraBoard:",
+          "[ReceivedCras] Activités formatées passées à CraBoard (après filtre):",
           formattedActivities.length,
           "activités. Premières activités:",
-          formattedActivities
-            .slice(0, 3)
-            .map((a) => ({
-              id: a.id,
-              type: a.type_activite,
-              date: a.date_activite,
-            }))
+          formattedActivities.slice(0, 3).map((a) => ({
+            id: a.id,
+            type: a.type_activite,
+            date: a.date_activite,
+            status: a.status,
+          }))
         );
 
         if (formattedActivities.length === 0) {
           console.warn(
-            "[Frontend] Aucune activité formatée trouvée pour le CRA détaillé. Vérifiez les logs du backend."
+            "[ReceivedCras] Aucune activité formatée trouvée pour le CRA détaillé. Vérifiez les logs du backend."
           );
         }
 
         setCraBoardReportData({
           userId: detailedReport.user_id,
           userFirstName: detailedReport.userName,
-          currentMonth: craBoardCurrentMonth, // Utilise la date validée/par défaut
+          currentMonth: craBoardCurrentMonth,
           activities: formattedActivities,
-          // NEW: Passe le motif de rejet si le rapport est rejeté
           rejectionReason:
             detailedReport.status === "rejected"
               ? detailedReport.rejectionReason
               : null,
+          monthlyReports: [detailedReport],
         });
         setShowCraBoardModal(true);
       } catch (err) {
@@ -405,7 +451,7 @@ export default function ReceivedCras({
   const statusOptions = useMemo(
     () => [
       { name: "Tous les statuts", value: "pending_review,validated,rejected" },
-      { name: "En attente", value: "pending_review" }, // Traduit
+      { name: "En attente", value: "pending_review" },
       { name: "Validé", value: "validated" },
       { name: "Rejeté", value: "rejected" },
     ],
@@ -420,6 +466,9 @@ export default function ReceivedCras({
     ],
     []
   );
+
+  // Removed the isAdmin check that was preventing rendering for non-admins.
+  // If you need to re-implement admin-only access, this is the place to do it.
 
   if (loading) {
     return (
@@ -631,7 +680,7 @@ export default function ReceivedCras({
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-semibold ${
                         report.status === "pending_review"
-                          ? "bg-blue-100 text-blue-800"
+                          ? "bg-yellow-100 text-yellow-800"
                           : report.status === "validated"
                           ? "bg-green-100 text-green-800"
                           : report.status === "rejected"
@@ -640,7 +689,7 @@ export default function ReceivedCras({
                       }`}
                     >
                       {report.status === "pending_review"
-                        ? "En attente" // Traduit
+                        ? "En attente"
                         : report.status === "validated"
                         ? "Validé"
                         : "Rejeté"}
@@ -783,7 +832,7 @@ export default function ReceivedCras({
                 currentMonth={craBoardReportData.currentMonth}
                 showMessage={showMessage}
                 readOnly={true} // Important: assurez-vous qu'il est en lecture seule
-                monthlyReports={monthlyReports} // Passe les rapports mensuels pour la logique de statut
+                monthlyReports={craBoardReportData.monthlyReports} // Passe les rapports mensuels pour la logique de statut
                 rejectionReason={craBoardReportData.rejectionReason} // Passe le motif de rejet
               />
             </div>
