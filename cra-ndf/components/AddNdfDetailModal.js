@@ -1,9 +1,11 @@
 "use client";
-import { useState, useEffect, useMemo } from "react"; // Ajout de useMemo
-import { X } from "lucide-react"; // Importation de l'icône de fermeture
+import { useState, useEffect, useMemo } from "react";
+import { X } from "lucide-react";
 
+// Constantes
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
+const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
 
 const MONTHS_MAP = {
   Janvier: 0,
@@ -47,33 +49,33 @@ export default function AddNdfDetailModal({
       const firstDay = new Date(yearValue, monthIndex, 1);
       return firstDay.toISOString().split("T")[0];
     }
-    return ""; // Pas de restriction si le mois n'est pas fourni
+    return "";
   }, [monthIndex, yearValue]);
 
   const maxDate = useMemo(() => {
     if (monthIndex !== null) {
-      const lastDay = new Date(yearValue, monthIndex + 1, 0); // Jour 0 du mois suivant est le dernier jour du mois actuel
+      const lastDay = new Date(yearValue, monthIndex + 1, 0);
       return lastDay.toISOString().split("T")[0];
     }
-    return ""; // Pas de restriction si le mois n'est pas fourni
+    return "";
   }, [monthIndex, yearValue]);
 
-  // Initialise la date par défaut au premier jour du mois de la NDF parente
+  // Initialise la date par défaut
   useEffect(() => {
     if (open && minDate && !dateStr) {
       setDateStr(minDate);
     }
   }, [open, minDate, dateStr]);
 
-  // Fonction pour réinitialiser tous les champs du formulaire
+  // Fonction pour réinitialiser tous les champs
   function resetForm() {
-    setDateStr(minDate || ""); // Réinitialiser à la date min si disponible
+    setDateStr(minDate || "");
     setNature(NATURES[0]);
     setDescription("");
     setTva("0%");
     setMontant("");
     setAutreTaux("");
-    setMultiTaux([""]); // Réinitialiser à un seul champ vide
+    setMultiTaux([""]);
     setImgFile(null);
     setError("");
   }
@@ -82,19 +84,16 @@ export default function AddNdfDetailModal({
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
-    setError(""); // Réinitialiser l'erreur à chaque soumission
+    setError("");
 
     if (ndfStatut !== "Provisoire") {
-      setError(
-        "Impossible d’ajouter une dépense sur une note de frais qui n'est pas au statut 'Provisoire'."
-      );
+      setError("Impossible d’ajouter une dépense sur une note de frais qui n'est pas au statut 'Provisoire'.");
       setLoading(false);
       return;
     }
 
     let img_url = null;
     if (imgFile) {
-      // Logique d'upload d'image
       const formData = new FormData();
       formData.append("file", imgFile);
       try {
@@ -104,14 +103,11 @@ export default function AddNdfDetailModal({
         });
         if (!res.ok) {
           const errorData = await res.json();
-          throw new Error(
-            errorData.error || "Erreur lors de l'upload de l'image."
-          );
+          throw new Error(errorData.error || "Erreur lors de l'upload de l'image.");
         }
         const data = await res.json();
         img_url = data.url;
       } catch (uploadError) {
-        console.error("Erreur upload image:", uploadError);
         setError(uploadError.message);
         setLoading(false);
         return;
@@ -123,9 +119,8 @@ export default function AddNdfDetailModal({
       tvaValue = autreTaux;
     } else if (tva === "multi-taux") {
       // Filtrer les champs vides avant de joindre
-      tvaValue = multiTaux.filter((t) => t.trim() !== "").join(" / ");
+      tvaValue = multiTaux.filter((t) => t && t.trim() !== "").join(" / ");
       if (!tvaValue) {
-        // Si tous les champs multi-taux sont vides
         setError("Veuillez spécifier au moins un taux pour 'multi-taux'.");
         setLoading(false);
         return;
@@ -138,7 +133,7 @@ export default function AddNdfDetailModal({
       nature,
       description,
       tva: tvaValue,
-      montant: parseFloat(montant), // Convertir en nombre
+      montant: parseFloat(montant),
       img_url,
     };
 
@@ -154,9 +149,8 @@ export default function AddNdfDetailModal({
       }
       setOpen(false);
       resetForm();
-      window.location.reload(); // Recharger la page pour afficher les nouvelles données
+      window.location.reload();
     } catch (err) {
-      console.error("Erreur lors de l'ajout de la dépense:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -208,7 +202,7 @@ export default function AddNdfDetailModal({
 
       {open && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-lg relative transform transition-all scale-100 opacity-100 duration-300 ease-out max-h-[80vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-lg relative transform transition-all scale-100 opacity-100 duration-300 ease-out overflow-y-auto max-h-[90vh]">
             <button
               type="button"
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -241,8 +235,8 @@ export default function AddNdfDetailModal({
                   value={dateStr}
                   required
                   onChange={(e) => setDateStr(e.target.value)}
-                  min={minDate} // Restriction de la date minimale
-                  max={maxDate} // Restriction de la date maximale
+                  min={minDate}
+                  max={maxDate}
                 />
               </div>
 
@@ -325,11 +319,10 @@ export default function AddNdfDetailModal({
                     required
                     onChange={(e) => {
                       const val = e.target.value;
-                      // Permet de basculer vers multi-taux si l'utilisateur saisit un "/"
                       if (val.includes("/")) {
                         setTva("multi-taux");
                         setMultiTaux(val.split("/").map((s) => s.trim()));
-                        setAutreTaux(""); // Clear autreTaux
+                        setAutreTaux("");
                       } else {
                         setAutreTaux(val);
                       }
@@ -345,16 +338,19 @@ export default function AddNdfDetailModal({
                   </label>
                   {multiTaux.map((val, idx) => (
                     <div key={idx} className="flex items-center gap-3">
-                      <input
-                        type="text"
-                        placeholder={`Taux ${idx + 1}`}
+                      <select
                         className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         value={val}
                         required
-                        onChange={(e) =>
-                          handleTvaInputChange(idx, e.target.value)
-                        }
-                      />
+                        onChange={(e) => handleTvaInputChange(idx, e.target.value)}
+                      >
+                        <option value="">Choisir un taux</option>
+                        {MULTI_TVA_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}%
+                          </option>
+                        ))}
+                      </select>
                       {multiTaux.length > 1 && (
                         <button
                           type="button"
