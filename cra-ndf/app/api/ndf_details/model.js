@@ -23,7 +23,7 @@ export async function getDetailById(uuid) {
 
 export async function createDetail(detail) {
     const db = await getMongoDb();
-    const { uuid, id_ndf, date_str, nature, description, tva, montant, img_url } = detail;
+    const { uuid, id_ndf, date_str, nature, description, tva, montant, img_url, client_id } = detail;
     await db.collection("ndf_details").insertOne({
         uuid,
         id_ndf,
@@ -32,14 +32,15 @@ export async function createDetail(detail) {
         description,
         tva,
         montant,
-        img_url
+        img_url,
+        client_id
     });
     return detail;
 }
 
 export async function updateDetail(uuid, update) {
     const db = await getMongoDb();
-    const { date_str, nature, description, tva, montant, img_url } = update;
+    const { date_str, nature, description, tva, montant, img_url, client_id } = update;
     await db.collection("ndf_details").updateOne(
         { uuid },
         {
@@ -49,7 +50,8 @@ export async function updateDetail(uuid, update) {
                 description,
                 tva,
                 montant,
-                img_url
+                img_url,
+                client_id
             }
         }
     );

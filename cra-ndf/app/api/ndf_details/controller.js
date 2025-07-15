@@ -45,7 +45,7 @@ export async function handlePost(req) {
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id_ndf, date_str, nature, description, tva, montant, img_url } = await req.json();
+    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id } = await req.json();
 
     const ndf = await getNdfById(id_ndf);
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
@@ -63,7 +63,8 @@ export async function handlePost(req) {
         description,
         tva,
         montant,
-        img_url: img_url || null
+        img_url: img_url || null,
+        client_id
     };
     await createDetail(newDetail);
 
@@ -103,7 +104,8 @@ export async function handlePut(req, { params }) {
         description,
         tva,
         montant,
-        img_url: img_url || null
+        img_url: img_url || null,
+        client_id
     });
     return Response.json(updated);
 }
