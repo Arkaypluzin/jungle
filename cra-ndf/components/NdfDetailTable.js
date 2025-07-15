@@ -534,26 +534,26 @@ export default function NdfDetailTable({
             </tbody>
             <tfoot className="bg-gray-100 border-t-2 border-gray-300">
               <tr>
-                <td colSpan={6} className="py-3 px-4 text-right text-base font-bold text-gray-900">
+                <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total HT
                 </td>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalHT.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={6} className="py-3 px-4 text-right text-base font-semibold text-gray-900">
+                <td colSpan={2} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   Total TVA
                 </td>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                <td colSpan={7} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   {totalTVA.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={6} className="py-3 px-4 text-right text-base font-bold text-gray-900">
+                <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total TTC
                 </td>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalTTC.toFixed(2)}€
                 </td>
               </tr>
