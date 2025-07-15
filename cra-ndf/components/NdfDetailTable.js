@@ -34,7 +34,6 @@ export default function NdfDetailTable({
   // Fonction de rafraîchissement (rechargement de la page)
   const refresh = async () => window.location.reload();
 
-  // Fonction pour l'export PDF
   const exportToPDF = async () => {
     const doc = new jsPDF();
 
@@ -58,25 +57,23 @@ export default function NdfDetailTable({
 
     // Function to add header and footer to each page
     const addHeaderAndFooter = (pageNumber) => {
-      // Header
       doc.setFontSize(10);
       doc.setTextColor(100); // Gray color
-      doc.text(titleText, 14, 10); // Adjust Y position if needed
+      doc.text(titleText, 14, 10); // Header
 
-      // Footer
       doc.text(
         `Page ${pageNumber}`,
         doc.internal.pageSize.getWidth() - 30,
         doc.internal.pageSize.getHeight() - 10
-      );
+      ); // Footer
     };
 
     // Add header and footer to the first page
     addHeaderAndFooter(1);
 
-    doc.setFontSize(20); // Larger font for main title
-    doc.setTextColor(20, 20, 20); // Very dark gray for main title
-    doc.text(titleText, 14, 25); // Main title position, slightly lower
+    doc.setFontSize(20);
+    doc.setTextColor(20, 20, 20);
+    doc.text(titleText, 14, 25);
 
     const head = [
       [
@@ -90,60 +87,76 @@ export default function NdfDetailTable({
       ],
     ];
 
+    // --- CRÉATION DES LIGNES AVEC TVA MULTI-TAUX FORMATÉ ---
     const rows = filteredDetails.map((detail) => [
       detail.date_str,
       detail.nature,
       detail.description,
-      detail.tva,
-      `${parseFloat(detail.montant).toFixed(2)}€`, // Ensure 2 decimal places
-      `${getTTC(detail.montant, detail.tva).toFixed(2)}€`, // Ensure 2 decimal places
+      detail.tva && detail.tva.includes("/")
+        ? detail.tva
+          .split("/")
+          .map((t) => {
+            const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
+            const ht = parseFloat(detail.montant) || 0;
+            if (!isNaN(taux)) {
+              const tvaMontant = ht * taux / 100;
+              return `${taux}% -> +${tvaMontant.toFixed(2)}€`;
+            }
+            return null;
+          })
+          .filter(Boolean)
+          .join('\n')
+        : detail.tva,
+      `${parseFloat(detail.montant).toFixed(2)}€`, // Montant HT
+      `${getTTC(detail.montant, detail.tva).toFixed(2)}€`, // Montant TTC
       detail.img_url ? "Oui" : "Non",
     ]);
 
+    // --- TABLEAU PRINCIPAL ---
     autoTable(doc, {
       head,
       body: rows,
-      startY: 40, // Start table below the main title
+      startY: 40,
       margin: { left: 10, right: 10 },
       styles: {
         fontSize: 9,
-        cellPadding: 2.5, // Slightly more padding
+        cellPadding: 2.5,
         valign: "middle",
         halign: "left",
-        textColor: [50, 50, 50], // Dark gray text for body
-        lineColor: [220, 220, 220], // Light gray borders
-        lineWidth: 0.1, // Thin borders
+        textColor: [50, 50, 50],
+        lineColor: [220, 220, 220],
+        lineWidth: 0.1,
+        overflow: 'linebreak', 
+        cellWidth: 'auto',
       },
       headStyles: {
-        fillColor: [30, 144, 255], // Dodger Blue - a bit more vibrant
-        textColor: 255, // White
+        fillColor: [30, 144, 255],
+        textColor: 255,
         fontStyle: "bold",
-        halign: "center", // Center header text
+        halign: "center",
         fontSize: 10,
-        cellPadding: 3.5, // More padding for header
+        cellPadding: 3.5,
       },
       alternateRowStyles: {
-        fillColor: [240, 248, 255], // AliceBlue - very light blue for alternate rows
+        fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "left", cellWidth: 20 }, // Date
-        1: { halign: "left", cellWidth: 25 }, // Nature
-        // Description: Laissez autoTable calculer sa largeur. minCellWidth pour éviter qu'elle ne soit trop petite.
+        0: { halign: "left", cellWidth: 20 },
+        1: { halign: "left", cellWidth: 25 },
         2: { halign: "left", minCellWidth: 40, cellWidth: "auto" },
-        3: { halign: "center", cellWidth: 20 }, // TVA
-        4: { halign: "right", cellWidth: 25 }, // Montant HT
-        5: { halign: "right", fontStyle: "bold", cellWidth: 25 }, // Montant TTC
-        6: { halign: "center", cellWidth: 20 }, // Justificatif
+        3: { halign: "center", cellWidth: 28 },
+        4: { halign: "right", cellWidth: 25 },
+        5: { halign: "right", fontStyle: "bold", cellWidth: 25 },
+        6: { halign: "center", cellWidth: 20 },
       },
       didDrawPage: (data) => {
-        // Add header and footer to subsequent pages
         if (data.pageNumber > 1) {
           addHeaderAndFooter(data.pageNumber);
         }
       },
     });
 
-    // Totals table (styled for better visibility)
+    // --- TABLEAU TOTAUX ---
     autoTable(doc, {
       body: [
         [
@@ -166,7 +179,7 @@ export default function NdfDetailTable({
               textColor: [30, 30, 30],
             },
           },
-          { content: "" }, // Placeholder for Justificatif column
+          { content: "" },
         ],
         [
           {
@@ -188,42 +201,41 @@ export default function NdfDetailTable({
               textColor: [30, 30, 30],
             },
           },
-          { content: "" }, // Placeholder for Justificatif column
+          { content: "" },
         ],
       ],
       theme: "plain",
-      startY: doc.lastAutoTable.finalY + 8, // More space below the main table
+      startY: doc.lastAutoTable.finalY + 8,
       margin: { left: 10, right: 10 },
       styles: {
         fontSize: 10,
         cellPadding: 3,
-        textColor: [0, 0, 0], // Black text for totals
+        textColor: [0, 0, 0],
       },
       columnStyles: {
-        0: { halign: "right", fontStyle: "bold" }, // Total HT/TTC label
-        1: { halign: "left", fontStyle: "bold" }, // Value
+        0: { halign: "right", fontStyle: "bold" },
+        1: { halign: "left", fontStyle: "bold" },
       },
     });
 
-    // Function to convert image URL to Data URL
+    // --- JUSTIFICATIFS ---
     async function toDataUrl(url) {
       const response = await fetch(url);
       const blob = await response.blob();
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject; // Handle read errors
+        reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
     }
 
-    // Add justifications on separate pages
     for (const detail of filteredDetails) {
       if (detail.img_url) {
         doc.addPage();
-        addHeaderAndFooter(doc.internal.getNumberOfPages()); // Add header/footer to new page
+        addHeaderAndFooter(doc.internal.getNumberOfPages());
 
-        doc.setFontSize(18); // Larger title for justification page
+        doc.setFontSize(18);
         doc.setTextColor(20, 20, 20);
         doc.text(
           `Justificatif pour la dépense du ${detail.date_str} (${detail.nature})`,
@@ -237,13 +249,11 @@ export default function NdfDetailTable({
           const pageWidth = doc.internal.pageSize.getWidth();
           const pageHeight = doc.internal.pageSize.getHeight();
 
-          // Calculate image dimensions to fit page with margins
-          const margin = 20; // 20mm on each side
+          const margin = 20;
           let imgWidth = pageWidth - 2 * margin;
           let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
 
-          // If image height exceeds available page height, scale down by height
-          const availableHeight = pageHeight - 2 * margin - 30; // 30mm for title and top margin
+          const availableHeight = pageHeight - 2 * margin - 30;
           if (imgHeight > availableHeight) {
             imgHeight = availableHeight;
             imgWidth = (imgProps.width * imgHeight) / imgProps.height;
@@ -256,22 +266,21 @@ export default function NdfDetailTable({
             35,
             imgWidth,
             imgHeight
-          ); // Adjust Y position
+          );
         } catch (e) {
           console.error("Error loading justification for PDF:", e);
           doc.setFontSize(12);
-          doc.setTextColor(200, 0, 0); // Red color for error message
+          doc.setTextColor(200, 0, 0);
           doc.text(
             "Erreur lors du chargement du justificatif. Le fichier pourrait être manquant ou corrompu.",
             14,
             40
-          ); // Adjust Y position
+          );
         }
       }
     }
 
-    const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""
-      }.pdf`;
+    const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`;
     doc.save(fileName);
   };
 
