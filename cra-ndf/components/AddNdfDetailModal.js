@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 
-// Constantes
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
@@ -33,14 +32,15 @@ export default function AddNdfDetailModal({
   const [nature, setNature] = useState(NATURES[0]);
   const [description, setDescription] = useState("");
   const [tva, setTva] = useState("0%");
-  const [montant, setMontant] = useState("");
+  const [montant, setMontant] = useState(""); // Global montant (HT)
   const [autreTaux, setAutreTaux] = useState("");
-  const [multiTaux, setMultiTaux] = useState([""]);
+  // Multi-taux: [{ taux: "10", montant: "12.34" }]
+  const [multiTaux, setMultiTaux] = useState([{ taux: "", montant: "" }]);
   const [imgFile, setImgFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Calcul des dates min et max pour le sélecteur de date
+  // Dates min/max
   const monthIndex = parentNdfMonth ? MONTHS_MAP[parentNdfMonth] : null;
   const yearValue = parentNdfYear || new Date().getFullYear();
 
@@ -60,14 +60,13 @@ export default function AddNdfDetailModal({
     return "";
   }, [monthIndex, yearValue]);
 
-  // Initialise la date par défaut
+  // Date par défaut
   useEffect(() => {
     if (open && minDate && !dateStr) {
       setDateStr(minDate);
     }
   }, [open, minDate, dateStr]);
 
-  // Fonction pour réinitialiser tous les champs
   function resetForm() {
     setDateStr(minDate || "");
     setNature(NATURES[0]);
@@ -75,12 +74,28 @@ export default function AddNdfDetailModal({
     setTva("0%");
     setMontant("");
     setAutreTaux("");
-    setMultiTaux([""]);
+    setMultiTaux([{ taux: "", montant: "" }]);
     setImgFile(null);
     setError("");
   }
 
-  // Gestionnaire de soumission du formulaire
+  // Calcul du montant HT global (si multi-taux)
+  const montantMultiHt = useMemo(() => {
+    if (tva !== "multi-taux") return null;
+    return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
+  }, [multiTaux, tva]);
+
+  // Calcul du TTC (si multi-taux)
+  const montantMultiTtc = useMemo(() => {
+    if (tva !== "multi-taux") return null;
+    return multiTaux.reduce((acc, mt) => {
+      const m = parseFloat(mt.montant) || 0;
+      const taux = parseFloat(mt.taux) || 0;
+      return acc + m * (1 + taux / 100);
+    }, 0).toFixed(2);
+  }, [multiTaux, tva]);
+
+  // Submission
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
@@ -115,16 +130,26 @@ export default function AddNdfDetailModal({
     }
 
     let tvaValue = tva;
+    let montantValue = tva === "multi-taux" ? parseFloat(montantMultiHt) : parseFloat(montant);
+    let extra = {};
+
     if (tva === "autre taux") {
       tvaValue = autreTaux;
     } else if (tva === "multi-taux") {
-      // Filtrer les champs vides avant de joindre
-      tvaValue = multiTaux.filter((t) => t && t.trim() !== "").join(" / ");
-      if (!tvaValue) {
-        setError("Veuillez spécifier au moins un taux pour 'multi-taux'.");
+      // Valide tous les champs
+      if (
+        multiTaux.some(
+          (mt) => !mt.taux || mt.taux === "" || !mt.montant || mt.montant === ""
+        )
+      ) {
+        setError("Veuillez compléter tous les taux et montants en multi-taux.");
         setLoading(false);
         return;
       }
+      tvaValue = multiTaux
+        .map((mt) => `${mt.taux}%`)
+        .join(" / ");
+      extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
     }
 
     const body = {
@@ -133,8 +158,9 @@ export default function AddNdfDetailModal({
       nature,
       description,
       tva: tvaValue,
-      montant: parseFloat(montant),
+      montant: montantValue,
       img_url,
+      ...extra,
     };
 
     try {
@@ -157,25 +183,27 @@ export default function AddNdfDetailModal({
     }
   }
 
-  // Gère le changement des inputs pour les multi-taux
-  function handleTvaInputChange(idx, value) {
-    setMultiTaux((prev) => {
-      const arr = [...prev];
-      arr[idx] = value;
-      return arr;
-    });
+  // Gestion multi-taux
+  function handleMultiTauxChange(idx, field, value) {
+    setMultiTaux((prev) =>
+      prev.map((mt, i) =>
+        i === idx ? { ...mt, [field]: value } : mt
+      )
+    );
   }
-
-  // Ajoute un champ pour un taux de TVA supplémentaire (max 3)
   function addMultiTauxField() {
-    if (multiTaux.length < 3) setMultiTaux([...multiTaux, ""]);
+    if (multiTaux.length < 3) setMultiTaux([...multiTaux, { taux: "", montant: "" }]);
+  }
+  function removeMultiTauxField(idx) {
+    if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
   }
 
-  // Supprime un champ de taux de TVA (min 1)
-  function removeMultiTauxField(idx) {
-    if (multiTaux.length > 1)
-      setMultiTaux(multiTaux.filter((_, i) => i !== idx));
-  }
+  // Quand on est sur multi-taux, mettre à jour montant (HT global) automatiquement
+  useEffect(() => {
+    if (tva === "multi-taux") {
+      setMontant(montantMultiHt || "");
+    }
+  }, [montantMultiHt, tva]);
 
   return (
     <>
@@ -291,7 +319,7 @@ export default function AddNdfDetailModal({
                   onChange={(e) => {
                     setTva(e.target.value);
                     setAutreTaux("");
-                    setMultiTaux([""]);
+                    setMultiTaux([{ taux: "", montant: "" }]);
                   }}
                 >
                   {TVAS.map((t) => (
@@ -317,16 +345,7 @@ export default function AddNdfDetailModal({
                     className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     value={autreTaux}
                     required
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val.includes("/")) {
-                        setTva("multi-taux");
-                        setMultiTaux(val.split("/").map((s) => s.trim()));
-                        setAutreTaux("");
-                      } else {
-                        setAutreTaux(val);
-                      }
-                    }}
+                    onChange={(e) => setAutreTaux(e.target.value)}
                   />
                 </div>
               )}
@@ -334,23 +353,33 @@ export default function AddNdfDetailModal({
               {tva === "multi-taux" && (
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Taux multiples (%) :
+                    Taux multiples (%) et montants :
                   </label>
-                  {multiTaux.map((val, idx) => (
+                  {multiTaux.map((mt, idx) => (
                     <div key={idx} className="flex items-center gap-3">
                       <select
-                        className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        value={val}
+                        className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        value={mt.taux}
                         required
-                        onChange={(e) => handleTvaInputChange(idx, e.target.value)}
+                        onChange={(e) => handleMultiTauxChange(idx, "taux", e.target.value)}
                       >
-                        <option value="">Choisir un taux</option>
+                        <option value="">Taux</option>
                         {MULTI_TVA_OPTIONS.map((option) => (
                           <option key={option} value={option}>
                             {option}%
                           </option>
                         ))}
                       </select>
+                      <input
+                        type="number"
+                        placeholder="Montant HT"
+                        min={0}
+                        step="0.01"
+                        className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        value={mt.montant}
+                        required
+                        onChange={(e) => handleMultiTauxChange(idx, "montant", e.target.value)}
+                      />
                       {multiTaux.length > 1 && (
                         <button
                           type="button"
@@ -392,7 +421,7 @@ export default function AddNdfDetailModal({
                   htmlFor="montant-input"
                   className="block text-sm font-medium text-gray-700 mb-2"
                 >
-                  Montant (€) :
+                  Montant HT (€) :
                 </label>
                 <input
                   type="number"
@@ -403,6 +432,7 @@ export default function AddNdfDetailModal({
                   step="0.01"
                   required
                   onChange={(e) => setMontant(e.target.value)}
+                  disabled={tva === "multi-taux"}
                 />
               </div>
 
