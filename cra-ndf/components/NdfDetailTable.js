@@ -84,18 +84,18 @@ export default function NdfDetailTable({
         "Date",
         "Nature",
         "Description",
-        "TVA",
         "Montant HT",
+        "TVA",
         "Montant TTC",
         "Justificatif",
       ],
     ];
 
-    // --- CRÉATION DES LIGNES AVEC TVA MULTI-TAUX FORMATÉ ---
     const rows = filteredDetails.map((detail) => [
       detail.date_str,
       detail.nature,
       detail.description,
+      `${parseFloat(detail.montant).toFixed(2)}€`,
       detail.tva && detail.tva.includes("/")
         ? detail.tva
           .split("/")
@@ -104,14 +104,13 @@ export default function NdfDetailTable({
             const ht = parseFloat(detail.montant) || 0;
             if (!isNaN(taux)) {
               const tvaMontant = ht * taux / 100;
-              return `${taux}% ⇒ +${tvaMontant.toFixed(2)}€`;
+              return `${taux}% > +${tvaMontant.toFixed(2)}€`;
             }
             return null;
           })
           .filter(Boolean)
           .join('\n')
         : detail.tva,
-      `${parseFloat(detail.montant).toFixed(2)}€`, // Montant HT
       `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
       detail.img_url ? "Oui" : "Non",
     ]);
@@ -145,13 +144,13 @@ export default function NdfDetailTable({
         fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "left", cellWidth: 20 },
-        1: { halign: "left", cellWidth: 25 },
-        2: { halign: "left", minCellWidth: 40, cellWidth: "auto" },
-        3: { halign: "center", cellWidth: 28 },
-        4: { halign: "right", cellWidth: 25 },
-        5: { halign: "right", fontStyle: "bold", cellWidth: 25 },
-        6: { halign: "center", cellWidth: 20 },
+        0: { halign: "center", cellWidth: 20 },   // Date
+        1: { halign: "center", cellWidth: 25 },   // Nature
+        2: { halign: "center", minCellWidth: 40, cellWidth: "auto" }, // Description
+        3: { halign: "center", cellWidth: 25 },  // Montant HT
+        4: { halign: "center", cellWidth: 28 }, // TVA
+        5: { halign: "center", fontStyle: "bold", cellWidth: 25 }, // Montant TTC
+        6: { halign: "center", cellWidth: 20 }, // Justificatif
       },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
@@ -160,52 +159,20 @@ export default function NdfDetailTable({
       },
     });
 
-    // --- TABLEAU TOTAUX ---
     autoTable(doc, {
       body: [
         [
-          {
-            content: "Total HT",
-            colSpan: 5,
-            styles: {
-              halign: "right",
-              fontStyle: "bold",
-              fontSize: 11,
-              textColor: [30, 30, 30],
-            },
-          },
-          {
-            content: `${totalHT.toFixed(2)}€`,
-            styles: {
-              fontStyle: "bold",
-              halign: "left",
-              fontSize: 11,
-              textColor: [30, 30, 30],
-            },
-          },
+          { content: "Total HT", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: `${totalHT.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          {
-            content: "Total TTC",
-            colSpan: 5,
-            styles: {
-              halign: "right",
-              fontStyle: "bold",
-              fontSize: 11,
-              textColor: [30, 30, 30],
-            },
-          },
-          {
-            content: `${totalTTC.toFixed(2)}€`,
-            styles: {
-              fontStyle: "bold",
-              halign: "left",
-              fontSize: 11,
-              textColor: [30, 30, 30],
-            },
-          },
+          { content: "Total TTC", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
+        ],
+        [
+          { content: `Nombre total de lignes de note de frais : ${filteredDetails.length}`, colSpan: 7, styles: { halign: "center", fontSize: 10, textColor: [80, 80, 80], fontStyle: "italic" } },
         ],
       ],
       theme: "plain",
@@ -221,6 +188,7 @@ export default function NdfDetailTable({
         1: { halign: "left", fontStyle: "bold" },
       },
     });
+
 
     // --- JUSTIFICATIFS ---
     async function toDataUrl(url) {
@@ -617,22 +585,22 @@ export default function NdfDetailTable({
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Date
                 </th>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Nature
                 </th>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Description
                 </th>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  TVA
-                </th>
-                <th className="py-3 px-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant HT
                 </th>
-                <th className="py-3 px-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  TVA
+                </th>
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant TTC
                 </th>
                 <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -660,6 +628,9 @@ export default function NdfDetailTable({
                     <td className="py-3 px-3 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
                       {detail.description}
                     </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">
+                      {parseFloat(detail.montant).toFixed(2)}€
+                    </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
                       {detail.tva && detail.tva.includes("/") ? (
                         <div>
@@ -682,10 +653,6 @@ export default function NdfDetailTable({
                       ) : (
                         <span>{detail.tva}</span>
                       )}
-                    </td>
-
-                    <td className="py-3 px-3 whitespace-nowrap text-right text-sm text-gray-800">
-                      {parseFloat(detail.montant).toFixed(2)}€
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-right text-sm font-bold text-gray-900">
                       {montantTTC.toFixed(2)}€
@@ -735,34 +702,28 @@ export default function NdfDetailTable({
             </tbody>
             <tfoot className="bg-gray-100 border-t-2 border-gray-300">
               <tr>
-                <td
-                  colSpan={5}
-                  className="py-3 px-4 text-right text-base font-bold text-gray-900"
-                >
+                <td colSpan={5} className="py-3 px-4 text-right text-base font-bold text-gray-900">
                   Total HT
                 </td>
-                <td
-                  colSpan={3}
-                  className="py-3 px-4 text-left text-base font-bold text-gray-900"
-                >
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalHT.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td
-                  colSpan={5}
-                  className="py-3 px-4 text-right text-base font-bold text-gray-900"
-                >
+                <td colSpan={5} className="py-3 px-4 text-right text-base font-bold text-gray-900">
                   Total TTC
                 </td>
-                <td
-                  colSpan={3}
-                  className="py-3 px-4 text-left text-base font-bold text-gray-900"
-                >
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalTTC.toFixed(2)}€
                 </td>
               </tr>
+              <tr>
+                <td colSpan={8} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+                  Nombre total de lignes de note de frais : {filteredDetails.length}
+                </td>
+              </tr>
             </tfoot>
+
           </table>
         </div>
       )}
