@@ -52,6 +52,7 @@ export default function NdfDetailTable({
   // Fonction de rafraîchissement
   const refresh = async () => window.location.reload();
 
+  // Export PDF avec colonne Client EN FORMAT PAYSAGE
   const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: "landscape" });
 
@@ -111,18 +112,18 @@ export default function NdfDetailTable({
       `${parseFloat(detail.montant).toFixed(2)}€`,
       detail.tva && detail.tva.includes("/")
         ? detail.tva
-          .split("/")
-          .map((t) => {
-            const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
-            const ht = parseFloat(detail.montant) || 0;
-            if (!isNaN(taux)) {
-              const tvaMontant = ht * taux / 100;
-              return `${taux}% > +${tvaMontant.toFixed(2)}€`;
-            }
-            return null;
-          })
-          .filter(Boolean)
-          .join('\n')
+            .split("/")
+            .map((t) => {
+              const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
+              const ht = parseFloat(detail.montant) || 0;
+              if (!isNaN(taux)) {
+                const tvaMontant = ht * taux / 100;
+                return `${taux}% > +${tvaMontant.toFixed(2)}€`;
+              }
+              return null;
+            })
+            .filter(Boolean)
+            .join('\n')
         : detail.tva,
       `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
       detail.img_url ? "Oui" : "Non",
