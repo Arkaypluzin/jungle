@@ -23,8 +23,8 @@ export default function NdfDetailTable({
   const [details, setDetails] = useState(initialDetails);
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState([]);
+  const [projets, setProjets] = useState([]);
 
-  // Filtres et états
   const [filterModal, setFilterModal] = useState(false);
   const [sortBy, setSortBy] = useState("");
   const [sortDir, setSortDir] = useState("asc");
@@ -34,25 +34,31 @@ export default function NdfDetailTable({
   const [tvaMultiValue, setTvaMultiValue] = useState("");
   const [resetKey, setResetKey] = useState(0);
 
-  // Récupère la liste des clients au mount
   useEffect(() => {
     fetch("/api/client")
       .then((res) => res.json())
       .then(setClients)
       .catch(() => setClients([]));
+    fetch("/api/projets")
+      .then((res) => res.json())
+      .then(setProjets)
+      .catch(() => setProjets([]));
   }, []);
 
-  // Récupérer le nom du client à partir de son id
   function getClientName(client_id) {
     if (!client_id) return "";
     const c = clients.find((c) => c.id === client_id);
     return c ? c.nom_client : "";
   }
 
-  // Fonction de rafraîchissement
+  function getProjetName(projet_id) {
+    if (!projet_id) return "";
+    const p = projets.find((p) => (p.id || p.uuid) === projet_id);
+    return p ? p.nom : "";
+  }
+
   const refresh = async () => window.location.reload();
 
-  // Export PDF avec colonne Client EN FORMAT PAYSAGE
   const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: "landscape" });
 
@@ -90,13 +96,13 @@ export default function NdfDetailTable({
     doc.setTextColor(20, 20, 20);
     doc.text(titleText, 14, 25);
 
-    // --- Ajout de la colonne Client dans le head
     const head = [
       [
         "Date",
         "Nature",
         "Description",
         "Client",
+        "Projet",
         "Montant HT",
         "TVA",
         "Montant TTC",
@@ -109,21 +115,22 @@ export default function NdfDetailTable({
       detail.nature,
       detail.description,
       getClientName(detail.client_id),
+      getProjetName(detail.projet_id),
       `${parseFloat(detail.montant).toFixed(2)}€`,
       detail.tva && detail.tva.includes("/")
         ? detail.tva
-            .split("/")
-            .map((t) => {
-              const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
-              const ht = parseFloat(detail.montant) || 0;
-              if (!isNaN(taux)) {
-                const tvaMontant = ht * taux / 100;
-                return `${taux}% > +${tvaMontant.toFixed(2)}€`;
-              }
-              return null;
-            })
-            .filter(Boolean)
-            .join('\n')
+          .split("/")
+          .map((t) => {
+            const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
+            const ht = parseFloat(detail.montant) || 0;
+            if (!isNaN(taux)) {
+              const tvaMontant = ht * taux / 100;
+              return `${taux}% > +${tvaMontant.toFixed(2)}€`;
+            }
+            return null;
+          })
+          .filter(Boolean)
+          .join('\n')
         : detail.tva,
       `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
       detail.img_url ? "Oui" : "Non",
@@ -157,14 +164,15 @@ export default function NdfDetailTable({
         fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "center", cellWidth: 30 },   // Date
-        1: { halign: "center", cellWidth: 30 },   // Nature
-        2: { halign: "center", minCellWidth: 50, cellWidth: 55 }, // Description
-        3: { halign: "center", cellWidth: 35 }, // Client
-        4: { halign: "center", cellWidth: 28 },  // Montant HT
-        5: { halign: "center", cellWidth: 32 }, // TVA
-        6: { halign: "center", fontStyle: "bold", cellWidth: 28 }, // Montant TTC
-        7: { halign: "center", cellWidth: 25 }, // Justificatif
+        0: { halign: "center", cellWidth: 30 },
+        1: { halign: "center", cellWidth: 30 },
+        2: { halign: "center", minCellWidth: 50, cellWidth: 55 },
+        3: { halign: "center", cellWidth: 35 },
+        4: { halign: "center", cellWidth: 35 },
+        5: { halign: "center", cellWidth: 28 },
+        6: { halign: "center", cellWidth: 32 },
+        7: { halign: "center", fontStyle: "bold", cellWidth: 28 },
+        8: { halign: "center", cellWidth: 25 },
       },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
@@ -176,22 +184,22 @@ export default function NdfDetailTable({
     autoTable(doc, {
       body: [
         [
-          { content: "Total HT", colSpan: 6, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: "Total HT", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalHT.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          { content: "Total TVA", colSpan: 6, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: "Total TVA", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalTVA.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          { content: "Total TTC", colSpan: 6, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: "Total TTC", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          { content: `Nombre total de lignes de note de frais : ${filteredDetails.length}`, colSpan: 8, styles: { halign: "center", fontSize: 10, textColor: [80, 80, 80], fontStyle: "italic" } },
+          { content: `Nombre total de lignes de note de frais : ${filteredDetails.length}`, colSpan: 9, styles: { halign: "center", fontSize: 10, textColor: [80, 80, 80], fontStyle: "italic" } },
         ],
       ],
       theme: "plain",
@@ -255,7 +263,6 @@ export default function NdfDetailTable({
             imgHeight
           );
         } catch (e) {
-          console.error("Error loading justification for PDF:", e);
           doc.setFontSize(12);
           doc.setTextColor(200, 0, 0);
           doc.text(
@@ -271,7 +278,6 @@ export default function NdfDetailTable({
     doc.save(fileName);
   };
 
-  // Montant TTC ligne, arrondi au centime supérieur
   const getTTCLineRounded = useCallback((montant, tvaStr) => {
     const base = parseFloat(montant) || 0;
     if (!tvaStr || tvaStr === "0%") return base;
@@ -295,6 +301,7 @@ export default function NdfDetailTable({
         detail.nature?.toLowerCase().includes(lower) ||
         detail.description?.toLowerCase().includes(lower) ||
         getClientName(detail.client_id)?.toLowerCase().includes(lower) ||
+        getProjetName(detail.projet_id)?.toLowerCase().includes(lower) ||
         detail.tva?.toLowerCase().includes(lower) ||
         String(detail.montant).toLowerCase().includes(lower)
       );
@@ -360,6 +367,7 @@ export default function NdfDetailTable({
     sortDir,
     getTTCLineRounded,
     clients,
+    projets,
   ]);
 
   const totalHT = useMemo(
@@ -408,8 +416,6 @@ export default function NdfDetailTable({
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
-      {/* ... Barre de recherche et filtres inchangés ... */}
-
       {filteredDetails.length > 0 && (
         <div className="overflow-x-auto rounded-lg shadow-sm border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200">
@@ -426,6 +432,9 @@ export default function NdfDetailTable({
                 </th>
                 <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Client
+                </th>
+                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Projet
                 </th>
                 <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant HT
@@ -460,6 +469,9 @@ export default function NdfDetailTable({
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {getClientName(detail.client_id) || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {getProjetName(detail.projet_id) || <span className="italic text-gray-400">-</span>}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800 text-center">
                       {parseFloat(detail.montant).toFixed(2)}€
@@ -535,7 +547,7 @@ export default function NdfDetailTable({
             </tbody>
             <tfoot className="bg-gray-100 border-t-2 border-gray-300">
               <tr>
-                <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total HT
                 </td>
                 <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
@@ -543,7 +555,7 @@ export default function NdfDetailTable({
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   Total TVA
                 </td>
                 <td colSpan={7} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
@@ -551,7 +563,7 @@ export default function NdfDetailTable({
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total TTC
                 </td>
                 <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
@@ -559,7 +571,7 @@ export default function NdfDetailTable({
                 </td>
               </tr>
               <tr>
-                <td colSpan={9} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+                <td colSpan={10} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
                   Nombre total de lignes de note de frais : {filteredDetails.length}
                 </td>
               </tr>
@@ -567,8 +579,6 @@ export default function NdfDetailTable({
           </table>
         </div>
       )}
-
-      {/* ... Le bouton export PDF et message de statut inchangés ... */}
       <div className="mt-8 text-center">
         <button
           onClick={exportToPDF}
