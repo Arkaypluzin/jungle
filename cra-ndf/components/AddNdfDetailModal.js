@@ -43,16 +43,22 @@ export default function AddNdfDetailModal({
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState("");
 
-  // Charger la liste des clients au montage de la modale
+  // Ajout ANALYTIQUES - Projet
+  const [projets, setProjets] = useState([]);
+  const [selectedProjet, setSelectedProjet] = useState("");
+
   useEffect(() => {
     if (open) {
       fetch("/api/client")
         .then((res) => res.json())
         .then((data) => setClients(Array.isArray(data) ? data : []));
+
+      fetch("/api/projets")
+        .then((res) => res.json())
+        .then((data) => setProjets(Array.isArray(data) ? data : []));
     }
   }, [open]);
 
-  // Dates min/max
   const monthIndex = parentNdfMonth ? MONTHS_MAP[parentNdfMonth] : null;
   const yearValue = parentNdfYear || new Date().getFullYear();
 
@@ -72,7 +78,6 @@ export default function AddNdfDetailModal({
     return "";
   }, [monthIndex, yearValue]);
 
-  // Date par défaut
   useEffect(() => {
     if (open && minDate && !dateStr) {
       setDateStr(minDate);
@@ -89,16 +94,15 @@ export default function AddNdfDetailModal({
     setMultiTaux([{ taux: "", montant: "" }]);
     setImgFile(null);
     setError("");
-    setSelectedClient(""); // ← reset client aussi
+    setSelectedClient("");
+    setSelectedProjet("");
   }
 
-  // Calcul du montant HT global (si multi-taux)
   const montantMultiHt = useMemo(() => {
     if (tva !== "multi-taux") return null;
     return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
   }, [multiTaux, tva]);
 
-  // Calcul du TTC (si multi-taux)
   const montantMultiTtc = useMemo(() => {
     if (tva !== "multi-taux") return null;
     return multiTaux.reduce((acc, mt) => {
@@ -108,7 +112,6 @@ export default function AddNdfDetailModal({
     }, 0).toFixed(2);
   }, [multiTaux, tva]);
 
-  // Submission
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
@@ -119,10 +122,14 @@ export default function AddNdfDetailModal({
       setLoading(false);
       return;
     }
-
-    // Validation client
+    // Validation client + projet
     if (!selectedClient) {
       setError("Veuillez sélectionner un client.");
+      setLoading(false);
+      return;
+    }
+    if (!selectedProjet) {
+      setError("Veuillez sélectionner un projet.");
       setLoading(false);
       return;
     }
@@ -156,12 +163,7 @@ export default function AddNdfDetailModal({
     if (tva === "autre taux") {
       tvaValue = autreTaux;
     } else if (tva === "multi-taux") {
-      // Valide tous les champs
-      if (
-        multiTaux.some(
-          (mt) => !mt.taux || mt.taux === "" || !mt.montant || mt.montant === ""
-        )
-      ) {
+      if (multiTaux.some((mt) => !mt.taux || mt.taux === "" || !mt.montant || mt.montant === "")) {
         setError("Veuillez compléter tous les taux et montants en multi-taux.");
         setLoading(false);
         return;
@@ -181,6 +183,7 @@ export default function AddNdfDetailModal({
       montant: montantValue,
       img_url,
       client_id: selectedClient,
+      projet_id: selectedProjet,
       ...extra,
     };
 
@@ -204,7 +207,7 @@ export default function AddNdfDetailModal({
     }
   }
 
-  // Gestion multi-taux
+  // Multi-taux
   function handleMultiTauxChange(idx, field, value) {
     setMultiTaux((prev) =>
       prev.map((mt, i) =>
@@ -219,7 +222,6 @@ export default function AddNdfDetailModal({
     if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
   }
 
-  // Quand on est sur multi-taux, mettre à jour montant (HT global) automatiquement
   useEffect(() => {
     if (tva === "multi-taux") {
       setMontant(montantMultiHt || "");
@@ -326,10 +328,9 @@ export default function AddNdfDetailModal({
                 />
               </div>
 
-              {/* ANALYTIQUES */}
               <div className="pt-4 border-t border-gray-200 mt-4">
                 <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
-                <div>
+                <div className="mb-4">
                   <label
                     htmlFor="client-select"
                     className="block text-sm font-medium text-gray-700 mb-2"
@@ -351,8 +352,30 @@ export default function AddNdfDetailModal({
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <label
+                    htmlFor="projet-select"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Projet :
+                  </label>
+                  <select
+                    id="projet-select"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={selectedProjet}
+                    onChange={(e) => setSelectedProjet(e.target.value)}
+                    required
+                  >
+                    <option value="">Sélectionner un projet</option>
+                    {projets.map((p) => (
+                      <option key={p.id || p.uuid} value={p.id || p.uuid}>
+                        {p.nom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              {/* --- fin ANALYTIQUES --- */}
 
               <div>
                 <label
