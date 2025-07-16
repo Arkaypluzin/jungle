@@ -35,7 +35,7 @@ import CraControls from "./cra/CraControls";
 import CraSummary from "./cra/CraSummary";
 import ActivityModal from "./ActivityModal";
 import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
-import ConfirmationModal from "./ConfirmationModal";
+import ConfirmationModal from "./ConfirmationModal"; // Keep ConfirmationModal for other uses (calendar context menu, reset, send)
 import SummaryReport from "./SummaryReport"; // Keep if used elsewhere or for summary modal
 
 export default function CraBoard({
@@ -44,16 +44,16 @@ export default function CraBoard({
   clientDefinitions = [],
   onAddActivity,
   onUpdateActivity,
-  onDeleteActivity,
+  onDeleteActivity, // This is the direct deletion function
   fetchActivitiesForMonth,
   userId,
   userFirstName,
   showMessage,
   currentMonth: propCurrentMonth,
   onMonthChange,
-  readOnly = false,
+  readOnly = false, // This prop means the entire board is read-only (e.g., when viewed by admin)
   monthlyReports = [], // NEW: Receive monthly reports (can be one or many)
-  rejectionReason = null, // NEW: Receive rejection reason
+  rejectionReason = null, // NEW: Receive rejection reason (from ReceivedCras, for rejected reports)
 }) {
   console.log("[CraBoard] --- Rendu du CraBoard ---");
   console.log(
@@ -63,7 +63,7 @@ export default function CraBoard({
     userId,
     "currentMonth:",
     format(propCurrentMonth, "yyyy-MM-dd"),
-    "readOnly:",
+    "readOnly (global):",
     readOnly
   );
   console.log("[CraBoard] monthlyReports reçus:", monthlyReports);
@@ -74,8 +74,8 @@ export default function CraBoard({
   const [editingActivity, setEditingActivity] = useState(null);
   const [publicHolidays, setPublicHolidays] = useState([]);
 
-  // States for confirmation modals
-  const [showConfirmModal, setShowConfirmModal] = useState(false); // For activity deletion
+  // States for confirmation modals (these are for calendar-level deletion)
+  const [showConfirmModal, setShowConfirmModal] = useState(false); // For activity deletion from calendar context menu
   const [activityToDelete, setActivityToDelete] = useState(null);
   const [showResetMonthConfirmModal, setShowResetMonthConfirmModal] =
     useState(false);
@@ -312,6 +312,18 @@ export default function CraBoard({
   console.log("[CraBoard] craReportStatus:", craReportStatus);
   console.log("[CraBoard] paidLeaveReportStatus:", paidLeaveReportStatus);
 
+  // Determine if CRA activities are editable
+  // Editable if 'empty', 'draft' OR 'rejected'. Not editable if 'pending_review', 'validated', or 'finalized'.
+  const isCraEditable = useMemo(() => {
+    return ["empty", "draft", "rejected"].includes(craReportStatus);
+  }, [craReportStatus]);
+
+  // Determine if Paid Leave activities are editable
+  // Editable if 'empty', 'draft' OR 'rejected'. Not editable if 'pending_review', 'validated', or 'finalized'.
+  const isPaidLeaveEditable = useMemo(() => {
+    return ["empty", "draft", "rejected"].includes(paidLeaveReportStatus);
+  }, [paidLeaveReportStatus]);
+
   const calculateCurrentMonthOverallStatus = useCallback(() => {
     // This is an overall status for display, not for add permissions
     if (activitiesForCurrentMonth.length === 0) return "empty";
@@ -329,7 +341,7 @@ export default function CraBoard({
     [calculateCurrentMonthOverallStatus]
   );
 
-  // NEW: Effect for one-time rejection/validation notification
+  // Effect for one-time rejection/validation notification
   useEffect(() => {
     const notifyReportStatus = (report, type) => {
       if (!report) return;
@@ -377,7 +389,7 @@ export default function CraBoard({
   }, [craReport, paidLeaveReport, currentMonth, showMessage, readOnly]); // Dependencies updated
 
   const goToPreviousMonth = useCallback(() => {
-    if (readOnly) return;
+    if (readOnly) return; // Still disable navigation in general readOnly mode
     const newMonth = subMonths(currentMonth, 1);
     if (onMonthChange && typeof onMonthChange === "function") {
       onMonthChange(newMonth);
@@ -387,7 +399,7 @@ export default function CraBoard({
   }, [currentMonth, onMonthChange, readOnly]);
 
   const goToNextMonth = useCallback(() => {
-    if (readOnly) return;
+    if (readOnly) return; // Still disable navigation in general readOnly mode
     const newMonth = addMonths(currentMonth, 1);
     if (onMonthChange && typeof onMonthChange === "function") {
       onMonthChange(newMonth);
@@ -397,7 +409,7 @@ export default function CraBoard({
   }, [currentMonth, onMonthChange, readOnly]);
 
   const goToToday = useCallback(() => {
-    if (readOnly) return;
+    if (readOnly) return; // Still disable navigation in general readOnly mode
     const today = new Date();
     if (onMonthChange && typeof onMonthChange === "function") {
       onMonthChange(today);
@@ -456,25 +468,12 @@ export default function CraBoard({
   }, []);
 
   // Determine if adding activities is allowed for CRA or Paid Leave based on report status
-  const canAddCRA = useMemo(() => {
-    // Allow adding if not readOnly AND report is NOT pending_review, validated, or finalized.
-    // If rejected, adding new CRA activities is allowed to correct the report.
-    return (
-      !readOnly &&
-      !["pending_review", "validated", "finalized"].includes(craReportStatus)
-    );
-  }, [readOnly, craReportStatus]);
-
-  const canAddPaidLeave = useMemo(() => {
-    // Allow adding if not readOnly AND report is NOT pending_review, validated, or finalized.
-    // If rejected, adding new paid leaves is allowed to correct the report.
-    return (
-      !readOnly &&
-      !["pending_review", "validated", "finalized"].includes(
-        paidLeaveReportStatus
-      )
-    );
-  }, [readOnly, paidLeaveReportStatus]);
+  // These are now based on the new isCraEditable/isPaidLeaveEditable flags
+  const canAddCRA = useMemo(() => isCraEditable, [isCraEditable]);
+  const canAddPaidLeave = useMemo(
+    () => isPaidLeaveEditable,
+    [isPaidLeaveEditable]
+  );
 
   const handleAddPaidLeave = useCallback(
     async (daysToProcess) => {
@@ -521,7 +520,7 @@ export default function CraBoard({
           type_activite: paidLeaveTypeId,
           client_id: null,
           override_non_working_day: shouldOverrideNonWorkingDay,
-          status: "draft",
+          status: "draft", // New activities are always draft initially
         };
 
         try {
@@ -568,37 +567,64 @@ export default function CraBoard({
 
   const handleDayClick = useCallback(
     (dayDate) => {
+      // If the entire CraBoard is in readOnly mode (e.g., viewing a validated report from admin side),
+      // then no interaction is allowed.
+      if (readOnly) {
+        showMessage(
+          "La modification d'activité est désactivée en mode lecture seule.",
+          "info"
+        );
+        return;
+      }
+
       const dateKey = format(dayDate, "yyyy-MM-dd");
       const existingActivitiesForDay = activitiesByDay.get(dateKey);
 
       if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
-        // If activity exists, allow modification only if not readOnly AND activity status allows
-        if (readOnly) {
-          showMessage(
-            "La modification d'activité est désactivée en mode lecture seule.",
-            "info"
-          );
-          return;
-        }
+        // If activity exists, check if it's editable based on its status
         const activity = existingActivitiesForDay[0];
-        // An activity can be modified/deleted if it's a draft OR if it's rejected.
-        // It CANNOT be modified/deleted if finalized, validated, or pending_review.
-        if (
-          activity.status === "finalized" ||
-          activity.status === "validated" ||
-          activity.status === "pending_review"
-        ) {
+        // An activity can be modified/deleted if its status is 'draft' OR 'rejected'.
+        const isActivityStatusEditable = ["draft", "rejected"].includes(
+          activity.status
+        );
+
+        // Check if the activity type corresponds to CRA or Paid Leave and use the correct editable flag
+        const isCRAActivityType =
+          String(activity.type_activite) !== String(paidLeaveTypeId);
+        const isPaidLeaveActivityType =
+          String(activity.type_activite) === String(paidLeaveTypeId);
+
+        // If the report type itself is not editable, block modification
+        if (isCRAActivityType && !isCraEditable) {
           showMessage(
-            "Activité verrouillée: statut finalisé, validé ou en attente. Modification impossible.",
+            `Activité CRA verrouillée: le rapport est au statut '${craReportStatus}'. Modification impossible.`,
             "info"
           );
           return;
         }
+        if (isPaidLeaveActivityType && !isPaidLeaveEditable) {
+          showMessage(
+            `Activité Congé Payé verrouillée: le rapport est au statut '${paidLeaveReportStatus}'. Modification impossible.`,
+            "info"
+          );
+          return;
+        }
+
+        // If the activity's own status doesn't allow editing (e.g., it's 'pending_review' but the report is 'rejected')
+        // this check is still important.
+        if (!isActivityStatusEditable) {
+          showMessage(
+            `Activité verrouillée: statut '${activity.status}'. Modification impossible.`,
+            "info"
+          );
+          return;
+        }
+
         setSelectedDate(dayDate);
         setEditingActivity(activity);
         setIsModalOpen(true);
       } else {
-        // If no activity, allow adding only if canAddCRA
+        // If no activity, allow adding only if CRA is editable
         if (!canAddCRA) {
           showMessage(
             "Impossible d'ajouter des activités. Le rapport CRA est déjà en attente de révision, validé ou finalisé.",
@@ -611,26 +637,50 @@ export default function CraBoard({
         setIsModalOpen(true);
       }
     },
-    [showMessage, activitiesByDay, canAddCRA, readOnly]
+    [
+      showMessage,
+      activitiesByDay,
+      canAddCRA,
+      readOnly,
+      isCraEditable,
+      isPaidLeaveEditable,
+      paidLeaveTypeId,
+      craReportStatus,
+      paidLeaveReportStatus,
+    ] // Added new dependencies
   );
 
   const handleMouseDown = useCallback(
     (e, dayDate) => {
       e.preventDefault();
       e.stopPropagation();
-      if (readOnly || !isSameMonth(dayDate, currentMonth)) {
+      // Only allow drag if not in general readOnly mode AND if paid leaves are editable
+      if (
+        readOnly ||
+        !isPaidLeaveEditable ||
+        !isSameMonth(dayDate, currentMonth)
+      ) {
+        if (readOnly) {
+          showMessage(
+            "Le glisser-déposer est désactivé en mode lecture seule.",
+            "info"
+          );
+        } else if (!isPaidLeaveEditable) {
+          showMessage(
+            "Impossible d'ajouter des congés. Le rapport de congés payés est déjà en attente de révision, validé ou finalisé.",
+            "info"
+          );
+        }
         return;
       }
-      // Removed the canAddPaidLeave check here to prevent premature messages.
-      // The check will happen in handleAddPaidLeave when the drag is confirmed.
 
       setIsMouseDownForDrag(true);
       setDragStartDay(dayDate);
       setTempSelectedDays([dayDate]);
       lastMouseDownDay.current = dayDate;
     },
-    [readOnly, currentMonth]
-  ); // Removed canAddPaidLeave, showMessage from dependencies
+    [readOnly, currentMonth, isPaidLeaveEditable, showMessage]
+  );
 
   const handleMouseEnter = useCallback(
     (dayDate) => {
@@ -683,6 +733,8 @@ export default function CraBoard({
 
   const handleActivityClick = useCallback(
     (activity) => {
+      // If the entire CraBoard is in readOnly mode (e.g., viewing a validated report from admin side),
+      // then no interaction is allowed.
       if (readOnly) {
         showMessage(
           "La modification d'activité est désactivée en mode lecture seule.",
@@ -690,6 +742,7 @@ export default function CraBoard({
         );
         return;
       }
+
       if (String(activity.user_id) !== String(userId)) {
         showMessage(
           "Vous ne pouvez pas modifier ou supprimer les activités des autres utilisateurs.",
@@ -697,19 +750,43 @@ export default function CraBoard({
         );
         return;
       }
-      // An activity can be modified/deleted if it's a draft OR if it's rejected.
-      // It CANNOT be modified/deleted if finalized, validated, or pending_review.
-      if (
-        activity.status === "finalized" ||
-        activity.status === "validated" ||
-        activity.status === "pending_review"
-      ) {
+      // An activity can be modified/deleted if its status is 'draft' OR 'rejected'.
+      const isActivityStatusEditable = ["draft", "rejected"].includes(
+        activity.status
+      );
+
+      // Check if the activity type corresponds to CRA or Paid Leave and use the correct editable flag
+      const isCRAActivityType =
+        String(activity.type_activite) !== String(paidLeaveTypeId);
+      const isPaidLeaveActivityType =
+        String(activity.type_activite) === String(paidLeaveTypeId);
+
+      // If the report type itself is not editable, block modification
+      if (isCRAActivityType && !isCraEditable) {
         showMessage(
-          "Activité verrouillée: statut finalisé, validé ou en attente. Modification ou suppression impossible.",
+          `Activité CRA verrouillée: le rapport est au statut '${craReportStatus}'. Modification ou suppression impossible.`,
           "info"
         );
         return;
       }
+      if (isPaidLeaveActivityType && !isPaidLeaveEditable) {
+        showMessage(
+          `Activité Congé Payé verrouillée: le rapport est au statut '${paidLeaveReportStatus}'. Modification ou suppression impossible.`,
+          "info"
+        );
+        return;
+      }
+
+      // If the activity's own status doesn't allow editing (e.g., it's 'pending_review' but the report is 'rejected')
+      // this check is still important.
+      if (!isActivityStatusEditable) {
+        showMessage(
+          `Activité verrouillée: statut '${activity.status}'. Modification ou suppression impossible.`,
+          "info"
+        );
+        return;
+      }
+
       if (!activity.date_activite || !isValid(activity.date_activite)) {
         console.error(
           "CraBoard: Date d'activité invalide depuis la base de données",
@@ -725,16 +802,29 @@ export default function CraBoard({
       setEditingActivity(activity);
       setIsModalOpen(true);
     },
-    [showMessage, userId, readOnly]
+    [
+      showMessage,
+      userId,
+      readOnly,
+      isCraEditable,
+      isPaidLeaveEditable,
+      paidLeaveTypeId,
+      craReportStatus,
+      paidLeaveReportStatus,
+    ] // Added new dependencies
   );
 
   const handleCloseActivityModal = useCallback(() => {
+    console.log(
+      "[CraBoard] handleCloseActivityModal: Setting isModalOpen to false."
+    );
     setIsModalOpen(false);
     setEditingActivity(null);
   }, []);
 
   const handleSaveActivity = useCallback(
     async (activityData) => {
+      // If the entire CraBoard is in readOnly mode, no saving is allowed.
       if (readOnly) {
         showMessage(
           "L'opération de sauvegarde est désactivée en mode lecture seule.",
@@ -742,19 +832,21 @@ export default function CraBoard({
         );
         return;
       }
+
       const isCRAActivity =
         String(activityData.type_activite) !== String(paidLeaveTypeId);
       const isPaidLeaveActivity =
         String(activityData.type_activite) === String(paidLeaveTypeId);
 
-      if (isCRAActivity && !canAddCRA) {
+      // Check specific editable flags
+      if (isCRAActivity && !isCraEditable) {
         showMessage(
           "Impossible de sauvegarder cette activité. Le rapport CRA est déjà en attente de révision, validé ou finalisé.",
           "info"
         );
         return;
       }
-      if (isPaidLeaveActivity && !canAddPaidLeave) {
+      if (isPaidLeaveActivity && !isPaidLeaveEditable) {
         showMessage(
           "Impossible de sauvegarder cette activité. Le rapport de congés payés est déjà en attente de révision, validé ou finalisé.",
           "info"
@@ -769,6 +861,7 @@ export default function CraBoard({
           date_activite: activityData.date_activite
             ? format(activityData.date_activite, "yyyy-MM-dd")
             : null,
+          status: editingActivity ? activityData.status : "draft", // Keep existing status if editing, else set to draft
         };
         if (editingActivity) {
           await onUpdateActivity(editingActivity.id, payload);
@@ -777,11 +870,8 @@ export default function CraBoard({
           await onAddActivity(payload);
           showMessage("Activité ajoutée avec succès !", "success");
         }
-        handleCloseActivityModal();
-        // Only fetch activities if not in readOnly mode (i.e., not viewing a received report)
-        if (!readOnly && fetchActivitiesForMonth) {
-          fetchActivitiesForMonth(currentMonth);
-        }
+        // No need to close modal here, ActivityModal will handle it
+        // No need to fetch activities here, ActivityModal will handle it
       } catch (error) {
         console.error(
           "CraBoard: Erreur lors de la sauvegarde de l'activité:",
@@ -789,26 +879,33 @@ export default function CraBoard({
         );
         showMessage(`Échec de la sauvegarde: ${error.message}`, "error");
       }
+      // Always fetch activities after save attempt, regardless of success/failure
+      if (!readOnly && fetchActivitiesForMonth) {
+        fetchActivitiesForMonth(currentMonth);
+      }
     },
     [
       editingActivity,
       onAddActivity,
       onUpdateActivity,
       showMessage,
-      handleCloseActivityModal,
+      // handleCloseActivityModal, // Removed: ActivityModal now closes itself
       fetchActivitiesForMonth,
       currentMonth,
       userId,
       readOnly,
-      canAddCRA,
-      canAddPaidLeave,
+      isCraEditable, // Use new editable flag
+      isPaidLeaveEditable, // Use new editable flag
       paidLeaveTypeId,
     ]
   );
 
+  // This function is for deletion initiated from the calendar's context menu
   const requestDeleteFromCalendar = useCallback(
-    (activityId, event) => {
+    async (activityId, event) => {
+      // Added async keyword here
       event.stopPropagation();
+      // If the entire CraBoard is in readOnly mode, no deletion is allowed.
       if (readOnly) {
         showMessage(
           "La suppression d'activité est désactivée en mode lecture seule.",
@@ -816,14 +913,44 @@ export default function CraBoard({
         );
         return;
       }
+
       const activity = activities.find((act) => act.id === activityId);
-      if (
-        activity.status === "finalized" ||
-        activity.status === "validated" ||
-        activity.status === "pending_review"
-      ) {
+      if (!activity) {
+        console.error("Activité non trouvée pour la suppression:", activityId);
+        showMessage("Activité introuvable pour la suppression.", "error");
+        return;
+      }
+
+      // An activity can be modified/deleted if its status is 'draft' OR 'rejected'.
+      const isActivityStatusEditable = ["draft", "rejected"].includes(
+        activity.status
+      );
+
+      // Check if the activity type corresponds to CRA or Paid Leave and use the correct editable flag
+      const isCRAActivityType =
+        String(activity.type_activite) !== String(paidLeaveTypeId);
+      const isPaidLeaveActivityType =
+        String(activity.type_activite) === String(paidLeaveTypeId);
+
+      // If the report type itself is not editable, block deletion
+      if (isCRAActivityType && !isCraEditable) {
         showMessage(
-          "Activité verrouillée: statut finalisé, validé ou en attente. Suppression impossible.",
+          `Activité CRA verrouillée: le rapport est au statut '${craReportStatus}'. Suppression impossible.`,
+          "info"
+        );
+        return;
+      }
+      if (isPaidLeaveActivityType && !isPaidLeaveEditable) {
+        showMessage(
+          `Activité Congé Payé verrouillée: le rapport est au statut '${paidLeaveReportStatus}'. Suppression impossible.`,
+          "info"
+        );
+        return;
+      }
+
+      if (!isActivityStatusEditable) {
+        showMessage(
+          `Activité verrouillée: statut '${activity.status}'. Suppression impossible.`,
           "info"
         );
         return;
@@ -835,14 +962,47 @@ export default function CraBoard({
         );
         return;
       }
-      setActivityToDelete(activityId);
-      setShowConfirmModal(true);
+
+      // --- DEBUT DE LA MODIFICATION ---
+      // Au lieu d'ouvrir un modal de confirmation, nous allons appeler onDeleteActivity directement
+      try {
+        await onDeleteActivity(activityId); // Effectuer la suppression réelle immédiatement
+        showMessage("Activité supprimée avec succès !", "success"); // Message de succès après suppression
+        // Seules les activités sont récupérées si le mode lecture seule n'est pas activé
+        if (!readOnly && fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
+      } catch (error) {
+        console.error(
+          "CraBoard: Erreur lors de la suppression de l'activité (depuis calendrier):",
+          error
+        );
+        showMessage(`Erreur de suppression: ${error.message}`, "error");
+      }
+      // --- FIN DE LA MODIFICATION ---
     },
-    [activities, showMessage, userId, readOnly]
+    [
+      activities,
+      showMessage,
+      userId,
+      readOnly,
+      isCraEditable,
+      isPaidLeaveEditable,
+      paidLeaveTypeId,
+      craReportStatus,
+      paidLeaveReportStatus,
+      onDeleteActivity,
+      fetchActivitiesForMonth,
+      currentMonth,
+    ]
   );
 
+  // This function confirms deletion from the calendar's context menu
+  // NOTE: This function is now only called by other confirmation modals (e.g., reset month)
+  // and is NOT called by requestDeleteFromCalendar anymore.
   const confirmDeleteActivity = useCallback(async () => {
-    setShowConfirmModal(false);
+    setShowConfirmModal(false); // Close CraBoard's confirmation modal
+    // If the entire CraBoard is in readOnly mode, no deletion is allowed.
     if (readOnly) {
       showMessage(
         "L'opération de suppression est désactivée en mode lecture seule.",
@@ -850,9 +1010,46 @@ export default function CraBoard({
       );
       return;
     }
+
     if (activityToDelete) {
       try {
-        await onDeleteActivity(activityToDelete);
+        // Re-check activity status just before deletion for robustness
+        const activity = activities.find((act) => act.id === activityToDelete);
+        const isActivityStatusEditable = ["draft", "rejected"].includes(
+          activity.status
+        );
+
+        // Check if the activity type corresponds to CRA or Paid Leave and use the correct editable flag
+        const isCRAActivityType =
+          String(activity.type_activite) !== String(paidLeaveTypeId);
+        const isPaidLeaveActivityType =
+          String(activity.type_activite) === String(paidLeaveTypeId);
+
+        // If the report type itself is not editable, block deletion
+        if (isCRAActivityType && !isCraEditable) {
+          showMessage(
+            `Activité CRA verrouillée: le rapport est au statut '${craReportStatus}'. Suppression impossible.`,
+            "info"
+          );
+          return;
+        }
+        if (isPaidLeaveActivityType && !isPaidLeaveEditable) {
+          showMessage(
+            `Activité Congé Payé verrouillée: le rapport est au statut '${paidLeaveReportStatus}'. Suppression impossible.`,
+            "info"
+          );
+          return;
+        }
+
+        if (!isActivityStatusEditable) {
+          showMessage(
+            `Activité verrouillée: statut '${activity.status}'. Suppression impossible.`,
+            "info"
+          );
+          return;
+        }
+
+        await onDeleteActivity(activityToDelete); // Perform the actual deletion
         showMessage("Activité supprimée avec succès !", "success");
         // Only fetch activities if not in readOnly mode
         if (!readOnly && fetchActivitiesForMonth) {
@@ -875,7 +1072,16 @@ export default function CraBoard({
     fetchActivitiesForMonth,
     currentMonth,
     readOnly,
+    activities, // Added activities to dependency array for re-check
+    isCraEditable,
+    isPaidLeaveEditable,
+    paidLeaveTypeId,
+    craReportStatus,
+    paidLeaveReportStatus,
   ]);
+
+  // NOTE: This function is now only called by other confirmation modals (e.g., reset month)
+  // and is NOT called by requestDeleteFromCalendar anymore.
 
   const cancelDeleteActivity = useCallback(() => {
     setShowConfirmModal(false);
@@ -883,6 +1089,7 @@ export default function CraBoard({
   }, []);
 
   const requestResetMonth = useCallback(() => {
+    // If the entire CraBoard is in readOnly mode, no reset is allowed.
     if (readOnly) {
       showMessage(
         "L'opération de réinitialisation est désactivée en mode lecture seule.",
@@ -891,13 +1098,15 @@ export default function CraBoard({
       return;
     }
     // Month reset should only be possible if NO report (CRA or Leave) is
-    // validated, rejected, or pending_review.
+    // 'validated', 'pending_review', or 'finalized'. It IS possible if 'rejected'.
     if (
-      ["validated", "pending_review"].includes(craReportStatus) ||
-      ["validated", "pending_review"].includes(paidLeaveReportStatus)
+      ["validated", "pending_review", "finalized"].includes(craReportStatus) ||
+      ["validated", "pending_review", "finalized"].includes(
+        paidLeaveReportStatus
+      )
     ) {
       showMessage(
-        "Impossible de réinitialiser le mois. Un rapport (CRA ou Congés) est déjà validé ou en attente de révision. Seul un administrateur peut annuler ces statuts.",
+        "Impossible de réinitialiser le mois. Un rapport (CRA ou Congés) est déjà validé, en attente de révision ou finalisé. Seul un administrateur peut annuler ces statuts.",
         "info"
       );
       return;
@@ -915,11 +1124,12 @@ export default function CraBoard({
       return;
     }
     const activitiesToReset = activitiesForCurrentMonth.filter(
-      (activity) => activity.status === "draft"
+      (activity) =>
+        activity.status === "draft" || activity.status === "rejected" // Also allow resetting rejected activities
     );
     if (activitiesToReset.length === 0) {
       showMessage(
-        `Aucune activité brouillon à réinitialiser pour ${format(
+        `Aucune activité brouillon ou rejetée à réinitialiser pour ${format(
           currentMonth,
           "MMMM ",
           { locale: fr }
@@ -956,9 +1166,10 @@ export default function CraBoard({
     setShowResetMonthConfirmModal(false);
   }, []);
 
-  // Single send function (replaces finalization + send)
+  // Centralized function to send CRA or Paid Leave reports
   const sendActivities = useCallback(
-    async (activitiesToSend, reportType) => {
+    async (activitiesToSubmit, reportType) => {
+      // Global readOnly check (e.g., admin view)
       if (readOnly) {
         showMessage(
           `L'opération d'envoi pour ${
@@ -968,9 +1179,26 @@ export default function CraBoard({
         );
         return;
       }
-      if (activitiesToSend.length === 0) {
+
+      // Check specific editable flags for sending
+      if (reportType === "cra" && !isCraEditable) {
         showMessage(
-          `Aucune activité brouillon de ${
+          "Impossible d'envoyer le CRA. Le rapport est déjà en attente de révision, validé ou finalisé.",
+          "info"
+        );
+        return;
+      }
+      if (reportType === "paid_leave" && !isPaidLeaveEditable) {
+        showMessage(
+          "Impossible d'envoyer le rapport de congés payés. Il est déjà en attente de révision, validé ou finalisé.",
+          "info"
+        );
+        return;
+      }
+
+      if (activitiesToSubmit.length === 0) {
+        showMessage(
+          `Aucune activité brouillon ou rejetée de ${
             reportType === "cra" ? "CRA" : "Congés Payés"
           } à envoyer.`,
           "info"
@@ -978,234 +1206,165 @@ export default function CraBoard({
         return;
       }
 
-      // Check if a report of the same type is already in "pending_review", "validated" or "rejected"
-      const existingReportForType = monthlyReports.find(
-        (report) =>
-          String(report.user_id) === String(userId) &&
-          report.month === currentMonth.getMonth() + 1 &&
-          report.year === currentMonth.getFullYear() &&
-          report.report_type === reportType
+      // Find existing report for this type, month, year, user
+      const existingReport = monthlyReports.find(
+        (r) =>
+          String(r.user_id) === String(userId) &&
+          r.month === currentMonth.getMonth() + 1 &&
+          r.year === currentMonth.getFullYear() &&
+          r.report_type === reportType
       );
 
-      if (
-        existingReportForType &&
-        ["pending_review", "validated", "rejected"].includes(
-          existingReportForType.status
-        )
-      ) {
+      // If a report exists and is NOT rejected, prevent sending
+      if (existingReport && existingReport.status !== "rejected") {
         showMessage(
-          `Un rapport '${
-            reportType === "cra" ? "CRA" : "Congés Payés"
-          }' pour ce mois est déjà au statut '${
-            existingReportForType.status
-          }'. Vous ne pouvez pas en envoyer un nouveau.`,
+          `Un rapport de type "${reportType}" est déjà en statut "${existingReport.status}". Impossible de l'envoyer à nouveau.`,
           "warning"
         );
         return;
       }
 
-      // Update individual activity status from "draft" to "pending_review"
-      for (const activity of activitiesToSend) {
-        try {
-          const payload = {
-            ...activity,
-            status: "pending_review",
-            date_activite: activity.date_activite
-              ? format(activity.date_activite, "yyyy-MM-dd")
-              : null,
-          };
-          await onUpdateActivity(activity.id, payload, true);
-        } catch (error) {
-          console.error(
-            `CraBoard: Erreur lors de la mise à jour du statut de l'activité pour ${
-              reportType === "cra" ? "CRA" : "Congés Payés"
-            } ${activity.id}:`,
-            error
-          );
-          showMessage(
-            `Erreur de mise à jour de l'activité ${activity.id}: ${error.message}`,
-            "error"
-          );
-          return;
-        }
-      }
+      // Prepare report data
+      const activitiesSnapshotIds = activitiesToSubmit.map((act) => act.id);
 
-      const totalBillableDays = activitiesToSend.reduce((sum, activity) => {
-        const activityType = activityTypeDefinitions.find(
-          (def) => String(def.id) === String(activity.type_activite)
-        );
-        if (activityType?.is_billable) {
-          return sum + (parseFloat(activity.temps_passe) || 0);
-        }
-        return sum;
-      }, 0);
-
-      const totalDaysWorked = activitiesToSend.reduce(
+      const totalDaysWorked = activitiesToSubmit.reduce(
         (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
         0
       );
+      const totalBillableDays = activitiesToSubmit
+        .filter((activity) => {
+          const typeDef = activityTypeDefinitions.find(
+            (def) => String(def.id) === String(activity.type_activite)
+          );
+          return typeDef?.is_billable;
+        })
+        .reduce(
+          (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+          0
+        );
 
-      const monthlyReportData = {
+      const reportData = {
         user_id: userId,
         userName: userFirstName,
         month: currentMonth.getMonth() + 1,
         year: currentMonth.getFullYear(),
         total_days_worked: totalDaysWorked,
         total_billable_days: totalBillableDays,
-        activities_snapshot: activitiesToSend.map((act) => act.id),
-        status: "pending_review", // Ensure status is set correctly on creation/update
-        report_type: reportType, // 'cra' or 'paid_leave'
+        activities_snapshot: activitiesSnapshotIds,
+        status: "pending_review", // Always set to pending_review on send
+        submittedAt: new Date(),
+        report_type: reportType,
       };
-
-      console.log(
-        `[CraBoard] sendActivities: Données du rapport mensuel pour ${
-          reportType === "cra" ? "CRA" : "Congés Payés"
-        } envoyées:`,
-        JSON.stringify(monthlyReportData, null, 2)
-      );
 
       try {
         const response = await fetch("/api/monthly_cra_reports", {
-          method: "POST",
+          method: "POST", // Use POST for upsert logic in backend
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(monthlyReportData),
+          body: JSON.stringify({
+            ...reportData,
+            existingReportId: existingReport ? existingReport.id : null, // Pass existing ID for upsert
+          }),
         });
 
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(
-            errorData.message ||
-              `Échec de l'envoi du rapport mensuel ${
-                reportType === "cra" ? "CRA" : "Congés Payés"
-              }.`
+            errorData.message || `Échec de l'envoi du rapport ${reportType}.`
           );
         }
 
         showMessage(
-          `La demande de ${
-            reportType === "cra" ? "CRA" : "Congés Payés"
-          } pour ${format(currentMonth, "MMMM", {
-            locale: fr,
-          })} a été envoyée et le récapitulatif mensuel créé !`,
+          `Rapport de type "${reportType}" envoyé avec succès !`,
           "success"
         );
-      } catch (reportError) {
+        // Re-fetch activities and reports to update UI status
+        if (!readOnly && fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
+      } catch (error) {
         console.error(
-          `CraBoard: Erreur lors de l'envoi du rapport mensuel ${
-            reportType === "cra" ? "CRA" : "Congés Payés"
-          }:`,
-          reportError
+          `CraBoard: Erreur lors de l'envoi du rapport mensuel ${reportType}:`,
+          error
         );
-        showMessage(
-          `Erreur lors de l'envoi du rapport mensuel ${
-            reportType === "cra" ? "CRA" : "Congés Payés"
-          }: ${reportError.message}`,
-          "error"
-        );
-      }
-      // Only fetch activities if not in readOnly mode (i.e., not viewing a received report)
-      if (!readOnly && fetchActivitiesForMonth) {
-        fetchActivitiesForMonth(currentMonth);
+        showMessage(`Échec de l'envoi: ${error.message}`, "error");
       }
     },
     [
       readOnly,
       showMessage,
-      onUpdateActivity,
-      activityTypeDefinitions,
-      userId,
-      userFirstName,
-      currentMonth,
-      fetchActivitiesForMonth,
+      isCraEditable,
+      isPaidLeaveEditable,
       monthlyReports,
+      userId,
+      currentMonth,
+      userFirstName,
+      activityTypeDefinitions, // Added to dependencies
+      fetchActivitiesForMonth,
     ]
   );
 
-  // Request functions for send buttons (now direct)
   const requestSendCRA = useCallback(() => {
-    if (readOnly) {
+    // Check if the CRA report is currently editable (draft or rejected)
+    if (!isCraEditable) {
       showMessage(
-        "L'opération d'envoi de CRA est désactivée en mode lecture seule.",
-        "info"
-      );
-      return;
-    }
-    const craDrafts = craActivitiesForCurrentMonth.filter(
-      (a) => a.status === "draft"
-    ); // Check drafts
-    if (craDrafts.length === 0) {
-      showMessage(
-        "Aucune activité CRA brouillon à envoyer ce mois-ci.",
+        "Impossible d'envoyer le CRA. Le rapport est déjà en attente de révision, validé ou finalisé.",
         "info"
       );
       return;
     }
 
-    if (["pending_review", "validated", "rejected"].includes(craReportStatus)) {
+    const craActivitiesToSend = craActivitiesForCurrentMonth.filter(
+      (a) => a.status === "draft" || a.status === "rejected"
+    );
+    if (craActivitiesToSend.length === 0) {
       showMessage(
-        `Un rapport CRA pour ce mois est déjà au statut '${craReportStatus}'. Vous ne pouvez pas en envoyer un nouveau.`,
-        "warning"
+        "Aucune activité CRA brouillon ou rejetée à envoyer ce mois-ci.",
+        "info"
       );
       return;
     }
 
-    setConfirmingActionType("sendCRA");
+    setConfirmingActionType("cra"); // Set to 'cra' for sendActivities
     setShowSendConfirmModal(true);
-  }, [readOnly, showMessage, craActivitiesForCurrentMonth, craReportStatus]);
+  }, [isCraEditable, showMessage, craActivitiesForCurrentMonth]);
 
   const requestSendPaidLeaves = useCallback(() => {
-    if (readOnly) {
+    // Check if the Paid Leave report is currently editable (draft or rejected)
+    if (!isPaidLeaveEditable) {
       showMessage(
-        "L'opération d'envoi de congés est désactivée en mode lecture seule.",
-        "info"
-      );
-      return;
-    }
-    const paidLeaveDrafts = paidLeaveActivitiesForCurrentMonth.filter(
-      (a) => a.status === "draft"
-    ); // Check drafts
-    if (paidLeaveDrafts.length === 0) {
-      showMessage(
-        "Aucune activité de congés payés brouillon à envoyer ce mois-ci.",
+        "Impossible d'envoyer les congés. Le rapport de congés payés est déjà en attente de révision, validé ou finalisé.",
         "info"
       );
       return;
     }
 
-    if (
-      ["pending_review", "rejected", "validated"].includes(
-        paidLeaveReportStatus
-      )
-    ) {
-      // 'validated' is included here to prevent sending new leave if already validated
+    const paidLeaveActivitiesToSend = paidLeaveActivitiesForCurrentMonth.filter(
+      (a) => a.status === "draft" || a.status === "rejected"
+    );
+    if (paidLeaveActivitiesToSend.length === 0) {
       showMessage(
-        `Un rapport de Congés Payés pour ce mois est déjà au statut '${paidLeaveReportStatus}'. Vous ne pouvez pas en envoyer un nouveau.`,
-        "warning"
+        "Aucune activité de congés payés brouillon ou rejetée à envoyer ce mois-ci.",
+        "info"
       );
       return;
     }
 
-    setConfirmingActionType("sendPaidLeaves");
+    setConfirmingActionType("paid_leave"); // Set to 'paid_leave' for sendActivities
     setShowSendConfirmModal(true);
-  }, [
-    readOnly,
-    showMessage,
-    paidLeaveActivitiesForCurrentMonth,
-    paidLeaveReportStatus,
-  ]);
+  }, [isPaidLeaveEditable, showMessage, paidLeaveActivitiesForCurrentMonth]);
 
   const handleConfirmSend = useCallback(() => {
     setShowSendConfirmModal(false);
-    if (confirmingActionType === "sendCRA") {
-      sendActivities(
-        craActivitiesForCurrentMonth.filter((a) => a.status === "draft"),
-        "cra"
-      ); // Send CRA drafts
-    } else if (confirmingActionType === "sendPaidLeaves") {
-      sendActivities(
-        paidLeaveActivitiesForCurrentMonth.filter((a) => a.status === "draft"),
-        "paid_leave"
-      ); // Send leave drafts
+    if (confirmingActionType === "cra") {
+      const activitiesToSubmit = craActivitiesForCurrentMonth.filter(
+        (a) => a.status === "draft" || a.status === "rejected"
+      );
+      sendActivities(activitiesToSubmit, "cra");
+    } else if (confirmingActionType === "paid_leave") {
+      const activitiesToSubmit = paidLeaveActivitiesForCurrentMonth.filter(
+        (a) => a.status === "draft" || a.status === "rejected"
+      );
+      sendActivities(activitiesToSubmit, "paid_leave");
     }
     setConfirmingActionType(null);
   }, [
@@ -1267,7 +1426,9 @@ export default function CraBoard({
         // Pass specific report statuses for more accurate badge display
         craReportStatus={craReportStatus}
         paidLeaveReportStatus={paidLeaveReportStatus}
-        readOnly={readOnly}
+        readOnly={readOnly} // Global readOnly prop
+        isCraEditable={isCraEditable} // Pass specific editable flags
+        isPaidLeaveEditable={isPaidLeaveEditable} // Pass specific editable flags
         goToPreviousMonth={goToPreviousMonth}
         goToNextMonth={goToNextMonth}
         handleToggleSummaryReport={handleToggleSummaryReport}
@@ -1276,12 +1437,14 @@ export default function CraBoard({
         requestSendPaidLeaves={requestSendPaidLeaves}
         requestResetMonth={requestResetMonth}
         craDraftsCount={
-          craActivitiesForCurrentMonth.filter((a) => a.status === "draft")
-            .length
+          craActivitiesForCurrentMonth.filter(
+            (a) => a.status === "draft" || a.status === "rejected"
+          ).length
         }
         paidLeaveDraftsCount={
-          paidLeaveActivitiesForCurrentMonth.filter((a) => a.status === "draft")
-            .length
+          paidLeaveActivitiesForCurrentMonth.filter(
+            (a) => a.status === "draft" || a.status === "rejected"
+          ).length
         }
       />
 
@@ -1353,8 +1516,10 @@ export default function CraBoard({
 
       {showSummaryReport && summaryReportMonth && (
         <SummaryReport
-          month={summaryReportMonth}
+          isOpen={showSummaryReport}
+          onClose={handleToggleSummaryReport}
           activities={activitiesForCurrentMonth}
+          currentMonth={summaryReportMonth}
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           totalWorkingDays={totalWorkingDaysInMonth}
@@ -1362,7 +1527,6 @@ export default function CraBoard({
           timeDifference={timeDifference}
           isPublicHoliday={isPublicHoliday}
           userFirstName={userFirstName}
-          onClose={handleToggleSummaryReport}
           onOpenMonthlyReportPreview={handleOpenMonthlyReportPreview}
         />
       )}
@@ -1373,13 +1537,15 @@ export default function CraBoard({
         activityTypeDefinitions={activityTypeDefinitions}
         clientDefinitions={clientDefinitions}
         isPublicHoliday={isPublicHoliday}
-        readOnly={readOnly}
+        readOnly={readOnly} // Global readOnly prop
+        isCraEditable={isCraEditable} // Pass specific editable flags
+        isPaidLeaveEditable={isPaidLeaveEditable} // Pass specific editable flags
         isDragging={isDragging}
         tempSelectedDays={tempSelectedDays}
-        handleMouseDown={handleMouseDown}
-        handleMouseEnter={handleMouseEnter}
-        handleDayClick={handleDayClick}
-        handleActivityClick={handleActivityClick}
+        onMouseDown={handleMouseDown}
+        onMouseEnter={handleMouseEnter}
+        onDayClick={handleDayClick}
+        onActivityClick={handleActivityClick}
         requestDeleteFromCalendar={requestDeleteFromCalendar}
         showMessage={showMessage}
         userId={userId}
@@ -1388,16 +1554,24 @@ export default function CraBoard({
 
       {isModalOpen && (
         <ActivityModal
+          // Added key to force remounting for clean state
+          key={
+            editingActivity
+              ? editingActivity.id
+              : `new-${selectedDate.toISOString()}`
+          }
           isOpen={isModalOpen}
           onClose={handleCloseActivityModal}
           onSave={handleSaveActivity}
-          onDelete={confirmDeleteActivity}
+          onDelete={onDeleteActivity}
           activity={editingActivity}
           initialDate={selectedDate}
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           showMessage={showMessage}
-          readOnly={readOnly}
+          // Modal is readOnly if CraBoard is readOnly (from admin view)
+          // OR if the specific report type (CRA or Paid Leave) is not editable (validated, pending_review, finalized)
+          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)}
         />
       )}
 
@@ -1413,7 +1587,7 @@ export default function CraBoard({
         />
       )}
       <ConfirmationModal
-        isOpen={showConfirmModal}
+        isOpen={showConfirmModal} // This is for calendar context menu deletion
         onClose={cancelDeleteActivity}
         onConfirm={confirmDeleteActivity}
         message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible."
@@ -1422,9 +1596,9 @@ export default function CraBoard({
         isOpen={showResetMonthConfirmModal}
         onClose={cancelResetMonth}
         onConfirm={confirmResetMonth}
-        message={`Confirmer la suppression de TOUTES les activités brouillon pour ${format(
+        message={`Confirmer la suppression de TOUTES les activités brouillon et rejetées pour ${format(
           currentMonth,
-          "MMMM ",
+          "MMMM yyyy",
           { locale: fr }
         )}. Cette action est irréversible.`}
       />
@@ -1435,7 +1609,7 @@ export default function CraBoard({
         onClose={handleCancelSend}
         onConfirm={handleConfirmSend}
         message={`Confirmer l'envoi des ${
-          confirmingActionType === "sendCRA" ? "CRAs" : "Congés Payés"
+          confirmingActionType === "cra" ? "CRAs" : "Congés Payés"
         }? Une fois envoyés, vous ne pourrez plus les modifier.`}
       />
     </div>

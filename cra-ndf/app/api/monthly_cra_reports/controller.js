@@ -4,7 +4,8 @@ import { ObjectId } from "mongodb";
 
 // Fonction utilitaire pour obtenir la collection "activities"
 const getActivitiesCollection = async (db) => {
-  return db.collection("activities");
+  // CORRECTION ICI : Utiliser le nom de collection correct "cra_activities"
+  return db.collection("cra_activities");
 };
 
 // Fonction utilitaire pour obtenir la collection "monthly_cra_reports"
@@ -186,12 +187,12 @@ export async function getMonthlyReportByIdController(reportId) {
   try {
     const db = await getMongoDb();
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
-    const activitiesCollection = await getActivitiesCollection(db);
+    const activitiesCollection = await getActivitiesCollection(db); // Cette fonction utilise maintenant le bon nom
 
     console.log(`[Backend DEBUG] Connected to DB Name: "${db.databaseName}"`);
     console.log(
       `[Backend DEBUG] Activities Collection Name: "${activitiesCollection.collectionName}"`
-    );
+    ); // Ce log devrait maintenant afficher "cra_activities"
     console.log(
       `[Backend DEBUG] Initial reportId received: "${reportId}" (Type: ${typeof reportId})`
     );
@@ -430,7 +431,7 @@ export async function updateMonthlyReportStatusController(
   }
 }
 
-// NOUVELLE FONCTION DE TEST POUR LA LECTURE DES ACTIVITÉS
+// NOUVELLE FONCTION DE TEST POUR LA LECTURE DES ACTIVITÉS (à supprimer après le debug)
 export async function testActivityRead() {
   let db;
   let activitiesCollection;
@@ -445,7 +446,7 @@ export async function testActivityRead() {
 
   try {
     db = await getMongoDb();
-    activitiesCollection = await getActivitiesCollection(db);
+    activitiesCollection = await getActivitiesCollection(db); // Utilise la collection corrigée
 
     console.log(`[Backend TEST] Starting activity read test.`);
     console.log(
