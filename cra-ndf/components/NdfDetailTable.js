@@ -421,34 +421,34 @@ export default function NdfDetailTable({
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Date
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Nature
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Description
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Client
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Projet
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant HT
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   TVA
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant TTC
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Justificatif
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
