@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Pencil } from "lucide-react";
 
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
@@ -35,11 +35,39 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
+    // Nouveau : Clients et Projets
+    const [clients, setClients] = useState([]);
+    const [projets, setProjets] = useState([]);
+    const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
+    const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
+
+    useEffect(() => {
+        fetch("/api/client")
+            .then(res => res.json())
+            .then(data => setClients(Array.isArray(data) ? data : []))
+            .catch(() => setClients([]));
+        fetch("/api/projets")
+            .then(res => res.json())
+            .then(data => setProjets(Array.isArray(data) ? data : []))
+            .catch(() => setProjets([]));
+    }, [open]);
+
     async function handleSubmit(e) {
         e.preventDefault();
         setLoading(true);
         setError("");
         let img_url = detail.img_url;
+
+        if (!selectedClient) {
+            setError("Veuillez sélectionner un client.");
+            setLoading(false);
+            return;
+        }
+        if (!selectedProjet) {
+            setError("Veuillez sélectionner un projet.");
+            setLoading(false);
+            return;
+        }
 
         if (imgFile) {
             const formData = new FormData();
@@ -72,6 +100,8 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             tva: tvaValue,
             montant,
             img_url,
+            client_id: selectedClient,
+            projet_id: selectedProjet,
         };
 
         const res = await fetch(`/api/ndf_details/${detail.uuid}`, {
@@ -145,6 +175,44 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     onChange={e => setDescription(e.target.value)}
                                 />
                             </label>
+
+                            <div>
+                                <label>
+                                    Client :
+                                    <select
+                                        className="ml-2 border px-2 py-1 rounded"
+                                        value={selectedClient}
+                                        onChange={e => setSelectedClient(e.target.value)}
+                                        required
+                                    >
+                                        <option value="">Sélectionner un client</option>
+                                        {clients.map(c => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.nom_client}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                            <div>
+                                <label>
+                                    Projet :
+                                    <select
+                                        className="ml-2 border px-2 py-1 rounded"
+                                        value={selectedProjet}
+                                        onChange={e => setSelectedProjet(e.target.value)}
+                                        required
+                                    >
+                                        <option value="">Sélectionner un projet</option>
+                                        {projets.map(p => (
+                                            <option key={p.id || p.uuid} value={p.id || p.uuid}>
+                                                {p.nom}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+
                             <label>
                                 TVA :
                                 <select
