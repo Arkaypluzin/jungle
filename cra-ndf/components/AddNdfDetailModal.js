@@ -244,6 +244,28 @@ export default function AddNdfDetailModal({
     }, 0).toFixed(2)
     , [multiTaux]);
 
+  // Calcul valeur TVA pour monotaux
+  const valeurTvaMono = useMemo(() => {
+    if (tva === "multi-taux" || !montant) return "";
+    // Extraction taux
+    let tauxNum = 0;
+    if (TVAS.includes(tva) && tva !== "autre taux") {
+      tauxNum = parseFloat(tva.replace("%", "")) || 0;
+    } else if (tva === "autre taux" && autreTaux) {
+      tauxNum = parseFloat(autreTaux.replace("%", "")) || 0;
+    }
+    const montantNum = parseFloat(montant) || 0;
+    if (!montantNum || !tauxNum) return "0.00";
+    // Arrondi au centime supérieur
+    const brut = montantNum * tauxNum / 100;
+    const brutStr = (brut * 1000).toFixed(0); // millième pour arrondi
+    const intPart = Math.floor(brut * 100);
+    const third = +brutStr % 10;
+    let arrondi = intPart / 100;
+    if (third >= 5) arrondi = (intPart + 1) / 100;
+    return arrondi.toFixed(2);
+  }, [montant, tva, autreTaux]);
+
   return (
     <>
       {ndfStatut === "Provisoire" && (
@@ -496,6 +518,25 @@ export default function AddNdfDetailModal({
                       </div>
                     );
                   })}
+                </div>
+              )}
+              {tva !== "multi-taux" && (
+                <div>
+                  <label
+                    htmlFor="valeur-tva"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Valeur TVA (€) :
+                  </label>
+                  <input
+                    type="text"
+                    id="valeur-tva"
+                    className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                    value={valeurTvaMono}
+                    readOnly
+                    tabIndex={-1}
+                    title="Valeur TVA calculée automatiquement"
+                  />
                 </div>
               )}
               <div>
