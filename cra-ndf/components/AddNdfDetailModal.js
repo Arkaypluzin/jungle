@@ -244,6 +244,28 @@ export default function AddNdfDetailModal({
     }, 0).toFixed(2)
     , [multiTaux]);
 
+  // Calcul valeur TVA pour monotaux
+  const valeurTvaMono = useMemo(() => {
+    if (tva === "multi-taux" || !montant) return "";
+    // Extraction taux
+    let tauxNum = 0;
+    if (TVAS.includes(tva) && tva !== "autre taux") {
+      tauxNum = parseFloat(tva.replace("%", "")) || 0;
+    } else if (tva === "autre taux" && autreTaux) {
+      tauxNum = parseFloat(autreTaux.replace("%", "")) || 0;
+    }
+    const montantNum = parseFloat(montant) || 0;
+    if (!montantNum || !tauxNum) return "0.00";
+    // Arrondi au centime supérieur
+    const brut = montantNum * tauxNum / 100;
+    const brutStr = (brut * 1000).toFixed(0); // millième pour arrondi
+    const intPart = Math.floor(brut * 100);
+    const third = +brutStr % 10;
+    let arrondi = intPart / 100;
+    if (third >= 5) arrondi = (intPart + 1) / 100;
+    return arrondi.toFixed(2);
+  }, [montant, tva, autreTaux]);
+
   return (
     <>
       {ndfStatut === "Provisoire" && (
@@ -343,56 +365,6 @@ export default function AddNdfDetailModal({
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
-
-              <div className="pt-4 border-t border-gray-200 mt-4">
-                <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
-                <div className="mb-4">
-                  <label
-                    htmlFor="client-select"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Client :
-                  </label>
-                  <select
-                    id="client-select"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={selectedClient}
-                    onChange={(e) => setSelectedClient(e.target.value)}
-                    required
-                  >
-                    <option value="">Sélectionner un client</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nom_client}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="projet-select"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Projet :
-                  </label>
-                  <select
-                    id="projet-select"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={selectedProjet}
-                    onChange={(e) => setSelectedProjet(e.target.value)}
-                    required
-                  >
-                    <option value="">Sélectionner un projet</option>
-                    {projets.map((p) => (
-                      <option key={p.id || p.uuid} value={p.id || p.uuid}>
-                        {p.nom}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div>
                 <label
                   htmlFor="ttc-input"
@@ -546,28 +518,115 @@ export default function AddNdfDetailModal({
                       </div>
                     );
                   })}
+                  {tva === "multi-taux" && valeurTTC && !isNaN(Number(valeurTTC)) && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Total HT calculé :
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={
+                          // Sécurité si vide ou NaN
+                          (parseFloat(valeurTTC) - parseFloat(totalTVA || "0")).toFixed(2)
+                        }
+                        className="w-32 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                        tabIndex={-1}
+                      />
+                      <span className="text-gray-400 text-xs"></span>
+                    </div>
+                  )}
+
                 </div>
               )}
-              <div>
-                <label
-                  htmlFor="montant-input"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Montant HT (€) :
-                </label>
-                <input
-                  type="number"
-                  id="montant-input"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  value={montant}
-                  min={0}
-                  step="0.01"
-                  required
-                  onChange={(e) => setMontant(e.target.value)}
-                  disabled={tva === "multi-taux"}
-                />
-              </div>
+              {tva !== "multi-taux" && (
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1">
+                    <label
+                      htmlFor="montant-input"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Montant HT (€) :
+                    </label>
+                    <input
+                      type="number"
+                      id="montant-input"
+                      className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                      value={montant}
+                      min={0}
+                      step="0.01"
+                      required
+                      onChange={(e) => setMontant(e.target.value)}
+                      disabled={tva === "multi-taux"}
+                    />
+                  </div>
+                  <div className="w-48">
+                    <label
+                      htmlFor="valeur-tva"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Valeur TVA (€) :
+                    </label>
+                    <input
+                      type="text"
+                      id="valeur-tva"
+                      className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                      value={valeurTvaMono}
+                      readOnly
+                      tabIndex={-1}
+                      title="Valeur TVA calculée automatiquement"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="pt-4 border-t border-gray-200 mt-4">
+                <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
+                <div className="mb-4">
+                  <label
+                    htmlFor="client-select"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Client :
+                  </label>
+                  <select
+                    id="client-select"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={selectedClient}
+                    onChange={(e) => setSelectedClient(e.target.value)}
+                    required
+                  >
+                    <option value="">Sélectionner un client</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom_client}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
+                <div>
+                  <label
+                    htmlFor="projet-select"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Projet :
+                  </label>
+                  <select
+                    id="projet-select"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={selectedProjet}
+                    onChange={(e) => setSelectedProjet(e.target.value)}
+                    required
+                  >
+                    <option value="">Sélectionner un projet</option>
+                    {projets.map((p) => (
+                      <option key={p.id || p.uuid} value={p.id || p.uuid}>
+                        {p.nom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div>
                 <label
                   htmlFor="justificatif-file"
