@@ -5,6 +5,39 @@ import { auth } from "@/auth";
 import { promises as fs } from "fs";
 import path from "path";
 
+function buildTvaArray({ tva, montant, multiTaux }) {
+    if (Array.isArray(tva)) return tva; // déjà au bon format (au cas où)
+    // multi-taux
+    if (multiTaux && Array.isArray(multiTaux) && multiTaux.length > 1) {
+        return multiTaux.map(mt => {
+            const tauxNum = parseFloat(mt.taux) || 0;
+            const montantNum = parseFloat(mt.montant) || 0;
+            // Arrondi comme en front
+            const brut = montantNum * tauxNum / 100;
+            const brutStr = (brut * 1000).toFixed(0);
+            const intPart = Math.floor(brut * 100);
+            const third = +brutStr % 10;
+            let arrondi = intPart / 100;
+            if (third >= 5) arrondi = (intPart + 1) / 100;
+            return { taux: tauxNum, valeur_tva: arrondi };
+        });
+    }
+    // taux unique (simple ou "autre taux")
+    let tauxNum = 0;
+    if (tva && typeof tva === "string") {
+        tauxNum = parseFloat(tva); // "10%" -> 10
+        if (isNaN(tauxNum)) tauxNum = parseFloat(multiTaux?.[0]?.taux) || 0;
+    }
+    const montantNum = parseFloat(montant) || 0;
+    const brut = montantNum * tauxNum / 100;
+    const brutStr = (brut * 1000).toFixed(0);
+    const intPart = Math.floor(brut * 100);
+    const third = +brutStr % 10;
+    let arrondi = intPart / 100;
+    if (third >= 5) arrondi = (intPart + 1) / 100;
+    return [{ taux: tauxNum, valeur_tva: arrondi }];
+}
+
 export async function handleGetAll(req) {
     const session = await auth();
     const userId = session?.user?.id;
@@ -45,7 +78,7 @@ export async function handlePost(req) {
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc } = await req.json();
+    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux } = await req.json();
 
     const ndf = await getNdfById(id_ndf);
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
@@ -55,13 +88,15 @@ export async function handlePost(req) {
         return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
     }
 
+    const tvaArr = buildTvaArray({ tva, montant, multiTaux });
+
     const newDetail = {
         uuid: uuidv4(),
         id_ndf,
         date_str,
         nature,
         description,
-        tva,
+        tva: tvaArr,
         montant,
         valeur_ttc,
         img_url: img_url || null,
@@ -88,7 +123,7 @@ export async function handlePut(req, { params }) {
         return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
     }
 
-    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc } = await req.json();
+    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux } = await req.json();
 
     if (img_url && detail.img_url && img_url !== detail.img_url) {
         const oldImgPath = path.join(process.cwd(), "public", detail.img_url);
@@ -100,11 +135,13 @@ export async function handlePut(req, { params }) {
         }
     }
 
+    const tvaArr = buildTvaArray({ tva, montant, multiTaux });
+
     const updated = await updateDetail(params.id, {
         date_str,
         nature,
         description,
-        tva,
+        tva: tvaArr,
         montant,
         valeur_ttc,
         img_url: img_url || null,

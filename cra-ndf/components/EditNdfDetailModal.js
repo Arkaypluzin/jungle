@@ -7,38 +7,53 @@ const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
-    // ----- TVA State identique à Add -----
-    const [tva, setTva] = useState(() => {
-        if (detail.tva && detail.tva.includes("/")) return "multi-taux";
-        if (TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
-        return "autre taux";
-    });
-
-    const [autreTaux, setAutreTaux] = useState(() => {
-        if (!TVAS.includes(detail.tva.split(" ")[0]) && !detail.tva.includes('/')) {
-            return detail.tva;
+    // Init multi-taux à partir de string ou array
+    function getMultiTauxFromDetail(detail) {
+        if (Array.isArray(detail.tva)) {
+            // Nouveau format déjà array [{ taux, montant }]
+            return detail.tva.map(mt => ({
+                taux: String(mt.taux ?? ""),
+                montant: String(mt.montant ?? "")
+            }));
         }
-        return "";
-    });
-
-    // --- Multi-taux gestion identique à Add ---
-    const [multiTaux, setMultiTaux] = useState(() => {
-        if (detail.tva && detail.tva.includes('/')) {
-            // Montant: essayer de trouver info dans detail.multiTaux si dispo
-            if (detail.multiTaux && Array.isArray(detail.multiTaux)) {
-                return detail.multiTaux;
-            }
-            // Sinon, déduire taux à partir de la tva string
+        if (detail.multiTaux && Array.isArray(detail.multiTaux)) {
+            return detail.multiTaux.map(mt => ({
+                taux: String(mt.taux ?? ""),
+                montant: String(mt.montant ?? "")
+            }));
+        }
+        // Ancien format: string genre "20% / 10%"
+        if (typeof detail.tva === "string" && detail.tva.includes("/")) {
             const tauxList = detail.tva.split("/").map(t => t.replace("%", "").trim());
-            // Essaye de découper le montant en parts égales pour préremplir, ou laisse vides
             let montantGlobal = parseFloat(detail.montant) || 0;
             let nb = tauxList.length;
             let approx = nb ? (montantGlobal / nb).toFixed(2) : "";
             return tauxList.map(t => ({ taux: t, montant: approx }));
         }
         return [{ taux: "", montant: "" }];
-    });
+    }
 
+    // Init nature du taux (pour l'UI)
+    function detectTvaType(detail) {
+        if (Array.isArray(detail.tva) || (detail.multiTaux && Array.isArray(detail.multiTaux)) || (typeof detail.tva === "string" && detail.tva.includes("/"))) {
+            return "multi-taux";
+        }
+        if (typeof detail.tva === "string" && TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
+        return "autre taux";
+    }
+
+    const [tva, setTva] = useState(() => detectTvaType(detail));
+    const [autreTaux, setAutreTaux] = useState(() => {
+        if (
+            typeof detail.tva === "string" &&
+            !TVAS.includes(detail.tva.split(" ")[0]) &&
+            !detail.tva.includes("/")
+        ) {
+            return detail.tva;
+        }
+        return "";
+    });
+    const [multiTaux, setMultiTaux] = useState(() => getMultiTauxFromDetail(detail));
     const [open, setOpen] = useState(false);
     const [dateStr, setDateStr] = useState(detail.date_str);
     const [nature, setNature] = useState(detail.nature);
@@ -51,7 +66,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [projets, setProjets] = useState([]);
     const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
     const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
-    const [valeurTTC, setValeurTTC] = useState(detail.valeur_ttc ?? "");
 
     useEffect(() => {
         if (open) {
@@ -66,7 +80,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         }
     }, [open]);
 
-    // Gestion Multi-Taux
+    // Multi-taux gestion
     function handleMultiTauxChange(idx, field, value) {
         setMultiTaux(prev =>
             prev.map((mt, i) =>
@@ -80,19 +94,18 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     function removeMultiTauxField(idx) {
         if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
     }
-
-    // Calcul montant HT total multi-taux
+    // Montant HT global calculé
     const montantMultiHt = useMemo(() => {
         if (tva !== "multi-taux") return null;
         return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
     }, [multiTaux, tva]);
-
     useEffect(() => {
         if (tva === "multi-taux") {
             setMontant(montantMultiHt || "");
         }
     }, [montantMultiHt, tva]);
 
+    // ------- HANDLE UPDATE / SUBMIT -------
     async function handleSubmit(e) {
         e.preventDefault();
         setLoading(true);
@@ -109,7 +122,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             setLoading(false);
             return;
         }
-
         if (imgFile) {
             const formData = new FormData();
             formData.append("file", imgFile);
@@ -128,32 +140,33 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
 
         let tvaValue = tva;
         let montantValue = tva === "multi-taux" ? parseFloat(montantMultiHt) : parseFloat(montant);
-        let extra = {};
+        let body = {
+            date_str: dateStr,
+            nature,
+            description,
+            montant: montantValue,
+            img_url,
+            client_id: selectedClient,
+            projet_id: selectedProjet
+        };
+
         if (tva === "autre taux") {
-            tvaValue = autreTaux;
+            body.tva = autreTaux;
         } else if (tva === "multi-taux") {
-            // Validation : tous taux/montants remplis
+            // Validation
             if (multiTaux.some(mt => !mt.taux || !mt.montant)) {
                 setError("Veuillez compléter tous les taux et montants en multi-taux.");
                 setLoading(false);
                 return;
             }
-            tvaValue = multiTaux.map(mt => `${mt.taux}%`).join(" / ");
-            extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
+            // On envoie un ARRAY [{ taux, montant }]
+            body.tva = multiTaux.map(mt => ({
+                taux: mt.taux,
+                montant: mt.montant
+            }));
+        } else {
+            body.tva = tva;
         }
-
-        const body = {
-            date_str: dateStr,
-            nature,
-            description,
-            tva: tvaValue,
-            montant: montantValue,
-            valeur_ttc: parseFloat(valeurTTC),
-            img_url,
-            client_id: selectedClient,
-            projet_id: selectedProjet,
-            ...extra,
-        };
 
         const res = await fetch(`/api/ndf_details/${detail.uuid}`, {
             method: "PUT",
@@ -169,6 +182,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         setLoading(false);
     }
 
+    // ----- UI identique à avant -----
     return (
         <>
             <button
@@ -374,6 +388,9 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                                     )}
                                                 </div>
                                             ))}
+                                            <div className="text-right text-xs text-gray-500 mt-1">
+                                                Total HT multi-taux : <span className="font-semibold">{montantMultiHt} €</span>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
