@@ -3,13 +3,12 @@ import { getMongoDb } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
 
 // Fonction utilitaire pour obtenir la collection "activities"
-const getActivitiesCollection = async (db) => {
-  // CORRECTION ICI : Utiliser le nom de collection correct "cra_activities"
+export const getActivitiesCollection = async (db) => {
   return db.collection("cra_activities");
 };
 
 // Fonction utilitaire pour obtenir la collection "monthly_cra_reports"
-const getMonthlyCraReportsCollection = async (db) => {
+export const getMonthlyCraReportsCollection = async (db) => {
   return db.collection("monthly_cra_reports");
 };
 
@@ -19,7 +18,7 @@ export async function getMonthlyReportsController(queryParams) {
     const db = await getMongoDb();
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
 
-    const { userId, month, year, status, reportType } = queryParams; // Récupère reportType
+    const { userId, month, year, status, reportType } = queryParams;
 
     let matchStage = {};
 
@@ -37,7 +36,6 @@ export async function getMonthlyReportsController(queryParams) {
       matchStage.status = { $in: statusArray };
     }
 
-    // NOUVEAU: Filtrage par type de rapport
     if (reportType) {
       matchStage.report_type = reportType;
     }
@@ -46,8 +44,8 @@ export async function getMonthlyReportsController(queryParams) {
       { $match: matchStage },
       {
         $addFields: {
-          userName: { $ifNull: ["$userName", "Utilisateur inconnu"] }, // Utilise userName existant ou un fallback
-          id: { $toString: "$_id" }, // Mappe _id vers id pour le frontend
+          userName: { $ifNull: ["$userName", "Utilisateur inconnu"] },
+          id: { $toString: "$_id" },
         },
       },
       { $sort: { year: -1, month: -1, submittedAt: -1 } },
@@ -85,13 +83,13 @@ export async function createOrUpdateMonthlyReportController(
 
     const {
       user_id,
-      userName, // Reçoit userName du frontend
+      userName,
       month,
       year,
       total_days_worked,
       total_billable_days,
       activities_snapshot,
-      report_type, // AJOUTÉ: Récupère le type de rapport (cra ou paid_leave)
+      report_type,
     } = monthlyReportData;
 
     console.log(
@@ -108,15 +106,15 @@ export async function createOrUpdateMonthlyReportController(
 
     const report = {
       user_id: user_id,
-      userName: userName, // Stocke le userName reçu
+      userName: userName,
       month: parseInt(month),
       year: parseInt(year),
       total_days_worked: parseFloat(total_days_worked),
       total_billable_days: parseFloat(total_billable_days),
       activities_snapshot: activities_snapshot,
-      status: "pending_review", // Statut initial lors de la création/mise à jour
+      status: "pending_review",
       submittedAt: new Date(),
-      report_type: report_type, // AJOUTÉ: Stocke le type de rapport
+      report_type: report_type,
     };
 
     let result;
@@ -135,7 +133,6 @@ export async function createOrUpdateMonthlyReportController(
         `[Backend] createOrUpdateMonthlyReportController: Rapport mensuel mis à jour pour l'ID: ${existingReportId}`
       );
     } else {
-      // Utilise user_id, month, year ET report_type pour un upsert unique
       result = await monthlyReportsCollection.updateOne(
         {
           user_id: user_id,
@@ -144,14 +141,13 @@ export async function createOrUpdateMonthlyReportController(
           report_type: report.report_type,
         },
         { $set: report },
-        { upsert: true } // Crée le document s'il n'existe pas, le met à jour sinon
+        { upsert: true }
       );
       console.log(
         `[Backend] createOrUpdateMonthlyReportController: Rapport mensuel créé/upserté. ID upserté: ${result.upsertedId}`
       );
     }
 
-    // Log l'ID de l'activité si elle est créée via ce contrôleur
     if (
       result.upsertedId &&
       report.activities_snapshot &&
@@ -187,12 +183,12 @@ export async function getMonthlyReportByIdController(reportId) {
   try {
     const db = await getMongoDb();
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
-    const activitiesCollection = await getActivitiesCollection(db); // Cette fonction utilise maintenant le bon nom
+    const activitiesCollection = await getActivitiesCollection(db);
 
     console.log(`[Backend DEBUG] Connected to DB Name: "${db.databaseName}"`);
     console.log(
       `[Backend DEBUG] Activities Collection Name: "${activitiesCollection.collectionName}"`
-    ); // Ce log devrait maintenant afficher "cra_activities"
+    );
     console.log(
       `[Backend DEBUG] Initial reportId received: "${reportId}" (Type: ${typeof reportId})`
     );
@@ -253,7 +249,7 @@ export async function getMonthlyReportByIdController(reportId) {
             return null;
           }
         })
-        .filter((id) => id !== null); // Filtre les IDs nuls ou invalides
+        .filter((id) => id !== null);
 
       console.log(
         `[Backend] getMonthlyReportByIdController: Après conversion/filtrage, IDs d'objets valides à rechercher: ${activityObjectIds.length}`,
@@ -264,7 +260,6 @@ export async function getMonthlyReportByIdController(reportId) {
         const firstIdToTest = activityObjectIds[0];
         const firstIdToTestString = firstIdToTest.toString();
 
-        // --- TEST 1: findOne avec ObjectId ---
         console.log(
           `[Backend DEBUG] Test 1: Performing findOne with ObjectId for ID: ${firstIdToTestString}`
         );
@@ -278,7 +273,6 @@ export async function getMonthlyReportByIdController(reportId) {
             : `Not Found`
         );
 
-        // --- TEST 2: findOne avec String ---
         console.log(
           `[Backend DEBUG] Test 2: Performing findOne with String for ID: ${firstIdToTestString}`
         );
@@ -292,7 +286,6 @@ export async function getMonthlyReportByIdController(reportId) {
             : `Not Found`
         );
 
-        // --- NOUVEAU TEST 3: findOne avec Regex ---
         console.log(
           `[Backend DEBUG] Test 3: Performing findOne with Regex for ID: /${firstIdToTestString}/`
         );
@@ -318,13 +311,11 @@ export async function getMonthlyReportByIdController(reportId) {
 
         console.log(
           `[Backend DEBUG] Raw activities from toArray() (before mapping to add 'id'): ${rawActivitiesFromDb.length} documents. First 3:`,
-          rawActivitiesFromDb
-            .slice(0, 3)
-            .map((d) => ({
-              _id: d._id,
-              date_activite: d.date_activite,
-              temps_passe: d.temps_passe,
-            }))
+          rawActivitiesFromDb.slice(0, 3).map((d) => ({
+            _id: d._id,
+            date_activite: d.date_activite,
+            temps_passe: d.temps_passe,
+          }))
         );
 
         populatedActivities = rawActivitiesFromDb.map((doc) => ({
@@ -358,13 +349,13 @@ export async function getMonthlyReportByIdController(reportId) {
       );
     }
 
-    const userName = report.userName || "Utilisateur inconnu"; // Fallback si userName n'est pas dans la DB
+    const userName = report.userName || "Utilisateur inconnu";
 
     return {
       success: true,
       data: {
         ...report,
-        id: report._id.toString(), // Mappe _id vers id ici aussi
+        id: report._id.toString(),
         userName: userName,
         activities_snapshot: populatedActivities,
       },
@@ -400,13 +391,12 @@ export async function updateMonthlyReportStatusController(
     if (newStatus === "rejected") {
       updateOperation.$set.rejectionReason = rejectionReason;
     } else {
-      // Si le statut n'est pas "rejected", assurez-vous que rejectionReason est supprimé s'il existe
       updateOperation.$unset = { rejectionReason: "" };
     }
 
     const result = await monthlyReportsCollection.updateOne(
       { _id: new ObjectId(reportId) },
-      updateOperation // Utilisation de l'objet d'opération de mise à jour combiné
+      updateOperation
     );
 
     if (result.matchedCount === 0) {
@@ -446,20 +436,19 @@ export async function testActivityRead() {
 
   try {
     db = await getMongoDb();
-    activitiesCollection = await getActivitiesCollection(db); // Utilise la collection corrigée
+    activitiesCollection = await getActivitiesCollection(db);
 
     console.log(`[Backend TEST] Starting activity read test.`);
     console.log(
       `[Backend TEST] Connected to DB: "${db.databaseName}", Collection: "${activitiesCollection.collectionName}"`
     );
 
-    // 1. Insérer une activité de test
     const dummyActivity = {
       date_activite: new Date(),
       temps_passe: 8,
       description_activite: "Activité de test temporaire",
-      type_activite: "test_type", // Utilisez un ID de type d'activité qui existe ou est factice
-      client_id: "test_client", // Utilisez un ID de client qui existe ou est factice
+      type_activite: "test_type",
+      client_id: "test_client",
       user_id: "test_user_id",
       status: "draft",
       created_at: new Date(),
@@ -471,7 +460,6 @@ export async function testActivityRead() {
       `[Backend TEST] Inserted dummy activity with _id: ${testActivityId.toString()}`
     );
 
-    // 2. Tenter de lire l'activité avec findOne par ObjectId
     const findOneResult = await activitiesCollection.findOne({
       _id: testActivityId,
     });
@@ -484,7 +472,6 @@ export async function testActivityRead() {
       }`
     );
 
-    // 3. Tenter de lire l'activité avec find et $in par ObjectId
     const findInResult = await activitiesCollection
       .find({ _id: { $in: [testActivityId] } })
       .toArray();
@@ -521,7 +508,6 @@ export async function testActivityRead() {
     testResults.success = false;
     testResults.message = `Erreur lors du test de lecture: ${error.message}`;
   } finally {
-    // 4. Supprimer l'activité de test
     if (testActivityId && activitiesCollection) {
       try {
         const deleteResult = await activitiesCollection.deleteOne({

@@ -9,6 +9,8 @@ import UnifiedManager from "@/components/UnifiedManager";
 import ReceivedCras from "@/components/ReceivedCras";
 import CraHistory from "@/components/CraHistory";
 import { startOfMonth, endOfMonth, format, parseISO, isValid } from "date-fns";
+import { fr } from "date-fns/locale";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 // Composant ToastMessage simplifié et inclus directement
 const ToastMessage = ({ message, type, isVisible, onClose }) => {
@@ -83,6 +85,10 @@ export default function CRAPage() {
 
   const currentUserRole = session?.user?.roles?.[0] || "user";
 
+  const [showDeleteReportConfirmModal, setShowDeleteReportConfirmModal] =
+    useState(false);
+  const [reportToDelete, setReportToDelete] = useState(null);
+
   useEffect(() => {
     if (session) {
       console.log(
@@ -149,14 +155,12 @@ export default function CRAPage() {
           `/api/cra_activities?userId=${currentUserId}&startDate=${startDate}&endDate=${endDate}`,
           "activités CRA"
         );
-        // Robustly convert date_activite to a Date object
         const processedActivities = activitiesData
           .map((activity) => {
             let dateObj = null;
             if (typeof activity.date_activite === "string") {
               dateObj = parseISO(activity.date_activite);
             } else if (activity.date_activite) {
-              // If it's already a Date object or other date-like
               dateObj = new Date(activity.date_activite);
             }
             return {
@@ -164,7 +168,7 @@ export default function CRAPage() {
               date_activite: isValid(dateObj) ? dateObj : null,
             };
           })
-          .filter((activity) => activity.date_activite !== null); // Filter out activities with invalid dates
+          .filter((activity) => activity.date_activite !== null);
 
         console.log(
           "CRAPage: Données d'activités CRA reçues (après API transformation et lookup):",
@@ -511,7 +515,13 @@ export default function CRAPage() {
           await fetchCraActivitiesForMonth(currentDisplayedMonth);
           await fetchMonthlyReportsForUser();
         } else {
-          const errorData = await response.json();
+          const contentType = response.headers.get("content-type");
+          let errorData = {};
+          if (contentType && contentType.includes("application/json")) {
+            errorData = await response.json();
+          } else {
+            errorData.message = await response.text();
+          }
           console.error(
             "CRAPage: Erreur API lors de la suppression de l'activité:",
             errorData
@@ -552,7 +562,7 @@ export default function CRAPage() {
           JSON.stringify(reportData, null, 2)
         );
         const response = await fetch("/api/monthly_cra_reports", {
-          method: "POST", // Ou PUT si votre API gère l'upsert
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(reportData),
         });
@@ -573,9 +583,6 @@ export default function CRAPage() {
         const result = await response.json();
         console.log("CRAPage: Rapport mensuel envoyé avec succès:", result);
 
-        // IMPORTANT : Votre backend doit mettre à jour le statut des activités
-        // listées dans reportData.activities_snapshot à 'pending_review'
-        // ou le statut approprié. Le re-fetch ci-dessous mettra à jour le frontend.
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
         await fetchMonthlyReportsForUser();
         showMessage(
@@ -592,6 +599,91 @@ export default function CRAPage() {
     [
       showMessage,
       currentUserId,
+      fetchCraActivitiesForMonth,
+      currentDisplayedMonth,
+      fetchMonthlyReportsForUser,
+    ]
+  );
+
+  // NOUVELLE FONCTION : Supprimer un rapport mensuel et ses activités associées
+  const handleDeleteMonthlyReport = useCallback(
+    async (report) => {
+      if (!currentUserId) {
+        showMessage(
+          "Veuillez vous connecter pour supprimer des rapports.",
+          "error"
+        );
+        return;
+      }
+      if (!report || !report.id) {
+        showMessage("Rapport invalide pour la suppression.", "error");
+        return;
+      }
+
+      try {
+        console.log(`CRAPage: Suppression du rapport mensuel ID: ${report.id}`);
+        const reportResponse = await fetch(
+          `/api/monthly_cra_reports/${report.id}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+        if (reportResponse.status === 204) {
+          showMessage(
+            "Rapport mensuel et activités associées supprimés avec succès !",
+            "success"
+          );
+          // IMPORTANT : Retourne immédiatement après un succès 204 pour éviter toute exécution ultérieure.
+          await fetchCraActivitiesForMonth(currentDisplayedMonth);
+          await fetchMonthlyReportsForUser();
+          return; // <--- AJOUT CLÉ ICI
+        } else if (!reportResponse.ok) {
+          const contentType = reportResponse.headers.get("content-type");
+          let errorData = {};
+          if (contentType && contentType.includes("application/json")) {
+            errorData = await reportResponse.json();
+          } else {
+            errorData.message = await reportResponse.text();
+          }
+          console.error(
+            "CRAPage: Erreur API lors de la suppression du rapport mensuel:",
+            errorData
+          );
+          throw new Error(
+            errorData.message ||
+              `Erreur serveur: ${reportResponse.statusText}` ||
+              "Échec de la suppression du rapport mensuel."
+          );
+        }
+        // Si la réponse est OK (mais pas 204, ex: 200 OK avec un corps),
+        // nous pourrions la traiter ici. Pour DELETE, 204 est le plus courant.
+        // Si votre backend renvoie un 200 OK avec un JSON, vous pouvez ajouter une logique ici.
+        // Pour l'instant, si on arrive ici sans être 204 et sans être une erreur (!ok),
+        // c'est un cas inattendu pour DELETE, mais on va afficher un message générique.
+        showMessage(
+          "Opération de suppression terminée avec succès (statut non 204) !",
+          "success"
+        );
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        await fetchMonthlyReportsForUser();
+      } catch (error) {
+        console.error(
+          "CRAPage: Échec complet de la suppression du rapport mensuel:",
+          error
+        );
+        showMessage(
+          `Échec de la suppression du rapport: ${error.message}`,
+          "error"
+        );
+      } finally {
+        setShowDeleteReportConfirmModal(false);
+        setReportToDelete(null);
+      }
+    },
+    [
+      currentUserId,
+      showMessage,
       fetchCraActivitiesForMonth,
       currentDisplayedMonth,
       fetchMonthlyReportsForUser,
@@ -837,6 +929,22 @@ export default function CRAPage() {
     ]
   );
 
+  const requestDeleteReportConfirmation = useCallback((report) => {
+    setReportToDelete(report);
+    setShowDeleteReportConfirmModal(true);
+  }, []);
+
+  const cancelDeleteReportConfirmation = useCallback(() => {
+    setReportToDelete(null);
+    setShowDeleteReportConfirmModal(false);
+  }, []);
+
+  const confirmDeleteReportAction = useCallback(() => {
+    if (reportToDelete) {
+      handleDeleteMonthlyReport(reportToDelete);
+    }
+  }, [reportToDelete, handleDeleteMonthlyReport]);
+
   if (status === "loading") {
     return (
       <div className="flex justify-center items-center h-screen text-xl text-gray-700">
@@ -945,7 +1053,7 @@ export default function CRAPage() {
             currentMonth={currentDisplayedMonth}
             onMonthChange={setCurrentDisplayedMonth}
             monthlyReports={monthlyReports}
-            onSendMonthlyReport={handleSendMonthlyReport} // Pass the new function
+            onSendMonthlyReport={handleSendMonthlyReport}
           />
         )}
 
@@ -981,6 +1089,8 @@ export default function CRAPage() {
             showMessage={showMessage}
             clientDefinitions={clientDefinitions}
             activityTypeDefinitions={activityTypeDefinitions}
+            monthlyReports={monthlyReports}
+            onDeleteMonthlyReport={requestDeleteReportConfirmation}
           />
         )}
       </div>
@@ -991,6 +1101,21 @@ export default function CRAPage() {
         isVisible={toastMessage.isVisible}
         onClose={hideMessage}
       />
+
+      {showDeleteReportConfirmModal && reportToDelete && (
+        <ConfirmationModal
+          isOpen={showDeleteReportConfirmModal}
+          onClose={cancelDeleteReportConfirmation}
+          onConfirm={confirmDeleteReportAction}
+          message={`Êtes-vous sûr de vouloir supprimer le rapport de ${
+            reportToDelete.userName
+          } pour ${format(
+            new Date(reportToDelete.year, reportToDelete.month - 1),
+            "MMMM yyyy",
+            { locale: fr }
+          )} ? Cela supprimera également toutes les activités associées à ce rapport. Cette action est irréversible.`}
+        />
+      )}
     </div>
   );
 }

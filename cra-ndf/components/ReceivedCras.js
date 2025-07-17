@@ -15,8 +15,10 @@ export default function ReceivedCras({
   showMessage,
   clientDefinitions,
   activityTypeDefinitions,
+  monthlyReports: propMonthlyReports, // Renommé la prop pour éviter la confusion avec l'état local
+  onDeleteMonthlyReport,
 }) {
-  const [monthlyReports, setMonthlyReports] = useState([]);
+  const [reports, setReports] = useState(propMonthlyReports); // Utilise la prop pour l'initialisation
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [allUsersForFilter, setAllUsersForFilter] = useState([]);
@@ -27,7 +29,7 @@ export default function ReceivedCras({
   const [filterStatus, setFilterStatus] = useState(
     "pending_review,validated,rejected"
   );
-  const [filterReportType, setFilterReportType] = useState(""); // State for report type filter
+  const [filterReportType, setFilterReportType] = useState("");
 
   const [selectedReportForPreview, setSelectedReportForPreview] =
     useState(null);
@@ -78,7 +80,7 @@ export default function ReceivedCras({
       if (filterMonth) queryParams.append("month", filterMonth);
       if (filterYear) queryParams.append("year", filterYear);
       if (filterStatus) queryParams.append("status", filterStatus);
-      if (filterReportType) queryParams.append("reportType", filterReportType); // Le paramètre reportType est correctement envoyé au backend
+      if (filterReportType) queryParams.append("reportType", filterReportType);
 
       console.log(
         "[ReceivedCras] fetchMonthlyReports: Envoi de la requête avec filterReportType:",
@@ -103,13 +105,13 @@ export default function ReceivedCras({
       );
 
       if (data && Array.isArray(data.data)) {
-        setMonthlyReports(data.data);
+        setReports(data.data);
       } else {
         console.warn(
           "ReceivedCras: La réponse API pour la liste ne contient pas un tableau valide dans 'data.data'. Réponse:",
           data
         );
-        setMonthlyReports([]);
+        setReports([]);
       }
     } catch (err) {
       console.error(
@@ -121,7 +123,7 @@ export default function ReceivedCras({
         `Erreur lors du chargement des rapports: ${err.message}`,
         "error"
       );
-      setMonthlyReports([]);
+      setReports([]);
     } finally {
       setLoading(false);
     }
@@ -135,9 +137,13 @@ export default function ReceivedCras({
   ]);
 
   useEffect(() => {
+    setReports(propMonthlyReports);
+    setLoading(false);
+  }, [propMonthlyReports]);
+
+  useEffect(() => {
     fetchUsersForFilter();
-    fetchMonthlyReports();
-  }, [fetchMonthlyReports, fetchUsersForFilter]);
+  }, [fetchUsersForFilter]);
 
   useEffect(() => {
     fetchMonthlyReports();
@@ -150,15 +156,14 @@ export default function ReceivedCras({
     fetchMonthlyReports,
   ]);
 
-  // NOUVEAU: Notification pour les CRAs en attente
   useEffect(() => {
     if (
       !loading &&
       !error &&
-      monthlyReports.length > 0 &&
+      reports.length > 0 &&
       filterStatus.includes("pending_review")
     ) {
-      const pendingReportsCount = monthlyReports.filter(
+      const pendingReportsCount = reports.filter(
         (report) => report.status === "pending_review"
       ).length;
       if (pendingReportsCount > 0) {
@@ -168,7 +173,7 @@ export default function ReceivedCras({
         );
       }
     }
-  }, [monthlyReports, loading, error, filterStatus, showMessage]);
+  }, [reports, loading, error, filterStatus, showMessage]);
 
   const handleOpenMonthlyReportPreview = useCallback((report) => {
     setSelectedReportForPreview(report);
@@ -190,7 +195,6 @@ export default function ReceivedCras({
         console.log(
           `ReceivedCras: Tentative de mise à jour du statut du rapport ID: ${reportId} à '${newStatus}'`
         );
-        // Utilisation du nouveau chemin d'API pour la mise à jour du statut
         const response = await fetch(
           `/api/monthly_cra_reports/${reportId}/status`,
           {
@@ -341,16 +345,13 @@ export default function ReceivedCras({
             );
             let dateObj = null;
             if (typeof activity.date_activite === "string") {
-              // Try parsing as ISO string first
               dateObj = parseISO(activity.date_activite);
               if (!isValidDateFns(dateObj)) {
-                // If ISO parsing fails, try generic Date constructor
                 dateObj = new Date(activity.date_activite);
               }
             } else if (activity.date_activite instanceof Date) {
               dateObj = activity.date_activite;
             } else if (activity.date_activite) {
-              // Fallback for other potential formats
               dateObj = new Date(activity.date_activite);
             }
             console.log(
@@ -361,12 +362,11 @@ export default function ReceivedCras({
 
             const processedActivity = {
               ...activity,
-              // Ensure date_activite is a valid Date object or null
               date_activite: isValidDateFns(dateObj) ? dateObj : null,
               client_id: activity.client_id ? String(activity.client_id) : null,
               type_activite: String(activity.type_activite),
-              status: activity.status || "draft", // Ensure status is always present
-              id: activity.id || activity._id?.toString(), // Ensure ID is a string
+              status: activity.status || "draft",
+              id: activity.id || activity._id?.toString(),
             };
             console.log(
               `[ReceivedCras]   Processed activity (date, status, id): ${processedActivity.date_activite}, ${processedActivity.status}, ${processedActivity.id}`
@@ -433,6 +433,15 @@ export default function ReceivedCras({
     setCraBoardReportData(null);
   }, []);
 
+  const handleDeleteClick = useCallback(
+    (report) => {
+      if (onDeleteMonthlyReport) {
+        onDeleteMonthlyReport(report);
+      }
+    },
+    [onDeleteMonthlyReport]
+  );
+
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const years = [];
@@ -467,9 +476,6 @@ export default function ReceivedCras({
     []
   );
 
-  // Removed the isAdmin check that was preventing rendering for non-admins.
-  // If you need to re-implement admin-only access, this is the place to do it.
-
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64 text-xl text-gray-700">
@@ -488,12 +494,11 @@ export default function ReceivedCras({
 
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
-      <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
-        CRAs Reçus (En attente de révision et Validés)
-      </h2>
+      <h3 className="text-3xl font-bold text-gray-800 mb-6 text-center">
+        CRAM Reçus (En attente de révision, validés et refusés)
+      </h3>
 
       <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner flex flex-wrap gap-4 justify-center items-center">
-        {/* Réintégration du filtre utilisateur */}
         <div className="flex flex-col">
           <label
             htmlFor="filterUser"
@@ -581,7 +586,6 @@ export default function ReceivedCras({
           </select>
         </div>
 
-        {/* Filtrer par type de rapport (CRA ou Congés Payés) */}
         <div className="flex flex-col">
           <label
             htmlFor="filterReportType"
@@ -604,7 +608,7 @@ export default function ReceivedCras({
         </div>
       </div>
 
-      {Array.isArray(monthlyReports) && monthlyReports.length === 0 ? (
+      {Array.isArray(reports) && reports.length === 0 ? (
         <div className="text-gray-600 text-center py-8 text-lg">
           Aucun rapport trouvé avec les filtres actuels.
         </div>
@@ -617,13 +621,14 @@ export default function ReceivedCras({
                   Type
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                  Utilisateur
+                </th>{" "}
+                {/* DÉPLACÉ : Colonne Utilisateur */}
+                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Mois
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Année
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Utilisateur
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Jours travaillés
@@ -637,15 +642,17 @@ export default function ReceivedCras({
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Actions
                 </th>
+                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                  Supprimer
+                </th>
               </tr>
             </thead>
             <tbody>
-              {monthlyReports.map((report) => (
+              {reports.map((report) => (
                 <tr
                   key={report.id}
                   className="border-b border-gray-200 hover:bg-gray-50"
                 >
-                  {/* Afficher le type de rapport */}
                   <td className="py-3 px-4 text-sm text-gray-800">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -660,15 +667,20 @@ export default function ReceivedCras({
                     </span>
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
-                    {format(new Date(report.year, report.month - 1), "MMMM", {
-                      locale: fr,
-                    })}
+                    {report.userName || "Utilisateur inconnu"}
+                  </td>{" "}
+                  {/* DÉPLACÉ : Cellule Utilisateur */}
+                  <td className="py-3 px-4 text-sm text-gray-800">
+                    {isValidDateFns(new Date(report.year, report.month - 1))
+                      ? format(
+                          new Date(report.year, report.month - 1),
+                          "MMMM",
+                          { locale: fr }
+                        )
+                      : "Date invalide"}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {report.year}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {report.userName || "Utilisateur inconnu"}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {report.total_days_worked?.toFixed(2) || "0.00"}
@@ -720,6 +732,26 @@ export default function ReceivedCras({
                         </>
                       )}
                     </div>
+                  </td>
+                  <td className="py-3 px-4 whitespace-nowrap text-center text-sm font-medium">
+                    <button
+                      onClick={() => handleDeleteClick(report)}
+                      className="text-red-500 hover:text-red-700 focus:outline-none p-1 rounded-full hover:bg-red-100 transition-colors"
+                      title="Supprimer le rapport et ses activités"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm-2 4a1 1 0 011-1h4a1 1 0 110 2H6a1 1 0 01-1-1z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -822,18 +854,17 @@ export default function ReceivedCras({
               </button>
             </div>
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
-              {/* Le composant CraBoard est utilisé ici en mode lecture seule */}
               <CraBoard
                 userId={craBoardReportData.userId}
                 userFirstName={craBoardReportData.userFirstName}
-                activities={craBoardReportData.activities} // Les activités sont passées ici
+                activities={craBoardReportData.activities}
                 activityTypeDefinitions={activityTypeDefinitions}
                 clientDefinitions={clientDefinitions}
                 currentMonth={craBoardReportData.currentMonth}
                 showMessage={showMessage}
-                readOnly={true} // Important: assurez-vous qu'il est en lecture seule
-                monthlyReports={craBoardReportData.monthlyReports} // Passe les rapports mensuels pour la logique de statut
-                rejectionReason={craBoardReportData.rejectionReason} // Passe le motif de rejet
+                readOnly={true}
+                monthlyReports={craBoardReportData.monthlyReports}
+                rejectionReason={craBoardReportData.rejectionReason}
               />
             </div>
           </div>
