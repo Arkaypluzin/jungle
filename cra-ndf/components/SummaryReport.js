@@ -1,4 +1,6 @@
 // components/SummaryReport.js
+"use client"; // Assurez-vous que ce composant est un Client Component
+
 import React, { useMemo } from "react";
 import { format, isWeekend, isValid, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -16,17 +18,30 @@ export default function SummaryReport({
   onClose,
   onOpenMonthlyReportPreview,
 }) {
+  // Vérification défensive pour la prop 'month'
+  if (!isValid(month)) {
+    console.error("SummaryReport: Prop 'month' invalide reçue:", month);
+    // Retourne un message d'erreur ou null pour éviter le crash
+    return (
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mt-6">
+        <p>
+          Erreur: Impossible d'afficher le rapport mensuel car la date est
+          invalide.
+        </p>
+      </div>
+    );
+  }
+
   const monthName = format(month, "MMMM yyyy", { locale: fr });
 
   // Trier les activités par date
   const sortedActivities = useMemo(() => {
     return [...activities].sort((a, b) => {
-      // date_activite should already be a Date object from the parent component
-      // No need for parseISO here, just ensure it's a valid Date for comparison
+      // S'assurer que date_activite est un objet Date valide pour la comparaison
       const dateA =
         a.date_activite && isValid(a.date_activite)
           ? a.date_activite
-          : new Date(0);
+          : new Date(0); // Fallback à une date valide pour le tri
       const dateB =
         b.date_activite && isValid(b.date_activite)
           ? b.date_activite
@@ -38,25 +53,35 @@ export default function SummaryReport({
   const groupedActivities = useMemo(() => {
     const groups = {};
     sortedActivities.forEach((activity) => {
-      const dateKey = format(activity.date_activite, "yyyy-MM-dd");
-      if (!groups[dateKey]) {
-        groups[dateKey] = [];
+      // S'assurer que activity.date_activite est valide avant de la formater
+      if (isValid(activity.date_activite)) {
+        const dateKey = format(activity.date_activite, "yyyy-MM-dd");
+        if (!groups[dateKey]) {
+          groups[dateKey] = [];
+        }
+        groups[dateKey].push(activity);
+      } else {
+        console.warn(
+          "SummaryReport: Ignorer l'activité avec date_activite invalide lors du regroupement:",
+          activity
+        );
       }
-      groups[dateKey].push(activity);
     });
     return groups;
   }, [sortedActivities]);
 
   const dailySummaries = useMemo(() => {
     return Object.keys(groupedActivities).map((dateKey) => {
-      const date = parseISO(dateKey); // parseISO is fine here as dateKey is guaranteed string
+      const date = parseISO(dateKey); // dateKey est une chaîne, parseISO est correct ici
       const activitiesForDay = groupedActivities[dateKey];
       const totalTimeForDay = activitiesForDay.reduce(
         (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
         0
       );
-      const isWeekendDay = isWeekend(date, { weekStartsOn: 1 });
-      const isHoliday = isPublicHoliday(date);
+      // Vérifications défensives avant d'utiliser les dates
+      const isWeekendDay =
+        isValid(date) && isWeekend(date, { weekStartsOn: 1 });
+      const isHoliday = isValid(date) && isPublicHoliday(date);
       const isNonWorkingDay = isWeekendDay || isHoliday;
 
       return {
@@ -161,7 +186,11 @@ export default function SummaryReport({
         <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar p-2">
           {dailySummaries.map((daySummary) => (
             <div
-              key={format(daySummary.date, "yyyy-MM-dd")}
+              key={
+                isValid(daySummary.date)
+                  ? format(daySummary.date, "yyyy-MM-dd")
+                  : `invalid-${Math.random()}`
+              }
               className={`p-4 rounded-lg shadow-sm ${
                 daySummary.isNonWorkingDay
                   ? "bg-yellow-50 border border-yellow-200"
@@ -170,7 +199,9 @@ export default function SummaryReport({
             >
               <div className="flex justify-between items-center mb-2">
                 <h5 className="font-bold text-lg text-gray-800">
-                  {format(daySummary.date, "EEEE dd MMMM", { locale: fr })}
+                  {isValid(daySummary.date)
+                    ? format(daySummary.date, "EEEE dd MMMM", { locale: fr })
+                    : "Date invalide"}
                   {daySummary.isWeekend && (
                     <span className="ml-2 text-sm text-yellow-700">
                       (Weekend)

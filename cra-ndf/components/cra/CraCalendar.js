@@ -16,6 +16,7 @@ import {
   addDays,
   startOfDay,
   isBefore,
+  isValid,
 } from "date-fns";
 import { fr } from "date-fns/locale";
 import CraDayCell from "./CraDayCell"; // Import the CraDayCell component
@@ -33,19 +34,20 @@ const CraCalendar = ({
   onMouseEnter,
   onMouseUp,
   readOnly = false,
-  isCraEditable, // Reçu de CraBoard
-  isPaidLeaveEditable, // Reçu de CraBoard
-  requestDeleteFromCalendar, // Reçu de CraBoard
-  showMessage, // Reçu de CraBoard
-  userId, // Reçu de CraBoard
-  userFirstName, // Reçu de CraBoard
-  isDragging, // Reçu de CraBoard
+  isCraEditable,
+  isPaidLeaveEditable,
+  requestDeleteFromCalendar,
+  showMessage,
+  userId,
+  userFirstName,
+  isDragging,
+  paidLeaveTypeId, // <--- NOUVEAU : Reçu de CraBoard
 }) => {
   console.log(
     "CraCalendar: currentMonth received:",
     currentMonth,
     "isValid:",
-    currentMonth instanceof Date && !isNaN(currentMonth)
+    isValid(currentMonth)
   );
   console.log(
     "CraCalendar: readOnly:",
@@ -58,34 +60,49 @@ const CraCalendar = ({
   console.log("CraCalendar: isDragging:", isDragging);
 
   const daysInMonth = useMemo(() => {
+    if (!isValid(currentMonth)) {
+      console.error(
+        "CraCalendar: currentMonth est invalide. Utilisation de la date actuelle."
+      );
+      const today = new Date();
+      const monthStart = startOfMonth(today);
+      const monthEnd = endOfMonth(today);
+      const startCalendarDay = startOfWeek(monthStart, { weekStartsOn: 1 });
+      const endCalendarDay = endOfWeek(monthEnd, { weekStartsOn: 1 });
+      return eachDayOfInterval({
+        start: startCalendarDay,
+        end: endCalendarDay,
+      });
+    }
+
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
     console.log(
       "CraCalendar: monthStart:",
       monthStart,
       "isValid:",
-      monthStart instanceof Date && !isNaN(monthStart)
+      isValid(monthStart)
     );
     console.log(
       "CraCalendar: monthEnd:",
       monthEnd,
       "isValid:",
-      monthEnd instanceof Date && !isNaN(monthEnd)
+      isValid(monthEnd)
     );
 
-    const startCalendarDay = startOfWeek(monthStart, { locale: fr });
-    const endCalendarDay = endOfWeek(monthEnd, { locale: fr });
+    const startCalendarDay = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const endCalendarDay = endOfWeek(monthEnd, { weekStartsOn: 1 });
     console.log(
       "CraCalendar: startCalendarDay:",
       startCalendarDay,
       "isValid:",
-      startCalendarDay instanceof Date && !isNaN(startCalendarDay)
+      isValid(startCalendarDay)
     );
     console.log(
       "CraCalendar: endCalendarDay:",
       endCalendarDay,
       "isValid:",
-      endCalendarDay instanceof Date && !isNaN(endCalendarDay)
+      isValid(endCalendarDay)
     );
 
     return eachDayOfInterval({ start: startCalendarDay, end: endCalendarDay });
@@ -123,30 +140,31 @@ const CraCalendar = ({
               <CraDayCell
                 key={dateString}
                 day={day}
-                formattedDate={format(day, "d")} // Pass formatted day number
+                formattedDate={format(day, "d")}
                 activitiesForDay={activitiesForDay}
                 isTodayHighlight={isTodayHighlight}
                 isWeekendDay={isWeekendDay}
                 isPublicHolidayDay={isPublicHolidayDay}
                 isNonWorkingDay={isNonWorkingDay}
                 isOutsideCurrentMonth={isOutsideCurrentMonth}
-                isPastDay={isPastDay} // Pass isPastDay
+                isPastDay={isPastDay}
                 isTempSelected={isTempSelected}
-                handleMouseDown={onMouseDown} // Pass the handler from CraBoard
-                handleMouseEnter={onMouseEnter} // Pass the handler from CraBoard
-                handleDayClick={onDayClick} // Pass the handler from CraBoard
-                handleActivityClick={onActivityClick} // Pass the handler from CraBoard
-                requestDeleteFromCalendar={requestDeleteFromCalendar} // Pass the handler from CraBoard
+                handleMouseDown={onMouseDown}
+                handleMouseEnter={onMouseEnter}
+                handleDayClick={onDayClick}
+                handleActivityClick={onActivityClick}
+                requestDeleteFromCalendar={requestDeleteFromCalendar}
                 activityTypeDefinitions={activityTypeDefinitions}
                 clientDefinitions={clientDefinitions}
                 showMessage={showMessage}
-                readOnly={readOnly} // Pass global readOnly
-                isCraEditable={isCraEditable} // Pass specific editable flags
-                isPaidLeaveEditable={isPaidLeaveEditable} // Pass specific editable flags
+                readOnly={readOnly}
+                isCraEditable={isCraEditable}
+                isPaidLeaveEditable={isPaidLeaveEditable}
                 userId={userId}
                 userFirstName={userFirstName}
                 currentMonth={currentMonth}
-                isDragging={isDragging} // Pass isDragging state to CraDayCell
+                isDragging={isDragging}
+                paidLeaveTypeId={paidLeaveTypeId} // <--- PASSAGE DE LA PROP
               />
             );
           })}

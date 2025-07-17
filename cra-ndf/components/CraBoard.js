@@ -550,13 +550,11 @@ export default function CraBoard({
 
   const handleDayClick = useCallback(
     (dayDate) => {
-      // MODIFIÉ : Ignorer le clic si une suppression est en cours
       if (isDeletingActivity) {
         console.log(
-          "[CraBoard - DEBUG] handleDayClick: Ignoré car une suppression vient d'avoir lieu. isDeletingActivity:",
+          "[CraBoard - DEBUG] handleDayClick: Ignoré car une suppression est en cours. isDeletingActivity:",
           isDeletingActivity
         );
-        setIsDeletingActivity(false); // Réinitialiser le flag
         return;
       }
       console.log(
@@ -650,9 +648,7 @@ export default function CraBoard({
       paidLeaveTypeId,
       craReportStatus,
       paidLeaveReportStatus,
-      // AJOUTÉ : Dépendances pour le flag de suppression
       isDeletingActivity,
-      setIsDeletingActivity,
       setIsModalOpen,
       setEditingActivity,
       setSelectedDate,
@@ -719,13 +715,11 @@ export default function CraBoard({
         await handleAddPaidLeave(tempSelectedDays);
       }
     } else {
-      // MODIFIÉ : Ignorer le clic si une suppression vient d'avoir lieu
       if (isDeletingActivity) {
         console.log(
-          "[CraBoard - DEBUG] handleMouseUp: Ignoré car une suppression vient d'avoir lieu. isDeletingActivity:",
+          "[CraBoard - DEBUG] handleMouseUp: Ignoré car une suppression est en cours. isDeletingActivity:",
           isDeletingActivity
         );
-        setIsDeletingActivity(false); // Réinitialiser le flag
         return;
       }
       console.log("[CraBoard - DEBUG] handleMouseUp: Appel de handleDayClick.");
@@ -743,9 +737,7 @@ export default function CraBoard({
     tempSelectedDays,
     handleAddPaidLeave,
     handleDayClick,
-    // AJOUTÉ : Dépendances pour le flag de suppression
     isDeletingActivity,
-    setIsDeletingActivity,
   ]);
 
   useEffect(() => {
@@ -757,13 +749,11 @@ export default function CraBoard({
 
   const handleActivityClick = useCallback(
     (activity) => {
-      // MODIFIÉ : Ignorer le clic si une suppression est en cours
       if (isDeletingActivity) {
         console.log(
-          "[CraBoard - DEBUG] handleActivityClick: Ignoré car une suppression vient d'avoir lieu. isDeletingActivity:",
+          "[CraBoard - DEBUG] handleActivityClick: Ignoré car une suppression est en cours. isDeletingActivity:",
           isDeletingActivity
         );
-        setIsDeletingActivity(false); // Réinitialiser le flag
         return;
       }
       console.log(
@@ -859,9 +849,7 @@ export default function CraBoard({
       craReportStatus,
       paidLeaveReportStatus,
       activities,
-      // AJOUTÉ : Dépendances pour le flag de suppression
       isDeletingActivity,
-      setIsDeletingActivity,
       setIsModalOpen,
       setEditingActivity,
       setSelectedDate,
@@ -931,6 +919,9 @@ export default function CraBoard({
           error
         );
         showMessage(`Échec de la sauvegarde: ${error.message}`, "error");
+      } finally {
+        setIsModalOpen(false);
+        setEditingActivity(null);
       }
     },
     [
@@ -950,7 +941,7 @@ export default function CraBoard({
 
   const requestDeleteFromCalendar = useCallback(
     async (activityId, event) => {
-      event.stopPropagation(); // Assurez-vous que l'événement ne remonte pas
+      event.stopPropagation();
       console.log(
         `[CraBoard - DEBUG] requestDeleteFromCalendar appelé pour l'activité ID: ${activityId}`
       );
@@ -1010,15 +1001,13 @@ export default function CraBoard({
       }
 
       try {
-        // MODIFIÉ : Fermer le modal et réinitialiser l'activité d'édition AU DÉBUT
         setIsModalOpen(false);
         setEditingActivity(null);
 
-        setIsDeletingActivity(true); // Définir le flag
+        setIsDeletingActivity(true);
         if (deletionTimeoutRef.current) {
           clearTimeout(deletionTimeoutRef.current);
         }
-        // SUPPRIMÉ : await new Promise(resolve => setTimeout(resolve, 50));
 
         await onDeleteActivity(activityId);
         console.log(
@@ -1035,9 +1024,9 @@ export default function CraBoard({
         );
         showMessage(`Erreur de suppression: ${error.message}`, "error");
       } finally {
-        setIsDeletingActivity(false); // Réinitialiser le flag dans le bloc finally
+        setIsDeletingActivity(false);
         console.log(
-          "[CraBoard - DEBUG] isDeletingActivity réinitialisé dans finally."
+          "[CraBoard - DEBUG] isDeletingActivity réinitialisé dans finally de requestDeleteFromCalendar."
         );
       }
     },
@@ -1055,8 +1044,8 @@ export default function CraBoard({
       fetchActivitiesForMonth,
       currentMonth,
       setIsDeletingActivity,
-      setIsModalOpen, // AJOUTÉ
-      setEditingActivity, // AJOUTÉ
+      setIsModalOpen,
+      setEditingActivity,
     ]
   );
 
@@ -1072,15 +1061,13 @@ export default function CraBoard({
 
     if (activityToDelete) {
       try {
-        // MODIFIÉ : Fermer le modal et réinitialiser l'activité d'édition AU DÉBUT
         setIsModalOpen(false);
         setEditingActivity(null);
 
-        setIsDeletingActivity(true); // Définir le flag
+        setIsDeletingActivity(true);
         if (deletionTimeoutRef.current) {
           clearTimeout(deletionTimeoutRef.current);
         }
-        // SUPPRIMÉ : await new Promise(resolve => setTimeout(resolve, 50));
 
         const activity = activities.find((act) => act.id === activityToDelete);
         const isActivityStatusEditable = ["draft", "rejected"].includes(
@@ -1128,7 +1115,7 @@ export default function CraBoard({
         showMessage(`Erreur de suppression: ${error.message}`, "error");
       } finally {
         setActivityToDelete(null);
-        setIsDeletingActivity(false); // Réinitialiser le flag dans le bloc finally
+        setIsDeletingActivity(false);
       }
     }
   }, [
@@ -1144,10 +1131,9 @@ export default function CraBoard({
     paidLeaveTypeId,
     craReportStatus,
     paidLeaveReportStatus,
-    // AJOUTÉ : Dépendance pour le flag de suppression
     setIsDeletingActivity,
-    setIsModalOpen, // AJOUTÉ
-    setEditingActivity, // AJOUTÉ
+    setIsModalOpen,
+    setEditingActivity,
   ]);
 
   const cancelDeleteActivity = useCallback(() => {
@@ -1206,12 +1192,10 @@ export default function CraBoard({
     let errorCount = 0;
     for (const activity of activitiesToReset) {
       try {
-        // MODIFIÉ : Définir le flag et un court délai
         setIsDeletingActivity(true);
         if (deletionTimeoutRef.current) {
           clearTimeout(deletionTimeoutRef.current);
         }
-        // SUPPRIMÉ : await new Promise(resolve => setTimeout(resolve, 50));
 
         await onDeleteActivity(activity.id);
         successCount++;
@@ -1233,7 +1217,6 @@ export default function CraBoard({
     currentMonth,
     fetchActivitiesForMonth,
     readOnly,
-    // AJOUTÉ : Dépendance pour le flag de suppression
     setIsDeletingActivity,
   ]);
 
@@ -1328,15 +1311,12 @@ export default function CraBoard({
       };
 
       try {
-        // MODIFIÉ : Appel à la prop onSendMonthlyReport
         await onSendMonthlyReport(reportData);
-        // showMessage est géré par onSendMonthlyReport dans CRAPage
       } catch (error) {
         console.error(
           `CraBoard: Erreur lors de l'envoi du rapport mensuel ${reportType}:`,
           error
         );
-        // showMessage est géré par onSendMonthlyReport dans CRAPage
       }
     },
     [
@@ -1350,7 +1330,7 @@ export default function CraBoard({
       userFirstName,
       activityTypeDefinitions,
       fetchActivitiesForMonth,
-      onSendMonthlyReport, // NOUVEAU : Ajouté aux dépendances
+      onSendMonthlyReport,
     ]
   );
 
@@ -1514,13 +1494,6 @@ export default function CraBoard({
         `}
       </style>
 
-      {/* Message Display - Géré par CRAPage */}
-      {/* {message && (
-        <div className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg border ${getMessageClasses(messageType)} z-50 transition-opacity duration-300 ease-in-out`}>
-          {message}
-        </div>
-      )} */}
-
       <CraControls
         currentMonth={currentMonth}
         userFirstName={userFirstName}
@@ -1650,6 +1623,7 @@ export default function CraBoard({
         showMessage={showMessage}
         userId={userId}
         userFirstName={userFirstName}
+        paidLeaveTypeId={paidLeaveTypeId}
       />
 
       {isModalOpen && (
