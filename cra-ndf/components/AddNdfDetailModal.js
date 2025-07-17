@@ -343,56 +343,6 @@ export default function AddNdfDetailModal({
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
-
-              <div className="pt-4 border-t border-gray-200 mt-4">
-                <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
-                <div className="mb-4">
-                  <label
-                    htmlFor="client-select"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Client :
-                  </label>
-                  <select
-                    id="client-select"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={selectedClient}
-                    onChange={(e) => setSelectedClient(e.target.value)}
-                    required
-                  >
-                    <option value="">Sélectionner un client</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nom_client}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="projet-select"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Projet :
-                  </label>
-                  <select
-                    id="projet-select"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={selectedProjet}
-                    onChange={(e) => setSelectedProjet(e.target.value)}
-                    required
-                  >
-                    <option value="">Sélectionner un projet</option>
-                    {projets.map((p) => (
-                      <option key={p.id || p.uuid} value={p.id || p.uuid}>
-                        {p.nom}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div>
                 <label
                   htmlFor="ttc-input"
@@ -567,7 +517,54 @@ export default function AddNdfDetailModal({
                   disabled={tva === "multi-taux"}
                 />
               </div>
+              <div className="pt-4 border-t border-gray-200 mt-4">
+                <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
+                <div className="mb-4">
+                  <label
+                    htmlFor="client-select"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Client :
+                  </label>
+                  <select
+                    id="client-select"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={selectedClient}
+                    onChange={(e) => setSelectedClient(e.target.value)}
+                    required
+                  >
+                    <option value="">Sélectionner un client</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom_client}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
+                <div>
+                  <label
+                    htmlFor="projet-select"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Projet :
+                  </label>
+                  <select
+                    id="projet-select"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={selectedProjet}
+                    onChange={(e) => setSelectedProjet(e.target.value)}
+                    required
+                  >
+                    <option value="">Sélectionner un projet</option>
+                    {projets.map((p) => (
+                      <option key={p.id || p.uuid} value={p.id || p.uuid}>
+                        {p.nom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div>
                 <label
                   htmlFor="justificatif-file"
