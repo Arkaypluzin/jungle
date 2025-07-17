@@ -45,7 +45,7 @@ export async function handlePost(req) {
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id } = await req.json();
+    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc } = await req.json();
 
     const ndf = await getNdfById(id_ndf);
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
@@ -63,6 +63,7 @@ export async function handlePost(req) {
         description,
         tva,
         montant,
+        valeur_ttc,
         img_url: img_url || null,
         client_id,
         projet_id
@@ -87,7 +88,7 @@ export async function handlePut(req, { params }) {
         return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
     }
 
-    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id } = await req.json();
+    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc } = await req.json();
 
     if (img_url && detail.img_url && img_url !== detail.img_url) {
         const oldImgPath = path.join(process.cwd(), "public", detail.img_url);
@@ -105,6 +106,7 @@ export async function handlePut(req, { params }) {
         description,
         tva,
         montant,
+        valeur_ttc,
         img_url: img_url || null,
         client_id,
         projet_id

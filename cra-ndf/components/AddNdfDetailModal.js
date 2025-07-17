@@ -32,7 +32,8 @@ export default function AddNdfDetailModal({
   const [nature, setNature] = useState(NATURES[0]);
   const [description, setDescription] = useState("");
   const [tva, setTva] = useState("0%");
-  const [montant, setMontant] = useState(""); // Global montant (HT)
+  const [montant, setMontant] = useState("");
+  const [valeurTTC, setValeurTTC] = useState("");
   const [autreTaux, setAutreTaux] = useState("");
   const [multiTaux, setMultiTaux] = useState([{ taux: "", montant: "" }]);
   const [imgFile, setImgFile] = useState(null);
@@ -181,6 +182,7 @@ export default function AddNdfDetailModal({
       description,
       tva: tvaValue,
       montant: montantValue,
+      valeur_ttc: parseFloat(valeurTTC),
       img_url,
       client_id: selectedClient,
       projet_id: selectedProjet,
@@ -375,6 +377,26 @@ export default function AddNdfDetailModal({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="ttc-input"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Valeur TTC (€) :
+                </label>
+                <input
+                  type="number"
+                  id="ttc-input"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  value={valeurTTC}
+                  min={0}
+                  step="0.01"
+                  required
+                  onChange={(e) => setValeurTTC(e.target.value)}
+                  placeholder="Montant TTC du ticket"
+                />
               </div>
 
               <div>
