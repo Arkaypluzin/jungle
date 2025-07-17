@@ -518,6 +518,25 @@ export default function AddNdfDetailModal({
                       </div>
                     );
                   })}
+                  {tva === "multi-taux" && valeurTTC && !isNaN(Number(valeurTTC)) && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Total HT calculé :
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={
+                          // Sécurité si vide ou NaN
+                          (parseFloat(valeurTTC) - parseFloat(totalTVA || "0")).toFixed(2)
+                        }
+                        className="w-32 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                        tabIndex={-1}
+                      />
+                      <span className="text-gray-400 text-xs"></span>
+                    </div>
+                  )}
+
                 </div>
               )}
               {tva !== "multi-taux" && (
