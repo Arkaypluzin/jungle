@@ -105,8 +105,7 @@ export default function NdfDetailTable({
         "Projet",
         "Montant HT",
         "TVA",
-        "Montant TTC",
-        "Justificatif",
+        "Montant TTC"
       ],
     ];
 
