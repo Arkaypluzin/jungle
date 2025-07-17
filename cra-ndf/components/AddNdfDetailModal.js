@@ -170,7 +170,7 @@ export default function AddNdfDetailModal({
         return;
       }
       tvaValue = multiTaux
-        .map((mt) => `${mt.taux}%`)
+        .map((mt) => `${parseFloat(mt.taux) || 0}%`)
         .join(" / ");
       extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
     }
@@ -229,6 +229,20 @@ export default function AddNdfDetailModal({
       setMontant(montantMultiHt || "");
     }
   }, [montantMultiHt, tva]);
+
+  const totalTVA = useMemo(() =>
+    multiTaux.reduce((acc, mt) => {
+      const tauxNum = parseFloat(mt.taux) || 0;
+      const montantNum = parseFloat(mt.montant) || 0;
+      const brut = montantNum * tauxNum / 100;
+      const brutStr = (brut * 1000).toFixed(0);
+      const intPart = Math.floor(brut * 100);
+      const third = +brutStr % 10;
+      let arrondi = intPart / 100;
+      if (third >= 5) arrondi = (intPart + 1) / 100;
+      return acc + arrondi;
+    }, 0).toFixed(2)
+    , [multiTaux]);
 
   return (
     <>
@@ -447,69 +461,93 @@ export default function AddNdfDetailModal({
               {tva === "multi-taux" && (
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Taux multiples (%) et montants :
+                    Taux multiples (%) – montants HT – valeur TVA :
                   </label>
-                  {multiTaux.map((mt, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <select
-                        className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        value={mt.taux}
-                        required
-                        onChange={(e) => handleMultiTauxChange(idx, "taux", e.target.value)}
-                      >
-                        <option value="">Taux</option>
-                        {MULTI_TVA_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}%
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        placeholder="Montant HT"
-                        min={0}
-                        step="0.01"
-                        className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        value={mt.montant}
-                        required
-                        onChange={(e) => handleMultiTauxChange(idx, "montant", e.target.value)}
-                      />
-                      {multiTaux.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeMultiTauxField(idx)}
-                          className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors duration-200"
-                          title="Supprimer ce taux"
+                  {multiTaux.map((mt, idx) => {
+                    // Calcul de la valeur TVA pour cette ligne, arrondi au centime sup
+                    const tauxNum = parseFloat(mt.taux) || 0;
+                    const montantNum = parseFloat(mt.montant) || 0;
+                    let tvaValeur = "";
+                    if (mt.taux && mt.montant) {
+                      const brut = montantNum * tauxNum / 100;
+                      const brutStr = (brut * 1000).toFixed(0); // millième pour arrondi
+                      const intPart = Math.floor(brut * 100);
+                      const third = +brutStr % 10;
+                      let arrondi = intPart / 100;
+                      if (third >= 5) arrondi = (intPart + 1) / 100;
+                      tvaValeur = arrondi.toFixed(2);
+                    }
+
+                    return (
+                      <div key={idx} className="flex items-center gap-3">
+                        <select
+                          className="block w-20 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          value={mt.taux}
+                          required
+                          onChange={e => handleMultiTauxChange(idx, "taux", e.target.value)}
                         >
-                          <X size={16} />
-                        </button>
-                      )}
-                      {idx === multiTaux.length - 1 && multiTaux.length < 3 && (
-                        <button
-                          type="button"
-                          onClick={addMultiTauxField}
-                          className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors duration-200"
-                          title="Ajouter un taux"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
+                          <option value="">Taux</option>
+                          {MULTI_TVA_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}%
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="Montant HT"
+                          min={0}
+                          step="0.01"
+                          className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          value={mt.montant}
+                          required
+                          onChange={e => handleMultiTauxChange(idx, "montant", e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          className="block w-28 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                          value={tvaValeur}
+                          readOnly
+                          tabIndex={-1}
+                          placeholder="Valeur TVA"
+                          title="Valeur TVA calculée automatiquement"
+                        />
+                        {multiTaux.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeMultiTauxField(idx)}
+                            className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors duration-200"
+                            title="Supprimer ce taux"
                           >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                            <X size={16} />
+                          </button>
+                        )}
+                        {idx === multiTaux.length - 1 && multiTaux.length < 3 && (
+                          <button
+                            type="button"
+                            onClick={addMultiTauxField}
+                            className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors duration-200"
+                            title="Ajouter un taux"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-4 w-4"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-
               <div>
                 <label
                   htmlFor="montant-input"
