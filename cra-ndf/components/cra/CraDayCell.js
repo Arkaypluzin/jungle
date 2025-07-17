@@ -1,40 +1,62 @@
 // components/cra/CraDayCell.js
 import React from "react";
-import { format, isSameMonth, isSameDay, isValid } from "date-fns"; // Import isValid
+import {
+  format,
+  isSameMonth,
+  isSameDay,
+  isValid,
+  isBefore,
+  startOfDay,
+} from "date-fns";
 import CraActivityItem from "./CraActivityItem";
 
 export default function CraDayCell({
   day,
-  formattedDate, // This is already formatted, but we still need to check 'day' for data-date
+  formattedDate,
   activitiesForDay,
   isTodayHighlight,
   isWeekendDay,
   isPublicHolidayDay,
   isNonWorkingDay,
   isOutsideCurrentMonth,
-  isPastDay,
+  isPastDay, // Prop isPastDay from CraCalendar
   isTempSelected,
   handleMouseDown,
   handleMouseEnter,
+  handleDayClick, // Passé depuis CraCalendar
   handleActivityClick,
   requestDeleteFromCalendar,
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
-  readOnly,
+  readOnly, // readOnly global (e.g., vue admin)
+  isCraEditable, // Statut d'éditabilité du rapport CRA (draft ou rejected)
+  isPaidLeaveEditable, // Statut d'éditabilité du rapport de congés payés (draft ou rejected)
   userId,
   userFirstName,
   currentMonth,
   isDragging,
 }) {
-  // Defensive check for day validity
+  // Vérification défensive de la validité du jour
   if (!isValid(day)) {
-    console.error("CraDayCell: Received an invalid 'day' prop:", day);
-    return null; // Don't render anything for an invalid day
+    console.error("CraDayCell: Prop 'day' invalide reçue:", day);
+    return null; // Ne rien rendre pour un jour invalide
   }
 
   let cellClasses =
     "relative p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5 transition duration-200 overflow-hidden relative";
+
+  // Déterminer si la cellule du jour est interactive pour l'ajout/modification d'activités.
+  // Elle est interactive si :
+  // 1. NON en mode lecture seule global (vue admin)
+  // 2. ET (le rapport CRA est éditable OU le rapport de congés payés est éditable)
+  // 3. ET ce n'est PAS un jour passé
+  // 4. ET c'est dans le mois affiché actuellement
+  const canInteractWithCellForAnyActivity =
+    !readOnly &&
+    (isCraEditable || isPaidLeaveEditable) &&
+    !isPastDay &&
+    isSameMonth(day, currentMonth);
 
   if (isOutsideCurrentMonth) {
     cellClasses += " bg-gray-100 opacity-50 cursor-not-allowed";
@@ -45,33 +67,52 @@ export default function CraDayCell({
   } else if (isNonWorkingDay) {
     cellClasses += " bg-gray-200 text-gray-500";
   } else {
-    cellClasses += " bg-white text-gray-900 hover:bg-blue-50 cursor-pointer";
+    cellClasses += " bg-white text-gray-900"; // Fond par défaut pour les jours éditables
   }
 
-  if (!readOnly && isSameMonth(day, currentMonth) && !isDragging) {
-    cellClasses += " cursor-pointer";
-  } else if (isDragging && isSameMonth(day, currentMonth)) {
-    cellClasses += " cursor-grabbing";
+  // Appliquer le curseur et les effets de survol de manière plus granulaire
+  if (canInteractWithCellForAnyActivity) {
+    if (isDragging && isPaidLeaveEditable) {
+      // Curseur de "saisie" si en mode glisser-déposer et congés éditables
+      cellClasses += " cursor-grabbing";
+    } else {
+      cellClasses += " hover:bg-blue-50 cursor-pointer"; // Curseur de "pointeur" pour les jours cliquables
+    }
   } else {
-    cellClasses += " cursor-not-allowed";
+    cellClasses += " cursor-not-allowed"; // Curseur par défaut si aucune interaction n'est autorisée
   }
 
   return (
     <div
       className={cellClasses}
+      // Autoriser onClick UNIQUEMENT si la cellule est interactive ET si le rapport CRA est éditable.
+      // handleDayClick (dans CraBoard) gérera ensuite s'il s'agit d'une nouvelle activité ou d'une modification.
       onClick={() =>
-        isSameMonth(day, currentMonth) && !readOnly && handleDayClick(day)
+        canInteractWithCellForAnyActivity &&
+        isCraEditable &&
+        handleDayClick(day)
       }
-      onMouseDown={(e) => handleMouseDown(e, day)}
-      onMouseEnter={() => handleMouseEnter(day)}
-      data-date={format(day, "yyyy-MM-dd")} // This is the line that was causing the error
+      // Autoriser onMouseDown (pour le glisser-déposer de congés payés) UNIQUEMENT si la cellule est interactive ET si le rapport de congés payés est éditable.
+      onMouseDown={(e) =>
+        canInteractWithCellForAnyActivity &&
+        isPaidLeaveEditable &&
+        handleMouseDown(e, day)
+      }
+      // Autoriser onMouseEnter (pour le glisser-déposer de congés payés) UNIQUEMENT si la cellule est interactive ET si le rapport de congés payés est éditable.
+      onMouseEnter={() =>
+        canInteractWithCellForAnyActivity &&
+        isPaidLeaveEditable &&
+        handleMouseEnter(day)
+      }
+      data-date={format(day, "yyyy-MM-dd")}
     >
       <span
         className={`text-sm font-semibold mb-1 ${
           isTodayHighlight ? "text-blue-800" : ""
         }`}
       >
-        {formattedDate}
+        {format(day, "d")}{" "}
+        {/* Utilisation de 'day' directement pour le formatage */}
       </span>
       {isNonWorkingDay && isOutsideCurrentMonth === false && (
         <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
@@ -113,13 +154,13 @@ export default function CraDayCell({
             const clientA =
               clientDefinitions.find(
                 (c) => String(c.id) === String(a.client_id)
-              )?.name ||
+              )?.nom_client || // Utiliser nom_client
               a.client_name ||
               "";
             const clientB =
               clientDefinitions.find(
                 (c) => String(c.id) === String(b.client_id)
-              )?.name ||
+              )?.nom_client || // Utiliser nom_client
               b.client_name ||
               "";
             if (clientA < clientB) return -1;
@@ -136,6 +177,8 @@ export default function CraDayCell({
               requestDeleteFromCalendar={requestDeleteFromCalendar}
               showMessage={showMessage}
               readOnly={readOnly}
+              isCraEditable={isCraEditable}
+              isPaidLeaveEditable={isPaidLeaveEditable}
               userId={userId}
               userFirstName={userFirstName}
             />

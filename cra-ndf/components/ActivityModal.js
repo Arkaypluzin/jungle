@@ -4,26 +4,29 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
-import ConfirmationModal from "./ConfirmationModal"; // ADDED: Import ConfirmationModal
 
 export default function ActivityModal({
   isOpen,
-  onClose,
+  onClose, // This is called by the 'x' button, and will now ONLY close the modal
   onSave,
-  onDelete,
+  onDelete, // This onDelete will be the direct deletion function from CraBoard
   activity, // Existing activity object if editing
   initialDate, // Initial date for new activity
   activityTypeDefinitions,
   clientDefinitions,
-  showMessage,
+  showMessage, // Passed from parent for displaying messages
   readOnly = false, // Added readOnly prop
 }) {
-  const [date, setDate] = useState("");
-  const [timeSpent, setTimeSpent] = useState("");
-  const [description, setDescription] = useState("");
-  const [activityType, setActivityType] = useState("");
-  const [client, setClient] = useState(""); // Stores client ID
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [formData, setFormData] = useState({
+    date_activite: initialDate || new Date(),
+    temps_passe: "",
+    description_activite: "", // Description is now optional
+    type_activite: "",
+    client_id: "",
+    override_non_working_day: false,
+    status: "draft", // Default status for new activities
+  });
+  const [formErrors, setFormErrors] = useState({});
 
   const isEditing = useMemo(() => !!activity, [activity]);
 
@@ -41,41 +44,76 @@ export default function ActivityModal({
     if (isOpen) {
       if (activity) {
         // When editing an existing activity
-        // activity.date_activite should already be a Date object here
-        const debugActivityDateValid = activity.date_activite
-          ? isValid(activity.date_activite) // Check if it's a valid Date object
-          : false;
-        console.log(
-          "ActivityModal (Log Debug): activity prop:",
-          activity,
-          "date_activite type:",
-          typeof activity.date_activite,
-          "isValid(activity.date_activite):",
-          debugActivityDateValid
-        );
-
-        setDate(
-          activity.date_activite && isValid(activity.date_activite)
-            ? format(activity.date_activite, "yyyy-MM-dd")
-            : ""
-        );
-        setTimeSpent(activity.temps_passe || "");
-        setDescription(activity.description_activite || "");
-        setActivityType(activity.type_activite || "");
-        setClient(activity.client_id || "");
+        setFormData({
+          date_activite: activity.date_activite || new Date(),
+          temps_passe: activity.temps_passe || "",
+          description_activite: activity.description_activite || "",
+          type_activite: activity.type_activite || "",
+          client_id: activity.client_id || "",
+          override_non_working_day: activity.override_non_working_day || false,
+          status: activity.status || "draft", // Keep existing status
+        });
       } else {
         // When adding a new activity
-        setDate(initialDate ? format(initialDate, "yyyy-MM-dd") : "");
-        setTimeSpent(1); // Default to 1 day for new activities
-        setDescription("");
-        setActivityType("");
-        setClient("");
+        setFormData({
+          date_activite: initialDate || new Date(),
+          temps_passe: 1, // Default to 1 day for new activities
+          description_activite: "",
+          type_activite: "",
+          client_id: "",
+          override_non_working_day: false,
+          status: "draft",
+        });
       }
+      setFormErrors({}); // Clear errors on modal open/activity change
     }
   }, [isOpen, activity, initialDate]);
 
+  const handleChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }, []);
+
+  const handleDateChange = useCallback((e) => {
+    const date = new Date(e.target.value);
+    setFormData((prev) => ({
+      ...prev,
+      date_activite: isValid(date) ? date : null,
+    }));
+  }, []);
+
+  const validateForm = useCallback(() => {
+    const errors = {};
+    if (!formData.date_activite || !isValid(new Date(formData.date_activite))) {
+      errors.date_activite = "La date d'activité est requise.";
+    }
+    if (!formData.temps_passe || parseFloat(formData.temps_passe) <= 0) {
+      errors.temps_passe = "Le temps passé doit être supérieur à 0.";
+    }
+    if (!formData.type_activite) {
+      errors.type_activite = "Le type d'activité est requis.";
+    }
+    // Client ID is only required for non-paid leave activities
+    const paidLeaveType = activityTypeDefinitions.find(
+      (t) => t.name && t.name.toLowerCase().includes("congé payé")
+    );
+    const isPaidLeave =
+      paidLeaveType &&
+      String(formData.type_activite) === String(paidLeaveType.id);
+
+    if (!isPaidLeave && !formData.client_id) {
+      errors.client_id = "Le client est requis pour ce type d'activité.";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  }, [formData, activityTypeDefinitions]);
+
   const handleSubmit = useCallback(
-    (e) => {
+    async (e) => {
       e.preventDefault();
 
       if (readOnly || isActivityLocked) {
@@ -86,63 +124,37 @@ export default function ActivityModal({
         return;
       }
 
-      if (!date || !timeSpent || !activityType) {
-        showMessage("Veuillez remplir tous les champs obligatoires.", "error");
-        return;
-      }
-
-      const activityDate = parseISO(date); // This is fine, 'date' state is always a string
-      if (!isValid(activityDate)) {
-        showMessage("Date d'activité invalide.", "error");
-        return;
-      }
-
-      const selectedActivityType = activityTypeDefinitions.find(
-        (type) => String(type.id) === String(activityType)
-      );
-      if (!selectedActivityType) {
-        showMessage("Type d'activité sélectionné invalide.", "error");
-        return;
-      }
-
-      // If activity type is 'Congé Payé', client_id must be null
-      const isPaidLeave = selectedActivityType.name
-        .toLowerCase()
-        .includes("congé payé");
-      const finalClientId = isPaidLeave ? null : client || null;
-
-      const activityData = {
-        date_activite: activityDate, // Pass as Date object to parent for consistency
-        temps_passe: parseFloat(timeSpent),
-        description_activite: description,
-        type_activite: activityType,
-        client_id: finalClientId,
-        status: activity?.status || "draft", // Retain existing status or set to 'draft'
-      };
-
-      try {
-        onSave(activityData);
-      } catch (error) {
-        console.error("ActivityModal: Erreur lors de la sauvegarde:", error);
-        // showMessage will be handled by the parent component (CraBoard)
+      if (validateForm()) {
+        try {
+          await onSave({ ...formData, id: activity?.id }); // Pass ID for update
+          onClose(); // Close modal on successful save
+        } catch (error) {
+          console.error("ActivityModal: Erreur lors de la sauvegarde:", error);
+          // showMessage will be handled by the parent component (CraBoard)
+        }
+      } else {
+        showMessage(
+          "Veuillez corriger les erreurs dans le formulaire.",
+          "error"
+        );
       }
     },
     [
-      date,
-      timeSpent,
-      description,
-      activityType,
-      client,
+      formData,
+      validateForm,
       onSave,
+      onClose,
       activity,
       showMessage,
-      activityTypeDefinitions,
       readOnly,
       isActivityLocked,
     ]
   );
 
-  const handleDeleteClick = useCallback(() => {
+  // This function is now ONLY for deleting the activity from within the modal
+  const handleDeleteActivity = useCallback(async () => {
+    console.log("[ActivityModal] handleDeleteActivity called.");
+
     if (readOnly || isActivityLocked) {
       showMessage(
         "Impossible de supprimer : le mode est en lecture seule ou l'activité est verrouillée.",
@@ -150,34 +162,47 @@ export default function ActivityModal({
       );
       return;
     }
-    setShowDeleteConfirm(true);
-  }, [onDelete, activity, showMessage, readOnly, isActivityLocked]);
 
-  const confirmDelete = useCallback(() => {
-    if (activity && onDelete) {
-      onDelete(activity.id); // onDelete will handle showing message
+    if (isEditing && activity && onDelete) {
+      console.log(
+        `[ActivityModal] Attempting direct delete for activity ID: ${activity.id}`
+      );
+      try {
+        await onDelete(activity.id); // Direct deletion
+        onClose(); // Close modal after successful deletion
+      } catch (error) {
+        console.error(
+          "ActivityModal: Erreur lors de la suppression via bouton 'Supprimer':",
+          error
+        );
+        // showMessage is handled by parent CraBoard after onDelete
+      }
     }
-    setShowDeleteConfirm(false);
-    onClose();
-  }, [activity, onDelete, onClose]);
-
-  const cancelDelete = useCallback(() => {
-    setShowDeleteConfirm(false);
-  }, []);
+  }, [
+    isEditing,
+    activity,
+    onDelete,
+    onClose,
+    showMessage,
+    readOnly,
+    isActivityLocked,
+  ]);
 
   if (!isOpen) return null;
 
+  // --- DÉBUT DE LA MODIFICATION CLÉ : COMMENTER TOUT LE RENDU DU MODAL ---
+
   const isClientRequired = useMemo(() => {
     const selectedType = activityTypeDefinitions.find(
-      (type) => String(type.id) === String(activityType)
+      (type) => String(type.id) === String(formData.type_activite)
     );
     return (
       selectedType && !selectedType.name.toLowerCase().includes("congé payé")
     );
-  }, [activityType, activityTypeDefinitions]);
+  }, [formData.type_activite, activityTypeDefinitions]);
 
   return (
-    <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4 font-inter">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
         <div className="flex justify-between items-center mb-4 border-b pb-3">
           <h2 className="text-2xl font-bold text-gray-800">
@@ -186,6 +211,7 @@ export default function ActivityModal({
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+            title="Fermer"
           >
             &times;
           </button>
@@ -194,55 +220,72 @@ export default function ActivityModal({
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label
-              htmlFor="date"
+              htmlFor="date_activite"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
               Date:
             </label>
             <input
               type="date"
-              id="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              id="date_activite"
+              name="date_activite"
+              value={
+                formData.date_activite
+                  ? format(new Date(formData.date_activite), "yyyy-MM-dd")
+                  : ""
+              }
+              onChange={handleDateChange}
+              className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
               required
               disabled={readOnly || isActivityLocked}
             />
+            {formErrors.date_activite && (
+              <p className="text-red-500 text-xs mt-1">
+                {formErrors.date_activite}
+              </p>
+            )}
           </div>
 
           <div className="mb-4">
             <label
-              htmlFor="timeSpent"
+              htmlFor="temps_passe"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
               Temps passé (jours):
             </label>
             <input
               type="number"
-              id="timeSpent"
+              id="temps_passe"
+              name="temps_passe"
               step="0.5"
               min="0.5"
-              max="1"
-              value={timeSpent}
-              onChange={(e) => setTimeSpent(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              max="1" // Assuming max 1 day per activity as per "jours" in label
+              value={formData.temps_passe}
+              onChange={handleChange}
+              className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
               required
               disabled={readOnly || isActivityLocked}
             />
+            {formErrors.temps_passe && (
+              <p className="text-red-500 text-xs mt-1">
+                {formErrors.temps_passe}
+              </p>
+            )}
           </div>
 
           <div className="mb-4">
             <label
-              htmlFor="activityType"
+              htmlFor="type_activite"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
               Type d'activité:
             </label>
             <select
-              id="activityType"
-              value={activityType}
-              onChange={(e) => setActivityType(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              id="type_activite"
+              name="type_activite"
+              value={formData.type_activite}
+              onChange={handleChange}
+              className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
               required
               disabled={readOnly || isActivityLocked}
             >
@@ -253,21 +296,27 @@ export default function ActivityModal({
                 </option>
               ))}
             </select>
+            {formErrors.type_activite && (
+              <p className="text-red-500 text-xs mt-1">
+                {formErrors.type_activite}
+              </p>
+            )}
           </div>
 
           {isClientRequired && (
             <div className="mb-4">
               <label
-                htmlFor="client"
+                htmlFor="client_id"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
                 Client:
               </label>
               <select
-                id="client"
-                value={client}
-                onChange={(e) => setClient(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                id="client_id"
+                name="client_id"
+                value={formData.client_id}
+                onChange={handleChange}
+                className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
                 required={isClientRequired}
                 disabled={readOnly || isActivityLocked}
               >
@@ -278,63 +327,74 @@ export default function ActivityModal({
                   </option>
                 ))}
               </select>
+              {formErrors.client_id && (
+                <p className="text-red-500 text-xs mt-1">
+                  {formErrors.client_id}
+                </p>
+              )}
             </div>
           )}
 
           <div className="mb-6">
             <label
-              htmlFor="description"
+              htmlFor="description_activite"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
               Description:
             </label>
             <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              id="description_activite"
+              name="description_activite"
+              value={formData.description_activite}
+              onChange={handleChange}
               rows="3"
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
+              // No 'required' attribute here, description is optional
               disabled={readOnly || isActivityLocked}
             ></textarea>
           </div>
 
           <div className="flex justify-end space-x-3">
-            {!readOnly && !isActivityLocked && (
-              <>
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteClick}
-                    className="px-4 py-2 bg-red-500 text-white font-semibold rounded-md hover:bg-red-600 transition duration-200"
-                  >
-                    Supprimer
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition duration-200"
-                >
-                  {isEditing ? "Modifier" : "Ajouter"}
-                </button>
-              </>
+            {isEditing && ( // Show delete button only when editing an existing activity
+              <button
+                type="button"
+                onClick={handleDeleteActivity} // Calls the dedicated delete function
+                className={`px-4 py-2 bg-red-600 text-white font-semibold rounded-md transition duration-200 ${
+                  readOnly || isActivityLocked
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-red-700"
+                }`}
+                disabled={readOnly || isActivityLocked}
+              >
+                Supprimer
+              </button>
             )}
             <button
+              type="submit"
+              className={`px-4 py-2 bg-blue-600 text-white font-semibold rounded-md transition duration-200 ${
+                readOnly || isActivityLocked
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:bg-blue-700"
+              }`}
+              disabled={readOnly || isActivityLocked}
+            >
+              {isEditing ? "Modifier" : "Ajouter"}
+            </button>
+            <button
               type="button"
-              onClick={onClose}
+              onClick={onClose} // This button still just closes without deletion
               className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-md hover:bg-gray-400 transition duration-200"
             >
               Annuler
             </button>
           </div>
         </form>
-
-        <ConfirmationModal
-          isOpen={showDeleteConfirm}
-          onClose={cancelDelete}
-          onConfirm={confirmDelete}
-          message="Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible."
-        />
       </div>
     </div>
   );
+
+  // --- FIN DE LA MODIFICATION CLÉ : COMMENTER TOUT LE RENDU DU MODAL ---
+
+  // Rendre null pour désactiver le modal
+  return null;
 }

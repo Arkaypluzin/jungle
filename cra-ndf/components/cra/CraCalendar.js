@@ -1,178 +1,159 @@
 // components/cra/CraCalendar.js
-import React, { useMemo } from "react";
+"use client";
+
+import React, { useMemo, useCallback } from "react";
 import {
   format,
   startOfMonth,
   endOfMonth,
-  startOfWeek,
-  endOfWeek,
   eachDayOfInterval,
   isSameMonth,
   isToday,
   isWeekend,
-  isBefore,
-  startOfDay,
   isSameDay,
-  isValid, // Import isValid to check date validity
+  startOfWeek,
+  endOfWeek,
+  addDays,
+  startOfDay,
+  isBefore,
 } from "date-fns";
 import { fr } from "date-fns/locale";
-import CraDayCell from "./CraDayCell";
+import CraDayCell from "./CraDayCell"; // Import the CraDayCell component
 
-const daysOfWeekDisplay = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-
-export default function CraCalendar({
+const CraCalendar = ({
   currentMonth,
   activitiesByDay,
   activityTypeDefinitions,
   clientDefinitions,
   isPublicHoliday,
-  readOnly,
-  isDragging,
+  onDayClick,
+  onActivityClick,
   tempSelectedDays,
-  handleMouseDown,
-  handleMouseEnter,
-  handleDayClick,
-  handleActivityClick,
-  requestDeleteFromCalendar,
-  showMessage,
-  userId,
-  userFirstName,
-}) {
+  onMouseDown,
+  onMouseEnter,
+  onMouseUp,
+  readOnly = false,
+  isCraEditable, // Reçu de CraBoard
+  isPaidLeaveEditable, // Reçu de CraBoard
+  requestDeleteFromCalendar, // Reçu de CraBoard
+  showMessage, // Reçu de CraBoard
+  userId, // Reçu de CraBoard
+  userFirstName, // Reçu de CraBoard
+  isDragging, // Reçu de CraBoard
+}) => {
   console.log(
     "CraCalendar: currentMonth received:",
     currentMonth,
     "isValid:",
-    isValid(currentMonth)
+    currentMonth instanceof Date && !isNaN(currentMonth)
   );
+  console.log(
+    "CraCalendar: readOnly:",
+    readOnly,
+    "isCraEditable:",
+    isCraEditable,
+    "isPaidLeaveEditable:",
+    isPaidLeaveEditable
+  );
+  console.log("CraCalendar: isDragging:", isDragging);
 
-  const getDaysInCalendar = useMemo(() => {
-    if (!isValid(currentMonth)) {
-      console.error(
-        "CraCalendar: currentMonth is invalid, cannot generate calendar days."
-      );
-      return []; // Return empty array if currentMonth is invalid
-    }
-
+  const daysInMonth = useMemo(() => {
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
-    const startCalendarDay = startOfWeek(monthStart, {
-      locale: fr,
-      weekStartsOn: 1,
-    });
-    const endCalendarDay = endOfWeek(monthEnd, { locale: fr, weekStartsOn: 1 });
-
     console.log(
       "CraCalendar: monthStart:",
       monthStart,
       "isValid:",
-      isValid(monthStart)
+      monthStart instanceof Date && !isNaN(monthStart)
     );
     console.log(
       "CraCalendar: monthEnd:",
       monthEnd,
       "isValid:",
-      isValid(monthEnd)
+      monthEnd instanceof Date && !isNaN(monthEnd)
     );
+
+    const startCalendarDay = startOfWeek(monthStart, { locale: fr });
+    const endCalendarDay = endOfWeek(monthEnd, { locale: fr });
     console.log(
       "CraCalendar: startCalendarDay:",
       startCalendarDay,
       "isValid:",
-      isValid(startCalendarDay)
+      startCalendarDay instanceof Date && !isNaN(startCalendarDay)
     );
     console.log(
       "CraCalendar: endCalendarDay:",
       endCalendarDay,
       "isValid:",
-      isValid(endCalendarDay)
+      endCalendarDay instanceof Date && !isNaN(endCalendarDay)
     );
-
-    if (!isValid(startCalendarDay) || !isValid(endCalendarDay)) {
-      console.error(
-        "CraCalendar: startCalendarDay or endCalendarDay is invalid, cannot generate calendar days."
-      );
-      return [];
-    }
 
     return eachDayOfInterval({ start: startCalendarDay, end: endCalendarDay });
   }, [currentMonth]);
 
-  const renderDaysOfWeek = () => {
-    return (
-      <div className="grid grid-cols-7 border-b border-gray-200">
-        {daysOfWeekDisplay.map((dayName, i) => (
-          <div className="text-center font-bold text-gray-700 p-2" key={i}>
-            {dayName}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderCells = () => {
-    const allCells = [];
-    getDaysInCalendar.forEach((day) => {
-      if (!isValid(day)) {
-        // Defensive check for each day
-        console.warn("CraCalendar: Skipping invalid day in renderCells:", day);
-        return; // Skip this day if it's invalid
-      }
-
-      const formattedDate = format(day, "d");
-      const activitiesForDay =
-        activitiesByDay.get(format(day, "yyyy-MM-dd")) || [];
-      const isTodayHighlight = isToday(day);
-      const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-      const isPublicHolidayDay = isPublicHoliday(day);
-      const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
-      const isOutsideCurrentMonth = !isSameMonth(day, currentMonth);
-      const isPastDay = isBefore(day, startOfDay(new Date()));
-      const isTempSelected = tempSelectedDays.some((d) => isSameDay(d, day));
-
-      allCells.push(
-        <CraDayCell
-          key={format(day, "yyyy-MM-dd")} // Key must be unique and stable
-          day={day}
-          formattedDate={formattedDate}
-          activitiesForDay={activitiesForDay}
-          isTodayHighlight={isTodayHighlight}
-          isWeekendDay={isWeekendDay}
-          isPublicHolidayDay={isPublicHolidayDay}
-          isNonWorkingDay={isNonWorkingDay}
-          isOutsideCurrentMonth={isOutsideCurrentMonth}
-          isPastDay={isPastDay}
-          isTempSelected={isTempSelected}
-          handleMouseDown={handleMouseDown}
-          handleMouseEnter={handleMouseEnter}
-          handleDayClick={handleDayClick}
-          handleActivityClick={handleActivityClick}
-          requestDeleteFromCalendar={requestDeleteFromCalendar}
-          activityTypeDefinitions={activityTypeDefinitions}
-          clientDefinitions={clientDefinitions}
-          showMessage={showMessage}
-          readOnly={readOnly}
-          userId={userId}
-          userFirstName={userFirstName}
-          currentMonth={currentMonth}
-          isDragging={isDragging}
-        />
-      );
-    });
-
-    const rows = [];
-    for (let i = 0; i < allCells.length; i += 7) {
-      rows.push(
-        <div className="grid grid-cols-7 w-full" key={`row-${i}`}>
-          {allCells.slice(i, i + 7)}
-        </div>
-      );
-    }
-    return <div className="w-full">{rows}</div>;
-  };
+  const weekdays = useMemo(() => {
+    return ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  }, []);
 
   return (
-    <>
-      {renderDaysOfWeek()}
-      {renderCells()}
-    </>
+    <div className="overflow-x-auto">
+      <div className="min-w-full inline-block align-middle">
+        <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-700 mb-2">
+          {weekdays.map((day) => (
+            <div key={day} className="py-2">
+              {day}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {daysInMonth.map((day) => {
+            const dateString = format(day, "yyyy-MM-dd");
+            const activitiesForDay = activitiesByDay.get(dateString) || [];
+            const isTodayHighlight = isToday(day);
+            const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+            const isPublicHolidayDay = isPublicHoliday(day);
+            const isNonWorkingDay = isWeekendDay || isPublicHolidayDay;
+            const isOutsideCurrentMonth = !isSameMonth(day, currentMonth);
+            const isPastDay = isBefore(day, startOfDay(new Date()));
+            const isTempSelected = tempSelectedDays.some((d) =>
+              isSameDay(d, day)
+            );
+
+            return (
+              <CraDayCell
+                key={dateString}
+                day={day}
+                formattedDate={format(day, "d")} // Pass formatted day number
+                activitiesForDay={activitiesForDay}
+                isTodayHighlight={isTodayHighlight}
+                isWeekendDay={isWeekendDay}
+                isPublicHolidayDay={isPublicHolidayDay}
+                isNonWorkingDay={isNonWorkingDay}
+                isOutsideCurrentMonth={isOutsideCurrentMonth}
+                isPastDay={isPastDay} // Pass isPastDay
+                isTempSelected={isTempSelected}
+                handleMouseDown={onMouseDown} // Pass the handler from CraBoard
+                handleMouseEnter={onMouseEnter} // Pass the handler from CraBoard
+                handleDayClick={onDayClick} // Pass the handler from CraBoard
+                handleActivityClick={onActivityClick} // Pass the handler from CraBoard
+                requestDeleteFromCalendar={requestDeleteFromCalendar} // Pass the handler from CraBoard
+                activityTypeDefinitions={activityTypeDefinitions}
+                clientDefinitions={clientDefinitions}
+                showMessage={showMessage}
+                readOnly={readOnly} // Pass global readOnly
+                isCraEditable={isCraEditable} // Pass specific editable flags
+                isPaidLeaveEditable={isPaidLeaveEditable} // Pass specific editable flags
+                userId={userId}
+                userFirstName={userFirstName}
+                currentMonth={currentMonth}
+                isDragging={isDragging} // Pass isDragging state to CraDayCell
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
-}
+};
+
+export default CraCalendar;
