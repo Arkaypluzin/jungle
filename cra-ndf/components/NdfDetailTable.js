@@ -105,8 +105,7 @@ export default function NdfDetailTable({
         "Projet",
         "Montant HT",
         "TVA",
-        "Montant TTC",
-        "Justificatif",
+        "Montant TTC"
       ],
     ];
 
@@ -278,20 +277,46 @@ export default function NdfDetailTable({
     doc.save(fileName);
   };
 
-  const getTTCLineRounded = useCallback((montant, tvaStr) => {
+  // A placer tout en haut
+  function getTvaArray(tva, montant) {
+    // Si déjà array, c'est le format [{ taux, valeur_tva }]
+    if (Array.isArray(tva)) return tva;
+    // Si c'est un string genre "10%" ou "10% / 20%"
+    if (typeof tva === "string" && tva.includes("/")) {
+      // On parse chaque taux et on calcule la tva brute
+      const montantNum = parseFloat(montant) || 0;
+      return tva.split("/").map(t => {
+        const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+        const valeur_tva = Math.ceil(montantNum * tauxNum) / 100; // arrondi simple
+        return { taux: tauxNum, valeur_tva };
+      });
+    }
+    if (typeof tva === "string") {
+      const tauxNum = parseFloat(tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+      const montantNum = parseFloat(montant) || 0;
+      const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+      return [{ taux: tauxNum, valeur_tva }];
+    }
+    return [];
+  }
+
+  function getTvaLabel(tva) {
+    if (Array.isArray(tva)) {
+      return tva.map(t => (t.taux !== undefined ? t.taux + "%" : "")).join(" / ");
+    }
+    if (typeof tva === "string") return tva;
+    return "";
+  }
+
+  // Calcul TTC avec array
+  function getTTCLineRounded(montant, tvaArr) {
     const base = parseFloat(montant) || 0;
-    if (!tvaStr || tvaStr === "0%") return base;
-    const tauxList = tvaStr
-      .split("/")
-      .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
-      .filter((x) => !isNaN(x));
-    if (tauxList.length === 0) return base;
-    const totalTva = tauxList.reduce(
-      (sum, taux) => sum + (base * taux) / 100,
-      0
-    );
-    return roundUpToCent(base + totalTva);
-  }, []);
+    if (!tvaArr || (Array.isArray(tvaArr) && tvaArr.length === 0)) return base;
+    let arr = Array.isArray(tvaArr) ? tvaArr : getTvaArray(tvaArr, montant);
+    // la somme des tva, arrondi au centime
+    const totalTva = arr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+    return Math.round((base + totalTva) * 100) / 100;
+  }
 
   const filteredDetails = useMemo(() => {
     let currentFilteredDetails = details.filter((detail) => {
@@ -371,14 +396,24 @@ export default function NdfDetailTable({
   ]);
 
   const totalHT = useMemo(
-    () =>
-      filteredDetails.reduce((acc, d) => acc + (parseFloat(d.montant) || 0), 0),
+    () => filteredDetails.reduce((acc, d) => acc + (parseFloat(d.montant) || 0), 0),
     [filteredDetails]
   );
+
   const totalTTC = useMemo(
     () => filteredDetails.reduce((acc, d) => acc + getTTCLineRounded(d.montant, d.tva), 0),
-    [filteredDetails, getTTCLineRounded]
+    [filteredDetails]
   );
+
+  const totalTVA = useMemo(() => {
+    return filteredDetails.reduce((acc, d) => {
+      // Somme de toutes les tva sur chaque ligne
+      let tvaArr = Array.isArray(d.tva) ? d.tva : getTvaArray(d.tva, d.montant);
+      const totalLigne = tvaArr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+      return acc + totalLigne;
+    }, 0);
+  }, [filteredDetails]);
+
 
   function resetFilters() {
     setNature("");
@@ -398,21 +433,6 @@ export default function NdfDetailTable({
       </p>
     );
   }
-
-  const totalTVA = useMemo(() => {
-    return filteredDetails.reduce((acc, d) => {
-      const base = parseFloat(d.montant) || 0;
-      if (!d.tva || d.tva === "0%") return acc;
-      const tauxList = d.tva
-        .split("/")
-        .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
-        .filter((x) => !isNaN(x));
-      if (tauxList.length === 0) return acc;
-      const tva = tauxList.reduce((sum, taux) => sum + (base * taux) / 100, 0);
-      const result = Math.ceil(tva * 100) / 100;
-      return acc + result;
-    }, 0);
-  }, [filteredDetails]);
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
@@ -476,23 +496,18 @@ export default function NdfDetailTable({
                       {parseFloat(detail.montant).toFixed(2)}€
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                      {detail.tva && detail.tva.includes("/") ? (
+                      {Array.isArray(detail.tva) ? (
                         <div>
-                          {detail.tva.split("/").map((t, idx) => {
-                            const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
-                            const ht = parseFloat(detail.montant) || 0;
-                            if (!isNaN(taux)) {
-                              const tvaMontant = ht * taux / 100;
-                              return (
-                                <div key={idx} className="flex items-center gap-1">
-                                  <span className="font-semibold">{taux}%</span>
-                                  <span className="text-gray-500">⇒ +{tvaMontant.toFixed(2)}€</span>
-                                </div>
-                              );
-                            } else {
-                              return null;
-                            }
-                          })}
+                          {detail.tva.map((tvaObj, idx) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              <span className="font-semibold">{tvaObj.taux}%</span>
+                              <span className="text-gray-500">
+                                {tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
+                                  ? <>⇒ +{parseFloat(tvaObj.valeur_tva).toFixed(2)}€</>
+                                  : null}
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <span>{detail.tva}</span>
@@ -501,7 +516,7 @@ export default function NdfDetailTable({
                     <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
                       {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
                         ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
-                        : ""}
+                        : (getTTCLineRounded(detail.montant, detail.tva).toFixed(2) + "€")}
                     </td>
                     <td className="py-3 px-3 text-center">
                       {detail.img_url ? (
