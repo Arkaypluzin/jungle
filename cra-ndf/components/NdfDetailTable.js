@@ -455,7 +455,6 @@ export default function NdfDetailTable({
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {filteredDetails.map((detail) => {
-                const montantTTC = getTTCLineRounded(detail.montant, detail.tva);
                 return (
                   <tr key={detail.uuid} className="hover:bg-gray-50 transition-colors duration-150">
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
@@ -500,7 +499,9 @@ export default function NdfDetailTable({
                       )}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
-                      {montantTTC.toFixed(2)}€
+                      {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
+                        ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
+                        : ""}
                     </td>
                     <td className="py-3 px-3 text-center">
                       {detail.img_url ? (

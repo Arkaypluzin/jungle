@@ -47,12 +47,11 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [imgFile, setImgFile] = useState(null);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
-
-    // Clients & Projets
     const [clients, setClients] = useState([]);
     const [projets, setProjets] = useState([]);
     const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
     const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
+    const [valeurTTC, setValeurTTC] = useState(detail.valeur_ttc ?? "");
 
     useEffect(() => {
         if (open) {
@@ -149,6 +148,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             description,
             tva: tvaValue,
             montant: montantValue,
+            valeur_ttc: parseFloat(valeurTTC),
             img_url,
             client_id: selectedClient,
             projet_id: selectedProjet,
@@ -264,6 +264,21 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                         </option>
                                     ))}
                                 </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Valeur TTC (€) :
+                                </label>
+                                <input
+                                    type="number"
+                                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    value={valeurTTC}
+                                    min={0}
+                                    step="0.01"
+                                    required
+                                    onChange={e => setValeurTTC(e.target.value)}
+                                    placeholder="Montant TTC du ticket"
+                                />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
