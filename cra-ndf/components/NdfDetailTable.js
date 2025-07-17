@@ -59,6 +59,36 @@ export default function NdfDetailTable({
 
   const refresh = async () => window.location.reload();
 
+  function formatTvaPdf(detail) {
+    // Si multi-taux au format array [{taux, valeur_tva}], ou bien tva string contenant "/"
+    let arr = Array.isArray(detail.tva)
+      ? detail.tva
+      : getTvaArray(detail.tva, detail.montant);
+
+    if (!arr.length || arr.length === 1) {
+      // Affiche le taux et la valeur éventuelle si calculée
+      let tvaUnique = arr[0];
+      if (tvaUnique && tvaUnique.taux !== undefined) {
+        return `${tvaUnique.taux}%` +
+          (tvaUnique.valeur_tva !== undefined && !isNaN(tvaUnique.valeur_tva)
+            ? ` > +${parseFloat(tvaUnique.valeur_tva).toFixed(2)}€`
+            : "");
+      }
+      // fallback string
+      return typeof detail.tva === "string" ? detail.tva : "";
+    }
+    // Sinon, on retourne chaque taux/valeur sur une ligne
+    return arr
+      .map(
+        (tvaObj) =>
+          `${tvaObj.taux}%` +
+          (tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
+            ? ` > +${parseFloat(tvaObj.valeur_tva).toFixed(2)}€`
+            : "")
+      )
+      .join('\n');
+  }
+
   const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: "landscape" });
 
@@ -116,21 +146,7 @@ export default function NdfDetailTable({
       getClientName(detail.client_id),
       getProjetName(detail.projet_id),
       `${parseFloat(detail.montant).toFixed(2)}€`,
-      detail.tva && detail.tva.includes("/")
-        ? detail.tva
-          .split("/")
-          .map((t) => {
-            const taux = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", "."));
-            const ht = parseFloat(detail.montant) || 0;
-            if (!isNaN(taux)) {
-              const tvaMontant = ht * taux / 100;
-              return `${taux}% > +${tvaMontant.toFixed(2)}€`;
-            }
-            return null;
-          })
-          .filter(Boolean)
-          .join('\n')
-        : detail.tva,
+      formatTvaPdf(detail),
       `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
       detail.img_url ? "Oui" : "Non",
     ]);
