@@ -40,8 +40,10 @@ export default async function NdfDetailsPage({ params }) {
                     </div>
                 </div>
             )}
-            <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
-            <AddNdfDetailModal ndfId={ndfId} ndfStatut={ndf.statut} />
+            <div className="flex items-center justify-between mb-6">
+                <AddNdfDetailModal ndfId={ndfId} ndfStatut={ndf.statut} />
+                <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
+            </div>
             <NdfDetailTable
                 details={details}
                 ndfStatut={ndf.statut}
