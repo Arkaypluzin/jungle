@@ -266,8 +266,8 @@ export default function ActivityModal({
               type="number"
               id="temps_passe"
               name="temps_passe"
-              step="0.5"
-              min="0.5"
+              step="0.1"
+              min="0.1"
               max="1"
               value={formData.temps_passe}
               onChange={handleChange}

@@ -23,13 +23,13 @@ export default function CraDayCell({
   isPublicHolidayDay,
   isNonWorkingDay,
   isOutsideCurrentMonth,
-  isPastDay, // Cette prop est toujours calculée et passée
+  isPastDay,
   isTempSelected,
   handleMouseDown,
   handleMouseEnter,
-  handleDayClick,
-  handleActivityClick,
-  requestDeleteFromCalendar,
+  handleDayClick, // Reçu de CraBoard
+  handleActivityClick, // Reçu de CraBoard
+  requestDeleteFromCalendar, // Reçu de CraBoard
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
@@ -40,6 +40,7 @@ export default function CraDayCell({
   userFirstName,
   currentMonth,
   isDragging,
+  paidLeaveTypeId,
 }) {
   if (!isValid(day)) {
     console.error("CraDayCell: Prop 'day' invalide reçue:", day);
@@ -49,15 +50,11 @@ export default function CraDayCell({
   let cellClasses =
     "relative p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5 transition duration-200 overflow-hidden relative";
 
-  // MODIFIÉ : La condition pour interagir avec la cellule.
-  // On autorise l'interaction si non en lecture seule ET (si CRA éditable OU Congé Payé éditable)
-  // On ne bloque PLUS explicitement si c'est un jour passé ici, car l'éditabilité
-  // est gérée par isCraEditable/isPaidLeaveEditable et le statut de l'activité.
   const canInteractWithCellForAnyActivity =
     !readOnly &&
     (isCraEditable || isPaidLeaveEditable) &&
-    isValid(currentMonth) && // Vérification défensive
-    isSameMonth(day, currentMonth); // Toujours dans le mois affiché
+    isValid(currentMonth) &&
+    isSameMonth(day, currentMonth);
 
   if (isOutsideCurrentMonth) {
     cellClasses += " bg-gray-100 opacity-50 cursor-not-allowed";
@@ -84,19 +81,20 @@ export default function CraDayCell({
   return (
     <div
       className={cellClasses}
-      onClick={() =>
-        canInteractWithCellForAnyActivity &&
-        isCraEditable && // Seulement si CRA est éditable pour le clic simple
-        handleDayClick(day)
-      }
+      onClick={(e) => {
+        // <--- MODIFIÉ : Passe l'objet événement
+        if (canInteractWithCellForAnyActivity && isCraEditable) {
+          handleDayClick(day, e); // Passe le jour ET l'événement
+        }
+      }}
       onMouseDown={(e) =>
         canInteractWithCellForAnyActivity &&
-        isPaidLeaveEditable && // Seulement si Congé Payé est éditable pour le glisser-déposer
+        isPaidLeaveEditable &&
         handleMouseDown(e, day)
       }
       onMouseEnter={() =>
         canInteractWithCellForAnyActivity &&
-        isPaidLeaveEditable && // Seulement si Congé Payé est éditable pour le glisser-déposer
+        isPaidLeaveEditable &&
         handleMouseEnter(day)
       }
       data-date={isValid(day) ? format(day, "yyyy-MM-dd") : ""}
@@ -175,6 +173,7 @@ export default function CraDayCell({
               isPaidLeaveEditable={isPaidLeaveEditable}
               userId={userId}
               userFirstName={userFirstName}
+              paidLeaveTypeId={paidLeaveTypeId}
             />
           ))}
       </div>
