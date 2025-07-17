@@ -1,13 +1,17 @@
 // components/cra/CraDayCell.js
-import React from "react";
+"use client";
+
+import React, { useCallback } from "react";
 import {
   format,
+  isToday,
+  isWeekend,
   isSameMonth,
-  isSameDay,
-  isValid,
   isBefore,
   startOfDay,
+  isValid,
 } from "date-fns";
+import { fr } from "date-fns/locale";
 import CraActivityItem from "./CraActivityItem";
 
 export default function CraDayCell({
@@ -19,44 +23,41 @@ export default function CraDayCell({
   isPublicHolidayDay,
   isNonWorkingDay,
   isOutsideCurrentMonth,
-  isPastDay, // Prop isPastDay from CraCalendar
+  isPastDay, // Cette prop est toujours calculée et passée
   isTempSelected,
   handleMouseDown,
   handleMouseEnter,
-  handleDayClick, // Passé depuis CraCalendar
+  handleDayClick,
   handleActivityClick,
   requestDeleteFromCalendar,
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
-  readOnly, // readOnly global (e.g., vue admin)
-  isCraEditable, // Statut d'éditabilité du rapport CRA (draft ou rejected)
-  isPaidLeaveEditable, // Statut d'éditabilité du rapport de congés payés (draft ou rejected)
+  readOnly,
+  isCraEditable,
+  isPaidLeaveEditable,
   userId,
   userFirstName,
   currentMonth,
   isDragging,
 }) {
-  // Vérification défensive de la validité du jour
   if (!isValid(day)) {
     console.error("CraDayCell: Prop 'day' invalide reçue:", day);
-    return null; // Ne rien rendre pour un jour invalide
+    return null;
   }
 
   let cellClasses =
     "relative p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5 transition duration-200 overflow-hidden relative";
 
-  // Déterminer si la cellule du jour est interactive pour l'ajout/modification d'activités.
-  // Elle est interactive si :
-  // 1. NON en mode lecture seule global (vue admin)
-  // 2. ET (le rapport CRA est éditable OU le rapport de congés payés est éditable)
-  // 3. ET ce n'est PAS un jour passé
-  // 4. ET c'est dans le mois affiché actuellement
+  // MODIFIÉ : La condition pour interagir avec la cellule.
+  // On autorise l'interaction si non en lecture seule ET (si CRA éditable OU Congé Payé éditable)
+  // On ne bloque PLUS explicitement si c'est un jour passé ici, car l'éditabilité
+  // est gérée par isCraEditable/isPaidLeaveEditable et le statut de l'activité.
   const canInteractWithCellForAnyActivity =
     !readOnly &&
     (isCraEditable || isPaidLeaveEditable) &&
-    !isPastDay &&
-    isSameMonth(day, currentMonth);
+    isValid(currentMonth) && // Vérification défensive
+    isSameMonth(day, currentMonth); // Toujours dans le mois affiché
 
   if (isOutsideCurrentMonth) {
     cellClasses += " bg-gray-100 opacity-50 cursor-not-allowed";
@@ -67,52 +68,45 @@ export default function CraDayCell({
   } else if (isNonWorkingDay) {
     cellClasses += " bg-gray-200 text-gray-500";
   } else {
-    cellClasses += " bg-white text-gray-900"; // Fond par défaut pour les jours éditables
+    cellClasses += " bg-white text-gray-900";
   }
 
-  // Appliquer le curseur et les effets de survol de manière plus granulaire
   if (canInteractWithCellForAnyActivity) {
     if (isDragging && isPaidLeaveEditable) {
-      // Curseur de "saisie" si en mode glisser-déposer et congés éditables
       cellClasses += " cursor-grabbing";
     } else {
-      cellClasses += " hover:bg-blue-50 cursor-pointer"; // Curseur de "pointeur" pour les jours cliquables
+      cellClasses += " hover:bg-blue-50 cursor-pointer";
     }
   } else {
-    cellClasses += " cursor-not-allowed"; // Curseur par défaut si aucune interaction n'est autorisée
+    cellClasses += " cursor-not-allowed";
   }
 
   return (
     <div
       className={cellClasses}
-      // Autoriser onClick UNIQUEMENT si la cellule est interactive ET si le rapport CRA est éditable.
-      // handleDayClick (dans CraBoard) gérera ensuite s'il s'agit d'une nouvelle activité ou d'une modification.
       onClick={() =>
         canInteractWithCellForAnyActivity &&
-        isCraEditable &&
+        isCraEditable && // Seulement si CRA est éditable pour le clic simple
         handleDayClick(day)
       }
-      // Autoriser onMouseDown (pour le glisser-déposer de congés payés) UNIQUEMENT si la cellule est interactive ET si le rapport de congés payés est éditable.
       onMouseDown={(e) =>
         canInteractWithCellForAnyActivity &&
-        isPaidLeaveEditable &&
+        isPaidLeaveEditable && // Seulement si Congé Payé est éditable pour le glisser-déposer
         handleMouseDown(e, day)
       }
-      // Autoriser onMouseEnter (pour le glisser-déposer de congés payés) UNIQUEMENT si la cellule est interactive ET si le rapport de congés payés est éditable.
       onMouseEnter={() =>
         canInteractWithCellForAnyActivity &&
-        isPaidLeaveEditable &&
+        isPaidLeaveEditable && // Seulement si Congé Payé est éditable pour le glisser-déposer
         handleMouseEnter(day)
       }
-      data-date={format(day, "yyyy-MM-dd")}
+      data-date={isValid(day) ? format(day, "yyyy-MM-dd") : ""}
     >
       <span
         className={`text-sm font-semibold mb-1 ${
           isTodayHighlight ? "text-blue-800" : ""
         }`}
       >
-        {format(day, "d")}{" "}
-        {/* Utilisation de 'day' directement pour le formatage */}
+        {formattedDate}
       </span>
       {isNonWorkingDay && isOutsideCurrentMonth === false && (
         <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
@@ -154,13 +148,13 @@ export default function CraDayCell({
             const clientA =
               clientDefinitions.find(
                 (c) => String(c.id) === String(a.client_id)
-              )?.nom_client || // Utiliser nom_client
+              )?.nom_client ||
               a.client_name ||
               "";
             const clientB =
               clientDefinitions.find(
                 (c) => String(c.id) === String(b.client_id)
-              )?.nom_client || // Utiliser nom_client
+              )?.nom_client ||
               b.client_name ||
               "";
             if (clientA < clientB) return -1;

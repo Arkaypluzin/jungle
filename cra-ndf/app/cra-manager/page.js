@@ -361,7 +361,6 @@ export default function CRAPage() {
         throw new Error("Utilisateur non authentifié ou ID non disponible.");
       }
       try {
-        // Ensure date_activite is formatted as a string for the API
         const payload = {
           ...activityData,
           user_id: currentUserId,
@@ -431,7 +430,6 @@ export default function CRAPage() {
         throw new Error("Utilisateur non authentifié ou ID non disponible.");
       }
       try {
-        // Ensure date_activite is formatted as a string for the API
         const payload = {
           ...activityData,
           user_id: currentUserId,
@@ -508,7 +506,11 @@ export default function CRAPage() {
           method: "DELETE",
         });
 
-        if (!response.ok) {
+        if (response.ok || response.status === 204 || response.status === 404) {
+          showMessage("Activité supprimée avec succès !", "success");
+          await fetchCraActivitiesForMonth(currentDisplayedMonth);
+          await fetchMonthlyReportsForUser();
+        } else {
           const errorData = await response.json();
           console.error(
             "CRAPage: Erreur API lors de la suppression de l'activité:",
@@ -520,19 +522,70 @@ export default function CRAPage() {
               "Échec de la suppression de l'activité CRA."
           );
         }
-        console.log(`CRAPage: Activité CRA ${id} supprimée avec succès.`);
-        await fetchCraActivitiesForMonth(currentDisplayedMonth);
-        await fetchMonthlyReportsForUser();
-        showMessage("Activité supprimée avec succès !", "success");
       } catch (error) {
-        console.error(
-          "CRAPage: Échec de la suppression de l'activité CRA:",
-          error
-        );
+        console.error("CRAPage: Erreur lors de la suppression:", error);
+        showMessage(`Échec de la suppression: ${error.message}`, "error");
+        throw error;
+      }
+    },
+    [
+      showMessage,
+      currentUserId,
+      fetchCraActivitiesForMonth,
+      currentDisplayedMonth,
+      fetchMonthlyReportsForUser,
+    ]
+  );
+
+  const handleSendMonthlyReport = useCallback(
+    async (reportData) => {
+      if (!currentUserId) {
         showMessage(
-          `Échec de la suppression de l'activité: ${error.message}`,
+          "Veuillez vous connecter pour envoyer des rapports.",
           "error"
         );
+        throw new Error("Utilisateur non authentifié ou ID non disponible.");
+      }
+      try {
+        console.log(
+          "CRAPage: handleSendMonthlyReport - Payload envoyé:",
+          JSON.stringify(reportData, null, 2)
+        );
+        const response = await fetch("/api/monthly_cra_reports", {
+          method: "POST", // Ou PUT si votre API gère l'upsert
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reportData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error(
+            "CRAPage: Erreur API lors de l'envoi du rapport mensuel:",
+            errorData
+          );
+          throw new Error(
+            errorData.message ||
+              `Erreur serveur: ${response.statusText}` ||
+              "Échec de l'envoi du rapport mensuel."
+          );
+        }
+
+        const result = await response.json();
+        console.log("CRAPage: Rapport mensuel envoyé avec succès:", result);
+
+        // IMPORTANT : Votre backend doit mettre à jour le statut des activités
+        // listées dans reportData.activities_snapshot à 'pending_review'
+        // ou le statut approprié. Le re-fetch ci-dessous mettra à jour le frontend.
+        await fetchCraActivitiesForMonth(currentDisplayedMonth);
+        await fetchMonthlyReportsForUser();
+        showMessage(
+          `Rapport de type "${reportData.report_type}" envoyé avec succès !`,
+          "success"
+        );
+        return result;
+      } catch (error) {
+        console.error("CRAPage: Échec de l'envoi du rapport mensuel:", error);
+        showMessage(`Échec de l'envoi du rapport: ${error.message}`, "error");
         throw error;
       }
     },
@@ -784,7 +837,7 @@ export default function CRAPage() {
     ]
   );
 
-  if (status === "loading" || loadingAppData) {
+  if (status === "loading") {
     return (
       <div className="flex justify-center items-center h-screen text-xl text-gray-700">
         Chargement des données de session et de l'application...
@@ -892,6 +945,7 @@ export default function CRAPage() {
             currentMonth={currentDisplayedMonth}
             onMonthChange={setCurrentDisplayedMonth}
             monthlyReports={monthlyReports}
+            onSendMonthlyReport={handleSendMonthlyReport} // Pass the new function
           />
         )}
 

@@ -7,30 +7,39 @@ import { fr } from "date-fns/locale";
 
 export default function ActivityModal({
   isOpen,
-  onClose, // This is called by the 'x' button, and will now ONLY close the modal
+  onClose,
   onSave,
-  onDelete, // This onDelete will be the direct deletion function from CraBoard
-  activity, // Existing activity object if editing
-  initialDate, // Initial date for new activity
+  onDelete,
+  activity,
+  initialDate,
   activityTypeDefinitions,
   clientDefinitions,
-  showMessage, // Passed from parent for displaying messages
-  readOnly = false, // Added readOnly prop
+  showMessage,
+  readOnly = false,
 }) {
+  console.log(
+    "[ActivityModal] Composant ActivityModal rendu. isOpen:",
+    isOpen,
+    "Activity ID:",
+    activity?.id || "N/A",
+    "Initial Date:",
+    initialDate ? format(initialDate, "yyyy-MM-dd") : "N/A"
+  );
+
   const [formData, setFormData] = useState({
+    name: "", // Ajouté le champ 'name'
     date_activite: initialDate || new Date(),
     temps_passe: "",
-    description_activite: "", // Description is now optional
+    description_activite: "",
     type_activite: "",
     client_id: "",
     override_non_working_day: false,
-    status: "draft", // Default status for new activities
+    status: "draft",
   });
   const [formErrors, setFormErrors] = useState({});
 
   const isEditing = useMemo(() => !!activity, [activity]);
 
-  // Determine if the activity (if editing) is in a non-editable state
   const isActivityLocked = useMemo(() => {
     if (!isEditing || !activity) return false;
     return (
@@ -43,29 +52,30 @@ export default function ActivityModal({
   useEffect(() => {
     if (isOpen) {
       if (activity) {
-        // When editing an existing activity
         setFormData({
+          name: activity.name || "",
           date_activite: activity.date_activite || new Date(),
           temps_passe: activity.temps_passe || "",
           description_activite: activity.description_activite || "",
           type_activite: activity.type_activite || "",
           client_id: activity.client_id || "",
           override_non_working_day: activity.override_non_working_day || false,
-          status: activity.status || "draft", // Keep existing status
+          status: activity.status || "draft",
         });
       } else {
-        // When adding a new activity
-        setFormData({
+        setFormData((prev) => ({
+          ...prev,
           date_activite: initialDate || new Date(),
-          temps_passe: 1, // Default to 1 day for new activities
+          name: "",
+          temps_passe: 1,
           description_activite: "",
           type_activite: "",
           client_id: "",
           override_non_working_day: false,
           status: "draft",
-        });
+        }));
       }
-      setFormErrors({}); // Clear errors on modal open/activity change
+      setFormErrors({});
     }
   }, [isOpen, activity, initialDate]);
 
@@ -96,7 +106,6 @@ export default function ActivityModal({
     if (!formData.type_activite) {
       errors.type_activite = "Le type d'activité est requis.";
     }
-    // Client ID is only required for non-paid leave activities
     const paidLeaveType = activityTypeDefinitions.find(
       (t) => t.name && t.name.toLowerCase().includes("congé payé")
     );
@@ -126,11 +135,10 @@ export default function ActivityModal({
 
       if (validateForm()) {
         try {
-          await onSave({ ...formData, id: activity?.id }); // Pass ID for update
-          onClose(); // Close modal on successful save
+          await onSave({ ...formData, id: activity?.id });
+          onClose();
         } catch (error) {
           console.error("ActivityModal: Erreur lors de la sauvegarde:", error);
-          // showMessage will be handled by the parent component (CraBoard)
         }
       } else {
         showMessage(
@@ -151,7 +159,6 @@ export default function ActivityModal({
     ]
   );
 
-  // This function is now ONLY for deleting the activity from within the modal
   const handleDeleteActivity = useCallback(async () => {
     console.log("[ActivityModal] handleDeleteActivity called.");
 
@@ -168,14 +175,13 @@ export default function ActivityModal({
         `[ActivityModal] Attempting direct delete for activity ID: ${activity.id}`
       );
       try {
-        await onDelete(activity.id); // Direct deletion
-        onClose(); // Close modal after successful deletion
+        await onDelete(activity.id);
+        onClose();
       } catch (error) {
         console.error(
           "ActivityModal: Erreur lors de la suppression via bouton 'Supprimer':",
           error
         );
-        // showMessage is handled by parent CraBoard after onDelete
       }
     }
   }, [
@@ -189,8 +195,6 @@ export default function ActivityModal({
   ]);
 
   if (!isOpen) return null;
-
-  // --- DÉBUT DE LA MODIFICATION CLÉ : COMMENTER TOUT LE RENDU DU MODAL ---
 
   const isClientRequired = useMemo(() => {
     const selectedType = activityTypeDefinitions.find(
@@ -218,6 +222,11 @@ export default function ActivityModal({
         </div>
 
         <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            {formErrors.name && (
+              <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>
+            )}
+          </div>
           <div className="mb-4">
             <label
               htmlFor="date_activite"
@@ -259,7 +268,7 @@ export default function ActivityModal({
               name="temps_passe"
               step="0.5"
               min="0.5"
-              max="1" // Assuming max 1 day per activity as per "jours" in label
+              max="1"
               value={formData.temps_passe}
               onChange={handleChange}
               className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
@@ -349,16 +358,15 @@ export default function ActivityModal({
               onChange={handleChange}
               rows="3"
               className="w-full p-2 border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
-              // No 'required' attribute here, description is optional
               disabled={readOnly || isActivityLocked}
             ></textarea>
           </div>
 
           <div className="flex justify-end space-x-3">
-            {isEditing && ( // Show delete button only when editing an existing activity
+            {isEditing && (
               <button
                 type="button"
-                onClick={handleDeleteActivity} // Calls the dedicated delete function
+                onClick={handleDeleteActivity}
                 className={`px-4 py-2 bg-red-600 text-white font-semibold rounded-md transition duration-200 ${
                   readOnly || isActivityLocked
                     ? "opacity-50 cursor-not-allowed"
@@ -382,7 +390,7 @@ export default function ActivityModal({
             </button>
             <button
               type="button"
-              onClick={onClose} // This button still just closes without deletion
+              onClick={onClose}
               className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-md hover:bg-gray-400 transition duration-200"
             >
               Annuler
@@ -392,9 +400,4 @@ export default function ActivityModal({
       </div>
     </div>
   );
-
-  // --- FIN DE LA MODIFICATION CLÉ : COMMENTER TOUT LE RENDU DU MODAL ---
-
-  // Rendre null pour désactiver le modal
-  return null;
 }
