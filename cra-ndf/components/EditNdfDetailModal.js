@@ -1,11 +1,13 @@
 "use client";
-import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Pencil, X } from "lucide-react";
 
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
+const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
+    // ----- TVA State identique à Add -----
     const [tva, setTva] = useState(() => {
         if (detail.tva && detail.tva.includes("/")) return "multi-taux";
         if (TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
@@ -19,11 +21,22 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         return "";
     });
 
+    // --- Multi-taux gestion identique à Add ---
     const [multiTaux, setMultiTaux] = useState(() => {
         if (detail.tva && detail.tva.includes('/')) {
-            return detail.tva.split("/").map(t => t.trim());
+            // Montant: essayer de trouver info dans detail.multiTaux si dispo
+            if (detail.multiTaux && Array.isArray(detail.multiTaux)) {
+                return detail.multiTaux;
+            }
+            // Sinon, déduire taux à partir de la tva string
+            const tauxList = detail.tva.split("/").map(t => t.replace("%", "").trim());
+            // Essaye de découper le montant en parts égales pour préremplir, ou laisse vides
+            let montantGlobal = parseFloat(detail.montant) || 0;
+            let nb = tauxList.length;
+            let approx = nb ? (montantGlobal / nb).toFixed(2) : "";
+            return tauxList.map(t => ({ taux: t, montant: approx }));
         }
-        return [""];
+        return [{ taux: "", montant: "" }];
     });
 
     const [open, setOpen] = useState(false);
@@ -34,12 +47,68 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [imgFile, setImgFile] = useState(null);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [clients, setClients] = useState([]);
+    const [projets, setProjets] = useState([]);
+    const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
+    const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
+    const [valeurTTC, setValeurTTC] = useState(detail.valeur_ttc ?? "");
+
+    useEffect(() => {
+        if (open) {
+            fetch("/api/client")
+                .then(res => res.json())
+                .then(data => setClients(Array.isArray(data) ? data : []))
+                .catch(() => setClients([]));
+            fetch("/api/projets")
+                .then(res => res.json())
+                .then(data => setProjets(Array.isArray(data) ? data : []))
+                .catch(() => setProjets([]));
+        }
+    }, [open]);
+
+    // Gestion Multi-Taux
+    function handleMultiTauxChange(idx, field, value) {
+        setMultiTaux(prev =>
+            prev.map((mt, i) =>
+                i === idx ? { ...mt, [field]: value } : mt
+            )
+        );
+    }
+    function addMultiTauxField() {
+        if (multiTaux.length < 3) setMultiTaux([...multiTaux, { taux: "", montant: "" }]);
+    }
+    function removeMultiTauxField(idx) {
+        if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
+    }
+
+    // Calcul montant HT total multi-taux
+    const montantMultiHt = useMemo(() => {
+        if (tva !== "multi-taux") return null;
+        return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
+    }, [multiTaux, tva]);
+
+    useEffect(() => {
+        if (tva === "multi-taux") {
+            setMontant(montantMultiHt || "");
+        }
+    }, [montantMultiHt, tva]);
 
     async function handleSubmit(e) {
         e.preventDefault();
         setLoading(true);
         setError("");
         let img_url = detail.img_url;
+
+        if (!selectedClient) {
+            setError("Veuillez sélectionner un client.");
+            setLoading(false);
+            return;
+        }
+        if (!selectedProjet) {
+            setError("Veuillez sélectionner un projet.");
+            setLoading(false);
+            return;
+        }
 
         if (imgFile) {
             const formData = new FormData();
@@ -58,11 +127,19 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         }
 
         let tvaValue = tva;
+        let montantValue = tva === "multi-taux" ? parseFloat(montantMultiHt) : parseFloat(montant);
+        let extra = {};
         if (tva === "autre taux") {
             tvaValue = autreTaux;
-        }
-        if (tva === "multi-taux") {
-            tvaValue = multiTaux.filter(t => t).join(" / ");
+        } else if (tva === "multi-taux") {
+            // Validation : tous taux/montants remplis
+            if (multiTaux.some(mt => !mt.taux || !mt.montant)) {
+                setError("Veuillez compléter tous les taux et montants en multi-taux.");
+                setLoading(false);
+                return;
+            }
+            tvaValue = multiTaux.map(mt => `${mt.taux}%`).join(" / ");
+            extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
         }
 
         const body = {
@@ -70,8 +147,12 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             nature,
             description,
             tva: tvaValue,
-            montant,
+            montant: montantValue,
+            valeur_ttc: parseFloat(valeurTTC),
             img_url,
+            client_id: selectedClient,
+            projet_id: selectedProjet,
+            ...extra,
         };
 
         const res = await fetch(`/api/ndf_details/${detail.uuid}`, {
@@ -88,20 +169,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         setLoading(false);
     }
 
-    function handleTvaInputChange(idx, value) {
-        setMultiTaux((prev) => {
-            const arr = [...prev];
-            arr[idx] = value;
-            return arr;
-        });
-    }
-    function addMultiTauxField() {
-        if (multiTaux.length < 3) setMultiTaux([...multiTaux, ""]);
-    }
-    function removeMultiTauxField(idx) {
-        if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
-    }
-
     return (
         <>
             <button
@@ -112,133 +179,262 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                 <Pencil size={20} />
             </button>
             {open && (
-                <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
-                    <div className="bg-white rounded-lg shadow p-6 w-full max-w-md text-black">
-                        <h2 className="text-lg font-semibold mb-3">Modifier la dépense</h2>
-                        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-                            <label>
-                                Date :
-                                <input
-                                    type="date"
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={dateStr}
-                                    required
-                                    onChange={e => setDateStr(e.target.value)}
-                                />
-                            </label>
-                            <label>
-                                Nature :
-                                <select
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={nature}
-                                    onChange={e => setNature(e.target.value)}
-                                >
-                                    {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
-                                </select>
-                            </label>
-                            <label>
-                                Description :
-                                <input
-                                    type="text"
-                                    className="ml-2 border px-2 py-1 rounded w-full"
-                                    value={description}
-                                    onChange={e => setDescription(e.target.value)}
-                                />
-                            </label>
-                            <label>
-                                TVA :
-                                <select
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={tva}
-                                    onChange={e => { setTva(e.target.value); setAutreTaux(""); setMultiTaux([""]); }}
-                                >
-                                    {TVAS.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            </label>
-                            {tva === "autre taux" && (
-                                <input
-                                    type="text"
-                                    placeholder="Taux personnalisé (%)"
-                                    className="border px-2 py-1 rounded"
-                                    value={autreTaux}
-                                    required
-                                    onChange={e => {
-                                        const val = e.target.value;
-                                        if (val.includes("/")) {
-                                            setTva("multi-taux");
-                                            setMultiTaux(val.split("/").map(s => s.trim()));
-                                            setAutreTaux("");
-                                        } else {
-                                            setAutreTaux(val);
-                                        }
-                                    }}
-                                />
-                            )}
-                            {tva === "multi-taux" && (
-                                <div className="flex flex-col gap-2">
-                                    {multiTaux.map((val, idx) => (
-                                        <div key={idx} className="flex gap-2 items-center">
-                                            <input
-                                                type="text"
-                                                placeholder={`Taux ${idx + 1}`}
-                                                className="border px-2 py-1 rounded"
-                                                value={val}
-                                                required
-                                                onChange={e => handleTvaInputChange(idx, e.target.value)}
-                                            />
-                                            {multiTaux.length > 1 && (
-                                                <button type="button" onClick={() => removeMultiTauxField(idx)} className="text-red-500">-</button>
-                                            )}
-                                            {idx === multiTaux.length - 1 && multiTaux.length < 3 && (
-                                                <button type="button" onClick={addMultiTauxField} className="text-green-600">+</button>
-                                            )}
-                                        </div>
-                                    ))}
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+                    <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl p-0">
+                        <div className="overflow-y-auto max-h-[90vh] p-8">
+                            <button
+                                type="button"
+                                className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 transition-colors"
+                                onClick={() => setOpen(false)}
+                                aria-label="Fermer la modale"
+                                disabled={loading}
+                            >
+                                <X size={28} />
+                            </button>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-8 text-center border-b pb-3">
+                                Modifier la dépense
+                            </h2>
+                            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Date :
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={dateStr}
+                                        required
+                                        onChange={e => setDateStr(e.target.value)}
+                                    />
                                 </div>
-                            )}
-                            <label>
-                                Montant (€) :
-                                <input
-                                    type="number"
-                                    className="ml-2 border px-2 py-1 rounded"
-                                    value={montant}
-                                    min={0}
-                                    step="0.01"
-                                    required
-                                    onChange={e => setMontant(e.target.value)}
-                                />
-                            </label>
-                            <label>
-                                Justificatif :
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="ml-2"
-                                    onChange={e => setImgFile(e.target.files[0])}
-                                />
-                                {detail.img_url &&
-                                    <a href={detail.img_url} target="_blank" rel="noopener noreferrer" className="ml-4 underline text-blue-800">Voir l’image</a>
-                                }
-                            </label>
-                            {error && <div className="text-red-600">{error}</div>}
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                                >
-                                    {loading ? "Modification..." : "Modifier"}
-                                </button>
-                                <button
-                                    type="button"
-                                    className="bg-gray-300 text-gray-800 px-4 py-2 rounded"
-                                    onClick={() => setOpen(false)}
-                                    disabled={loading}
-                                >
-                                    Annuler
-                                </button>
-                            </div>
-                        </form>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Nature :
+                                    </label>
+                                    <select
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={nature}
+                                        onChange={e => setNature(e.target.value)}
+                                    >
+                                        {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Description :
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={description}
+                                        onChange={e => setDescription(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Client :
+                                    </label>
+                                    <select
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={selectedClient}
+                                        onChange={e => setSelectedClient(e.target.value)}
+                                        required
+                                    >
+                                        <option value="">Sélectionner un client</option>
+                                        {clients.map(c => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.nom_client}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Projet :
+                                    </label>
+                                    <select
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={selectedProjet}
+                                        onChange={e => setSelectedProjet(e.target.value)}
+                                        required
+                                    >
+                                        <option value="">Sélectionner un projet</option>
+                                        {projets.map(p => (
+                                            <option key={p.id || p.uuid} value={p.id || p.uuid}>
+                                                {p.nom}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Valeur TTC (€) :
+                                    </label>
+                                    <input
+                                        type="number"
+                                        className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        value={valeurTTC}
+                                        min={0}
+                                        step="0.01"
+                                        required
+                                        onChange={e => setValeurTTC(e.target.value)}
+                                        placeholder="Montant TTC du ticket"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        TVA :
+                                    </label>
+                                    <select
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={tva}
+                                        onChange={e => {
+                                            setTva(e.target.value);
+                                            setAutreTaux("");
+                                            setMultiTaux([{ taux: "", montant: "" }]);
+                                        }}
+                                    >
+                                        {TVAS.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                                {tva === "autre taux" && (
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Taux personnalisé (%)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="Taux personnalisé (%)"
+                                            className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                            value={autreTaux}
+                                            required
+                                            onChange={e => setAutreTaux(e.target.value)}
+                                        />
+                                    </div>
+                                )}
+                                {tva === "multi-taux" && (
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Taux multiples (%) et montants :
+                                        </label>
+                                        <div className="flex flex-col gap-2">
+                                            {multiTaux.map((mt, idx) => (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <select
+                                                        className="block w-28 border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        value={mt.taux}
+                                                        required
+                                                        onChange={e => handleMultiTauxChange(idx, "taux", e.target.value)}
+                                                    >
+                                                        <option value="">Taux</option>
+                                                        {MULTI_TVA_OPTIONS.map(option => (
+                                                            <option key={option} value={option}>{option}%</option>
+                                                        ))}
+                                                    </select>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="Montant HT"
+                                                        min={0}
+                                                        step="0.01"
+                                                        className="block w-28 border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        value={mt.montant}
+                                                        required
+                                                        onChange={e => handleMultiTauxChange(idx, "montant", e.target.value)}
+                                                    />
+                                                    {multiTaux.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeMultiTauxField(idx)}
+                                                            className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors duration-200"
+                                                            title="Supprimer ce taux"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    )}
+                                                    {idx === multiTaux.length - 1 && multiTaux.length < 3 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={addMultiTauxField}
+                                                            className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors duration-200"
+                                                            title="Ajouter un taux"
+                                                        >
+                                                            <svg
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                className="h-4 w-4"
+                                                                viewBox="0 0 20 20"
+                                                                fill="currentColor"
+                                                            >
+                                                                <path
+                                                                    fillRule="evenodd"
+                                                                    d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
+                                                                    clipRule="evenodd"
+                                                                />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Montant HT (€) :
+                                    </label>
+                                    <input
+                                        type="number"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={montant}
+                                        min={0}
+                                        step="0.01"
+                                        required
+                                        onChange={e => setMontant(e.target.value)}
+                                        disabled={tva === "multi-taux"}
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Justificatif :
+                                    </label>
+                                    <div className="flex items-center gap-4">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="block"
+                                            onChange={e => setImgFile(e.target.files[0])}
+                                        />
+                                        {detail.img_url &&
+                                            <a href={detail.img_url} target="_blank" rel="noopener noreferrer"
+                                                className="underline text-blue-700 hover:text-blue-900 text-sm">
+                                                Voir l’image actuelle
+                                            </a>
+                                        }
+                                    </div>
+                                </div>
+                                {error && (
+                                    <div className="md:col-span-2 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm text-center">
+                                        {error}
+                                    </div>
+                                )}
+                                <div className="md:col-span-2 flex justify-end gap-3 pt-6 mt-4 border-t border-gray-100">
+                                    <button
+                                        type="button"
+                                        className="px-5 py-2 bg-gray-200 text-gray-700 font-medium rounded-md shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors duration-200"
+                                        onClick={() => setOpen(false)}
+                                        disabled={loading}
+                                    >
+                                        Annuler
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        className="inline-flex items-center px-5 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {loading ? "Modification..." : "Modifier"}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 </div>
             )}

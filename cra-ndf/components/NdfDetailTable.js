@@ -1,14 +1,11 @@
 "use client";
 import EditNdfDetailModal from "@/components/EditNdfDetailModal";
 import DeleteNdfDetailButton from "@/components/DeleteNdfDetailButton";
-import { useState, useMemo, useCallback } from "react";
-import { Search, SlidersHorizontal, X, ArrowUp, ArrowDown } from "lucide-react"; // Importation des icônes
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { Search, SlidersHorizontal, X, ArrowUp, ArrowDown } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import ViewNdfDetailModal from "@/components/ViewNdfDetailModal";
 
-
-// Constantes pour les options de sélection
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 
@@ -23,27 +20,48 @@ export default function NdfDetailTable({
   year,
   name,
 }) {
-  // État local pour les détails (peut être mis à jour si les props changent, ou via les actions)
   const [details, setDetails] = useState(initialDetails);
   const [search, setSearch] = useState("");
+  const [clients, setClients] = useState([]);
+  const [projets, setProjets] = useState([]);
 
-  // États pour la modale de filtre
   const [filterModal, setFilterModal] = useState(false);
-  const [sortBy, setSortBy] = useState(""); // Champ de tri (date, tva, montant)
-  const [sortDir, setSortDir] = useState("asc"); // Direction de tri (asc, desc)
-  const [nature, setNature] = useState(""); // Filtre par nature
-  const [tvaType, setTvaType] = useState(""); // Type de TVA sélectionné
-  const [tvaOtherValue, setTvaOtherValue] = useState(""); // ← Corrigé !
-  const [tvaMultiValue, setTvaMultiValue] = useState(""); // ← Corrigé !
-  const [resetKey, setResetKey] = useState(0); // Clé pour forcer la réinitialisation des inputs
+  const [sortBy, setSortBy] = useState("");
+  const [sortDir, setSortDir] = useState("asc");
+  const [nature, setNature] = useState("");
+  const [tvaType, setTvaType] = useState("");
+  const [tvaOtherValue, setTvaOtherValue] = useState("");
+  const [tvaMultiValue, setTvaMultiValue] = useState("");
+  const [resetKey, setResetKey] = useState(0);
 
-  // Fonction de rafraîchissement (rechargement de la page)
+  useEffect(() => {
+    fetch("/api/client")
+      .then((res) => res.json())
+      .then(setClients)
+      .catch(() => setClients([]));
+    fetch("/api/projets")
+      .then((res) => res.json())
+      .then(setProjets)
+      .catch(() => setProjets([]));
+  }, []);
+
+  function getClientName(client_id) {
+    if (!client_id) return "";
+    const c = clients.find((c) => c.id === client_id);
+    return c ? c.nom_client : "";
+  }
+
+  function getProjetName(projet_id) {
+    if (!projet_id) return "";
+    const p = projets.find((p) => (p.id || p.uuid) === projet_id);
+    return p ? p.nom : "";
+  }
+
   const refresh = async () => window.location.reload();
 
   const exportToPDF = async () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: "landscape" });
 
-    // Set PDF metadata
     doc.setProperties({
       title: `Note de frais - ${month || ""} ${year || ""} ${name || ""}`,
       subject: `Détails de la note de frais pour ${name || "Utilisateur"}`,
@@ -61,20 +79,17 @@ export default function NdfDetailTable({
       titleText += ` — ${subtitleParts.join(" — ")}`;
     }
 
-    // Function to add header and footer to each page
     const addHeaderAndFooter = (pageNumber) => {
       doc.setFontSize(10);
-      doc.setTextColor(100); // Gray color
-      doc.text(titleText, 14, 10); // Header
-
+      doc.setTextColor(100);
+      doc.text(titleText, 14, 10);
       doc.text(
         `Page ${pageNumber}`,
         doc.internal.pageSize.getWidth() - 30,
         doc.internal.pageSize.getHeight() - 10
-      ); // Footer
+      );
     };
 
-    // Add header and footer to the first page
     addHeaderAndFooter(1);
 
     doc.setFontSize(20);
@@ -86,6 +101,8 @@ export default function NdfDetailTable({
         "Date",
         "Nature",
         "Description",
+        "Client",
+        "Projet",
         "Montant HT",
         "TVA",
         "Montant TTC",
@@ -97,6 +114,8 @@ export default function NdfDetailTable({
       detail.date_str,
       detail.nature,
       detail.description,
+      getClientName(detail.client_id),
+      getProjetName(detail.projet_id),
       `${parseFloat(detail.montant).toFixed(2)}€`,
       detail.tva && detail.tva.includes("/")
         ? detail.tva
@@ -117,7 +136,6 @@ export default function NdfDetailTable({
       detail.img_url ? "Oui" : "Non",
     ]);
 
-    // --- TABLEAU PRINCIPAL ---
     autoTable(doc, {
       head,
       body: rows,
@@ -131,7 +149,7 @@ export default function NdfDetailTable({
         textColor: [50, 50, 50],
         lineColor: [220, 220, 220],
         lineWidth: 0.1,
-        overflow: 'linebreak',  // IMPORTANT POUR AFFICHER \n
+        overflow: 'linebreak',
         cellWidth: 'auto',
       },
       headStyles: {
@@ -146,13 +164,15 @@ export default function NdfDetailTable({
         fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "center", cellWidth: 20 },   // Date
-        1: { halign: "center", cellWidth: 25 },   // Nature
-        2: { halign: "center", minCellWidth: 40, cellWidth: "auto" }, // Description
-        3: { halign: "center", cellWidth: 25 },  // Montant HT
-        4: { halign: "center", cellWidth: 28 }, // TVA
-        5: { halign: "center", fontStyle: "bold", cellWidth: 25 }, // Montant TTC
-        6: { halign: "center", cellWidth: 20 }, // Justificatif
+        0: { halign: "center", cellWidth: 30 },
+        1: { halign: "center", cellWidth: 30 },
+        2: { halign: "center", minCellWidth: 50, cellWidth: 55 },
+        3: { halign: "center", cellWidth: 35 },
+        4: { halign: "center", cellWidth: 35 },
+        5: { halign: "center", cellWidth: 28 },
+        6: { halign: "center", cellWidth: 32 },
+        7: { halign: "center", fontStyle: "bold", cellWidth: 28 },
+        8: { halign: "center", cellWidth: 25 },
       },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
@@ -164,22 +184,22 @@ export default function NdfDetailTable({
     autoTable(doc, {
       body: [
         [
-          { content: "Total HT", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: "Total HT", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalHT.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          { content: "Total TVA", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: "Total TVA", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalTVA.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          { content: "Total TTC", colSpan: 5, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
+          { content: "Total TTC", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
           { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
           { content: "" },
         ],
         [
-          { content: `Nombre total de lignes de note de frais : ${filteredDetails.length}`, colSpan: 7, styles: { halign: "center", fontSize: 10, textColor: [80, 80, 80], fontStyle: "italic" } },
+          { content: `Nombre total de lignes de note de frais : ${filteredDetails.length}`, colSpan: 9, styles: { halign: "center", fontSize: 10, textColor: [80, 80, 80], fontStyle: "italic" } },
         ],
       ],
       theme: "plain",
@@ -211,7 +231,6 @@ export default function NdfDetailTable({
       if (detail.img_url) {
         doc.addPage();
         addHeaderAndFooter(doc.internal.getNumberOfPages());
-
         doc.setFontSize(18);
         doc.setTextColor(20, 20, 20);
         doc.text(
@@ -219,7 +238,6 @@ export default function NdfDetailTable({
           14,
           25
         );
-
         try {
           const dataUrl = await toDataUrl(detail.img_url);
           const imgProps = doc.getImageProperties(dataUrl);
@@ -245,7 +263,6 @@ export default function NdfDetailTable({
             imgHeight
           );
         } catch (e) {
-          console.error("Error loading justification for PDF:", e);
           doc.setFontSize(12);
           doc.setTextColor(200, 0, 0);
           doc.text(
@@ -261,7 +278,6 @@ export default function NdfDetailTable({
     doc.save(fileName);
   };
 
-  // Montant TTC ligne, arrondi au centime supérieur
   const getTTCLineRounded = useCallback((montant, tvaStr) => {
     const base = parseFloat(montant) || 0;
     if (!tvaStr || tvaStr === "0%") return base;
@@ -277,7 +293,6 @@ export default function NdfDetailTable({
     return roundUpToCent(base + totalTva);
   }, []);
 
-  // Logique de filtrage et de tri (utilisant useMemo pour optimiser les performances)
   const filteredDetails = useMemo(() => {
     let currentFilteredDetails = details.filter((detail) => {
       const lower = search.toLowerCase();
@@ -285,6 +300,8 @@ export default function NdfDetailTable({
         detail.date_str?.toLowerCase().includes(lower) ||
         detail.nature?.toLowerCase().includes(lower) ||
         detail.description?.toLowerCase().includes(lower) ||
+        getClientName(detail.client_id)?.toLowerCase().includes(lower) ||
+        getProjetName(detail.projet_id)?.toLowerCase().includes(lower) ||
         detail.tva?.toLowerCase().includes(lower) ||
         String(detail.montant).toLowerCase().includes(lower)
       );
@@ -306,7 +323,6 @@ export default function NdfDetailTable({
           d.tva.replace(/\s/g, "").includes(tvaMultiValue.replace(/\s/g, ""))
         );
       } else if (tvaType !== "autre taux" && tvaType !== "multi-taux") {
-        // Pour les taux fixes (0%, 5.5%, etc.), on compare directement
         currentFilteredDetails = currentFilteredDetails.filter(
           (d) => d.tva === tvaType
         );
@@ -320,7 +336,6 @@ export default function NdfDetailTable({
           valA = new Date(a.date_str);
           valB = new Date(b.date_str);
         } else if (sortBy === "tva") {
-          // Pour le tri par TVA, on prend le premier taux si multi-taux
           valA = parseFloat(
             a.tva
               .split("/")[0]
@@ -351,9 +366,10 @@ export default function NdfDetailTable({
     sortBy,
     sortDir,
     getTTCLineRounded,
+    clients,
+    projets,
   ]);
 
-  // Calcul des totaux HT et TTC des détails filtrés
   const totalHT = useMemo(
     () =>
       filteredDetails.reduce((acc, d) => acc + (parseFloat(d.montant) || 0), 0),
@@ -364,7 +380,6 @@ export default function NdfDetailTable({
     [filteredDetails, getTTCLineRounded]
   );
 
-  // Fonction de réinitialisation des filtres
   function resetFilters() {
     setNature("");
     setTvaType("");
@@ -372,11 +387,10 @@ export default function NdfDetailTable({
     setTvaMultiValue("");
     setSortBy("");
     setSortDir("asc");
-    setResetKey((prev) => prev + 1); // Incrémenter pour réinitialiser les inputs contrôlés
-    setFilterModal(false); // Fermer la modale après réinitialisation
+    setResetKey((prev) => prev + 1);
+    setFilterModal(false);
   }
 
-  // Message si aucun détail n'est présent initialement
   if (!initialDetails?.length) {
     return (
       <p className="text-center text-gray-600 py-8">
@@ -385,12 +399,10 @@ export default function NdfDetailTable({
     );
   }
 
-  // Calcul du total TVA appliqué sur tous les détails filtrés
   const totalTVA = useMemo(() => {
     return filteredDetails.reduce((acc, d) => {
       const base = parseFloat(d.montant) || 0;
       if (!d.tva || d.tva === "0%") return acc;
-      // Multi-taux : additionne tous les taux
       const tauxList = d.tva
         .split("/")
         .map((t) => parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")))
@@ -404,244 +416,48 @@ export default function NdfDetailTable({
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
-      <div className="flex flex-wrap items-center mb-6 gap-3">
-        <div className="relative flex-grow">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            type="text"
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 text-gray-900"
-            placeholder="Rechercher..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <button
-          className="bg-indigo-600 text-white px-5 py-2 rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-200 flex items-center gap-2"
-          onClick={() => setFilterModal(true)}
-          title="Filtres avancés"
-        >
-          <SlidersHorizontal size={18} /> Filtres avancés
-        </button>
-      </div>
-
-      {filterModal && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md relative transform transition-all scale-100 opacity-100 duration-300 ease-out">
-            <button
-              onClick={() => setFilterModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-              title="Fermer"
-            >
-              <X size={24} />
-            </button>
-            <h3 className="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">
-              Filtres avancés
-            </h3>
-
-            <div className="mb-6">
-              <div className="font-semibold text-gray-700 mb-2">
-                Trier par :
-              </div>
-              <div className="flex flex-wrap gap-3 mb-4">
-                <button
-                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortBy === "date"
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
-                  onClick={() => setSortBy("date")}
-                  type="button"
-                >
-                  Date
-                </button>
-                <button
-                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortBy === "tva"
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
-                  onClick={() => setSortBy("tva")}
-                  type="button"
-                >
-                  TVA
-                </button>
-                <button
-                  className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortBy === "montant"
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
-                  onClick={() => setSortBy("montant")}
-                  type="button"
-                >
-                  Montant HT
-                </button>
-              </div>
-              {sortBy && (
-                <div className="mt-2 flex gap-3">
-                  <button
-                    className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortDir === "asc"
-                      ? "bg-green-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    onClick={() => setSortDir("asc")}
-                    type="button"
-                  >
-                    <ArrowUp size={16} /> Croissant
-                  </button>
-                  <button
-                    className={`px-4 py-2 rounded-full transition-colors duration-200 flex items-center gap-1 ${sortDir === "desc"
-                      ? "bg-red-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    onClick={() => setSortDir("desc")}
-                    type="button"
-                  >
-                    <ArrowDown size={16} /> Décroissant
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="mb-6">
-              <label
-                htmlFor="nature-select"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
-                Nature :
-              </label>
-              <select
-                id="nature-select"
-                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                value={nature}
-                onChange={(e) => setNature(e.target.value)}
-              >
-                <option value="">Toutes</option>
-                {NATURES.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-6">
-              <label
-                htmlFor="tva-type-select"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
-                Filtrer par TVA :
-              </label>
-              <select
-                id="tva-type-select"
-                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                value={tvaType}
-                onChange={(e) => {
-                  setTvaType(e.target.value);
-                  setTvaOtherValue("");
-                  setTvaMultiValue("");
-                }}
-              >
-                <option value="">Tous taux</option>
-                {TVAS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              {tvaType === "autre taux" && (
-                <input
-                  key={resetKey + "autre"} // Utiliser resetKey pour forcer la réinitialisation
-                  type="text"
-                  className="mt-3 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="Précisez le taux (ex: 8.5)"
-                  value={tvaOtherValue}
-                  onChange={(e) => setTvaOtherValue(e.target.value)}
-                />
-              )}
-              {tvaType === "multi-taux" && (
-                <input
-                  key={resetKey + "multi"} // Utiliser resetKey pour forcer la réinitialisation
-                  type="text"
-                  className="mt-3 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="Précisez les taux (ex: 10/12)"
-                  value={tvaMultiValue}
-                  onChange={(e) => setTvaMultiValue(e.target.value)}
-                />
-              )}
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="px-5 py-2 bg-gray-200 text-gray-700 font-medium rounded-md shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors duration-200"
-              >
-                Réinitialiser
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterModal(false)}
-                className="px-5 py-2 bg-indigo-600 text-white font-medium rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-              >
-                Appliquer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {filteredDetails.length === 0 && search && (
-        <p className="text-center text-gray-600 py-6">
-          Aucun résultat pour votre recherche et vos filtres.
-        </p>
-      )}
-      {filteredDetails.length === 0 && !search && (
-        <p className="text-center text-gray-600 py-6">
-          Aucun détail pour cette note de frais.
-        </p>
-      )}
-
       {filteredDetails.length > 0 && (
         <div className="overflow-x-auto rounded-lg shadow-sm border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Date
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Nature
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Description
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Client
+                </th>
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Projet
+                </th>
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant HT
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   TVA
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant TTC
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Justificatif
                 </th>
-                <th className="py-3 px-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {filteredDetails.map((detail) => {
-                const montantTTC = getTTCLineRounded(detail.montant, detail.tva);
                 return (
-                  <tr
-                    key={detail.uuid}
-                    className="hover:bg-gray-50 transition-colors duration-150"
-                  >
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
+                  <tr key={detail.uuid} className="hover:bg-gray-50 transition-colors duration-150">
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {detail.date_str}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
@@ -650,10 +466,16 @@ export default function NdfDetailTable({
                     <td className="py-3 px-3 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
                       {detail.description}
                     </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {getClientName(detail.client_id) || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {getProjetName(detail.projet_id) || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800 text-center">
                       {parseFloat(detail.montant).toFixed(2)}€
                     </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {detail.tva && detail.tva.includes("/") ? (
                         <div>
                           {detail.tva.split("/").map((t, idx) => {
@@ -676,8 +498,10 @@ export default function NdfDetailTable({
                         <span>{detail.tva}</span>
                       )}
                     </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-right text-sm font-bold text-gray-900">
-                      {montantTTC.toFixed(2)}€
+                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
+                      {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
+                        ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
+                        : ""}
                     </td>
                     <td className="py-3 px-3 text-center">
                       {detail.img_url ? (
@@ -700,20 +524,23 @@ export default function NdfDetailTable({
                       )}
                     </td>
                     <td className="py-3 px-3 text-center whitespace-nowrap">
-                      <div className="flex justify-center gap-2">
-                        <ViewNdfDetailModal detail={detail} />
-                        {ndfStatut === "Provisoire" && (
-                          <>
-                            <EditNdfDetailModal detail={detail} onEdited={refresh} />
-                            <DeleteNdfDetailButton detailId={detail.uuid} onDeleted={refresh} />
-                          </>
-                        )}
-                        {ndfStatut !== "Provisoire" && (
-                          <span className="text-gray-500 text-xs italic">
-                            Non modifiable
-                          </span>
-                        )}
-                      </div>
+                      {ndfStatut === "Provisoire" && (
+                        <div className="flex justify-center gap-2">
+                          <EditNdfDetailModal
+                            detail={detail}
+                            onEdited={refresh}
+                          />
+                          <DeleteNdfDetailButton
+                            detailId={detail.uuid}
+                            onDeleted={refresh}
+                          />
+                        </div>
+                      )}
+                      {ndfStatut !== "Provisoire" && (
+                        <span className="text-gray-500 text-xs italic">
+                          Non modifiable
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -721,31 +548,31 @@ export default function NdfDetailTable({
             </tbody>
             <tfoot className="bg-gray-100 border-t-2 border-gray-300">
               <tr>
-                <td colSpan={5} className="py-3 px-4 text-right text-base font-bold text-gray-900">
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total HT
                 </td>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalHT.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={5} className="py-3 px-4 text-right text-base font-semibold text-gray-900">
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   Total TVA
                 </td>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                <td colSpan={7} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   {totalTVA.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={5} className="py-3 px-4 text-right text-base font-bold text-gray-900">
+                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total TTC
                 </td>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalTTC.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={8} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+                <td colSpan={10} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
                   Nombre total de lignes de note de frais : {filteredDetails.length}
                 </td>
               </tr>
@@ -753,7 +580,6 @@ export default function NdfDetailTable({
           </table>
         </div>
       )}
-
       <div className="mt-8 text-center">
         <button
           onClick={exportToPDF}
