@@ -66,6 +66,30 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [projets, setProjets] = useState([]);
     const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
     const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
+    const [valeurTTC, setValeurTTC] = useState(detail.valeurTTC || "");
+
+    // Fonction utilitaire pour calculer TTC (pareil que dans ta table)
+    function getTTC(montant, tva, multiTaux, tvaType) {
+        let base = parseFloat(montant) || 0;
+        if (tvaType === "multi-taux" && Array.isArray(multiTaux)) {
+            return multiTaux.reduce((acc, mt) => {
+                const ht = parseFloat(mt.montant) || 0;
+                const taux = parseFloat(mt.taux) || 0;
+                return acc + ht * (1 + taux / 100);
+            }, 0).toFixed(2);
+        }
+        // autre taux / taux simple
+        if (!tva || tva === "0%") return base.toFixed(2);
+        if (tva && typeof tva === "string" && tva.includes("/")) {
+            // split des taux si format "10% / 20%"
+            const tauxList = tva.split("/").map(t => parseFloat(t.replace("%", "").trim()) || 0);
+            const nb = tauxList.length;
+            return (base * (1 + tauxList.reduce((s, t) => s + t, 0) / (100 * nb))).toFixed(2);
+        }
+        // taux simple (ex: "20%")
+        const taux = parseFloat(tva.replace("%", "")) || 0;
+        return (base * (1 + taux / 100)).toFixed(2);
+    }
 
     useEffect(() => {
         if (open) {
@@ -389,7 +413,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                                 </div>
                                             ))}
                                             <div className="text-right text-xs text-gray-500 mt-1">
-                                                Total HT multi-taux : <span className="font-semibold">{montantMultiHt} €</span>
+                                                Total HT multi-taux : <span className="font-semibold">{montantMultiHt} €</span>
                                             </div>
                                         </div>
                                     </div>
