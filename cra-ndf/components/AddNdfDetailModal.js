@@ -521,43 +521,45 @@ export default function AddNdfDetailModal({
                 </div>
               )}
               {tva !== "multi-taux" && (
-                <div>
-                  <label
-                    htmlFor="valeur-tva"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Valeur TVA (€) :
-                  </label>
-                  <input
-                    type="text"
-                    id="valeur-tva"
-                    className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
-                    value={valeurTvaMono}
-                    readOnly
-                    tabIndex={-1}
-                    title="Valeur TVA calculée automatiquement"
-                  />
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1">
+                    <label
+                      htmlFor="montant-input"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Montant HT (€) :
+                    </label>
+                    <input
+                      type="number"
+                      id="montant-input"
+                      className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                      value={montant}
+                      min={0}
+                      step="0.01"
+                      required
+                      onChange={(e) => setMontant(e.target.value)}
+                      disabled={tva === "multi-taux"}
+                    />
+                  </div>
+                  <div className="w-48">
+                    <label
+                      htmlFor="valeur-tva"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Valeur TVA (€) :
+                    </label>
+                    <input
+                      type="text"
+                      id="valeur-tva"
+                      className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                      value={valeurTvaMono}
+                      readOnly
+                      tabIndex={-1}
+                      title="Valeur TVA calculée automatiquement"
+                    />
+                  </div>
                 </div>
               )}
-              <div>
-                <label
-                  htmlFor="montant-input"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Montant HT (€) :
-                </label>
-                <input
-                  type="number"
-                  id="montant-input"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  value={montant}
-                  min={0}
-                  step="0.01"
-                  required
-                  onChange={(e) => setMontant(e.target.value)}
-                  disabled={tva === "multi-taux"}
-                />
-              </div>
               <div className="pt-4 border-t border-gray-200 mt-4">
                 <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
                 <div className="mb-4">
