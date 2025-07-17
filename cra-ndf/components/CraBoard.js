@@ -743,7 +743,20 @@ export default function CraBoard({
         return;
       }
 
-      if (String(activity.user_id) !== String(userId)) {
+      // NOUVEAU : Vérifier si l'activité existe toujours dans l'état actuel des activités
+      const currentActivity = activities.find((a) => a.id === activity.id);
+      if (!currentActivity) {
+        console.warn(
+          "CraBoard: handleActivityClick - Activité non trouvée dans l'état actuel, annulation de l'ouverture du modal."
+        );
+        showMessage("L'activité n'existe plus ou a été supprimée.", "error");
+        setIsModalOpen(false); // S'assurer que le modal est fermé si c'était le cas
+        setEditingActivity(null); // Effacer l'état d'édition
+        return;
+      }
+
+      if (String(currentActivity.user_id) !== String(userId)) {
+        // Utiliser currentActivity
         showMessage(
           "Vous ne pouvez pas modifier ou supprimer les activités des autres utilisateurs.",
           "error"
@@ -752,14 +765,14 @@ export default function CraBoard({
       }
       // An activity can be modified/deleted if its status is 'draft' OR 'rejected'.
       const isActivityStatusEditable = ["draft", "rejected"].includes(
-        activity.status
+        currentActivity.status // Utiliser currentActivity
       );
 
       // Check if the activity type corresponds to CRA or Paid Leave and use the correct editable flag
       const isCRAActivityType =
-        String(activity.type_activite) !== String(paidLeaveTypeId);
+        String(currentActivity.type_activite) !== String(paidLeaveTypeId); // Utiliser currentActivity
       const isPaidLeaveActivityType =
-        String(activity.type_activite) === String(paidLeaveTypeId);
+        String(currentActivity.type_activite) === String(paidLeaveTypeId); // Utiliser currentActivity
 
       // If the report type itself is not editable, block modification
       if (isCRAActivityType && !isCraEditable) {
@@ -781,16 +794,20 @@ export default function CraBoard({
       // this check is still important.
       if (!isActivityStatusEditable) {
         showMessage(
-          `Activité verrouillée: statut '${activity.status}'. Modification ou suppression impossible.`,
+          `Activité verrouillée: statut '${currentActivity.status}'. Modification ou suppression impossible.`, // Utiliser currentActivity
           "info"
         );
         return;
       }
 
-      if (!activity.date_activite || !isValid(activity.date_activite)) {
+      if (
+        !currentActivity.date_activite ||
+        !isValid(new Date(currentActivity.date_activite))
+      ) {
+        // Utiliser currentActivity et valider Date
         console.error(
           "CraBoard: Date d'activité invalide depuis la base de données",
-          activity.date_activite
+          currentActivity.date_activite
         );
         showMessage(
           "Erreur: Date d'activité existante invalide. Impossible de modifier.",
@@ -798,8 +815,8 @@ export default function CraBoard({
         );
         return;
       }
-      setSelectedDate(activity.date_activite);
-      setEditingActivity(activity);
+      setSelectedDate(new Date(currentActivity.date_activite)); // Assurez-vous que c'est un objet Date
+      setEditingActivity(currentActivity);
       setIsModalOpen(true);
     },
     [
@@ -811,9 +828,9 @@ export default function CraBoard({
       paidLeaveTypeId,
       craReportStatus,
       paidLeaveReportStatus,
-    ] // Added new dependencies
+      activities, // AJOUTER 'activities' ici si ce n'est pas déjà fait
+    ] // Assurez-vous que 'activities' est dans les dépendances
   );
-
   const handleCloseActivityModal = useCallback(() => {
     console.log(
       "[CraBoard] handleCloseActivityModal: Setting isModalOpen to false."
@@ -901,9 +918,10 @@ export default function CraBoard({
   );
 
   // This function is for deletion initiated from the calendar's context menu
+  // This function is for deletion initiated from the calendar's context menu
   const requestDeleteFromCalendar = useCallback(
     async (activityId, event) => {
-      // Added async keyword here
+      // Assurez-vous que cette fonction est bien 'async'
       event.stopPropagation();
       // If the entire CraBoard is in readOnly mode, no deletion is allowed.
       if (readOnly) {
@@ -963,12 +981,13 @@ export default function CraBoard({
         return;
       }
 
-      // --- DEBUT DE LA MODIFICATION ---
-      // Au lieu d'ouvrir un modal de confirmation, nous allons appeler onDeleteActivity directement
+      // --- DÉBUT DE LA MODIFICATION CLÉ ICI ---
+
+      // À la place, appelez directement la fonction de suppression :
       try {
-        await onDeleteActivity(activityId); // Effectuer la suppression réelle immédiatement
-        showMessage("Activité supprimée avec succès !", "success"); // Message de succès après suppression
-        // Seules les activités sont récupérées si le mode lecture seule n'est pas activé
+        await onDeleteActivity(activityId); // Effectue la suppression réelle immédiatement
+        showMessage("Activité supprimée avec succès !", "success");
+        // Rafraîchit les activités si le mode lecture seule n'est pas activé
         if (!readOnly && fetchActivitiesForMonth) {
           fetchActivitiesForMonth(currentMonth);
         }
@@ -979,7 +998,7 @@ export default function CraBoard({
         );
         showMessage(`Erreur de suppression: ${error.message}`, "error");
       }
-      // --- FIN DE LA MODIFICATION ---
+      // --- FIN DE LA MODIFICATION CLÉ ---
     },
     [
       activities,
@@ -996,7 +1015,6 @@ export default function CraBoard({
       currentMonth,
     ]
   );
-
   // This function confirms deletion from the calendar's context menu
   // NOTE: This function is now only called by other confirmation modals (e.g., reset month)
   // and is NOT called by requestDeleteFromCalendar anymore.

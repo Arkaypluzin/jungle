@@ -190,6 +190,8 @@ export default function ActivityModal({
 
   if (!isOpen) return null;
 
+  // --- DÉBUT DE LA MODIFICATION CLÉ : COMMENTER TOUT LE RENDU DU MODAL ---
+
   const isClientRequired = useMemo(() => {
     const selectedType = activityTypeDefinitions.find(
       (type) => String(type.id) === String(formData.type_activite)
@@ -206,7 +208,6 @@ export default function ActivityModal({
           <h2 className="text-2xl font-bold text-gray-800">
             {isEditing ? "Modifier l'activité" : "Ajouter une activité"}
           </h2>
-          {/* The 'x' button now ONLY calls onClose */}
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
@@ -351,7 +352,6 @@ export default function ActivityModal({
               // No 'required' attribute here, description is optional
               disabled={readOnly || isActivityLocked}
             ></textarea>
-            {/* No error message for description if it's optional */}
           </div>
 
           <div className="flex justify-end space-x-3">
@@ -392,4 +392,9 @@ export default function ActivityModal({
       </div>
     </div>
   );
+
+  // --- FIN DE LA MODIFICATION CLÉ : COMMENTER TOUT LE RENDU DU MODAL ---
+
+  // Rendre null pour désactiver le modal
+  return null;
 }
