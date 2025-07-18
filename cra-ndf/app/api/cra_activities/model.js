@@ -3,20 +3,16 @@ import { getMongoDb } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
 
 // IMPORTANT : Vérifiez que ces noms de collection correspondent EXACTEMENT à ceux de votre base de données MongoDB
-// Par exemple, si votre collection de clients est nommée 'client' et non 'clients', changez-le ici.
-// Si vous n'êtes pas sûr, connectez-vous à votre base de données MongoDB et vérifiez les noms de vos collections.
 const COLLECTION_NAME = "cra_activities";
 const CLIENT_COLLECTION_NAME = "clients"; // <-- VÉRIFIEZ CE NOM DE COLLECTION DANS VOTRE DB ET AJUSTEZ SI NÉCESSAIRE
 const ACTIVITY_TYPE_COLLECTION_NAME = "activitytypes"; // <-- VÉRIFIEZ CE NOM DE COLLECTION DANS VOTRE DB ET AJUSTEZ SI NÉCESSAIRE
+const USER_COLLECTION_NAME = "cras_users"; // NOUVEAU : Nom de votre collection d'utilisateurs. VÉRIFIEZ ET AJUSTEZ SI NÉCESSAIRE.
 
 // Helper to transform _id to id for single documents
 function transformDocument(doc) {
   if (!doc) return null;
   const newDoc = { ...doc, id: doc._id.toString() };
   delete newDoc._id;
-
-  // Les champs populés (clientName, activityTypeName, etc.) sont déjà ajoutés par le $project dans le pipeline d'agrégation.
-  // Pas besoin de transformations supplémentaires ici pour ces champs.
   return newDoc;
 }
 
@@ -28,32 +24,47 @@ function transformDocuments(docs) {
 
 // Fonction utilitaire pour le pipeline d'agrégation commun
 const getLookupPipeline = () => [
+  // Lookup pour les informations de l'utilisateur
+  {
+    $lookup: {
+      from: USER_COLLECTION_NAME, // Nom de la collection des utilisateurs
+      localField: "user_id", // Le champ dans cra_activities qui contient l'ID utilisateur (ex: azureAdUserId)
+      foreignField: "azureAdUserId", // Le champ dans la collection users qui correspond (ex: azureAdUserId)
+      as: "populatedUser", // Nom temporaire pour le champ populé
+    },
+  },
+  {
+    $unwind: {
+      path: "$populatedUser",
+      preserveNullAndEmptyArrays: true, // Garde le document même si l'utilisateur n'est pas trouvé (ex: activité orpheline)
+    },
+  },
   {
     $lookup: {
       from: CLIENT_COLLECTION_NAME,
       localField: "client_id",
       foreignField: "id", // Assumons que client_id est une chaîne et correspond à 'id' dans clients
-      as: "populatedClient", // Nom temporaire pour le champ populé
+      as: "populatedClient",
     },
   },
   {
     $unwind: {
       path: "$populatedClient",
-      preserveNullAndEmptyArrays: true, // Garde le document même si le lookup ne trouve pas de correspondance
+      preserveNullAndEmptyArrays: true,
     },
   },
   {
     $lookup: {
       from: ACTIVITY_TYPE_COLLECTION_NAME,
-      localField: "type_activite", // type_activite est une chaîne (ex: "686cda0212a1b90f7cb0678c")
-      foreignField: "id", // MODIFICATION: Match avec 'id' (string) dans 'activitytypes' au lieu de '_id'
-      as: "populatedActivityType", // Nom temporaire pour le champ populé
+      localField: "type_activite",
+      foreignField: "id", // Match avec 'id' (string) dans 'activitytypes'
+      as: "populatedActivityType",
     },
   },
   {
     $unwind: {
       path: "$populatedActivityType",
-      preserveNullAndEmptyArrays: true, // Garde le document même si le lookup ne trouve pas de correspondance
+      preserveNullAndEmptyArrays: true,
     },
   },
   // Projet pour inclure les champs originaux et les noms populés
@@ -65,15 +76,15 @@ const getLookupPipeline = () => [
       description_activite: 1,
       override_non_working_day: 1,
       status: 1,
-      user_id: 1,
+      user_id: 1, // Garde l'ID utilisateur original (azureAdUserId)
       created_at: 1,
       updated_at: 1,
-      // Inclure les IDs bruts si nécessaire pour le frontend (pour les formulaires par ex)
-      client_id: 1, // L'ID brut du client
-      type_activite: 1, // L'ID brut du type d'activité
+      client_id: 1,
+      type_activite: 1,
 
       // Nouveaux champs pour les noms populés et leurs propriétés
-      // Utilisation de $ifNull pour fournir une valeur par défaut si le lookup ne trouve rien
+      userName: { $ifNull: ["$populatedUser.fullName", null] }, // Nom complet de l'utilisateur
+      userAzureAdId: { $ifNull: ["$populatedUser.azureAdUserId", null] }, // L'ID Azure AD de l'utilisateur
       clientName: { $ifNull: ["$populatedClient.nom_client", null] },
       clientId: { $ifNull: ["$populatedClient.id", null] },
       activityTypeName: { $ifNull: ["$populatedActivityType.name", null] },
@@ -87,10 +98,11 @@ const getLookupPipeline = () => [
   },
 ];
 
+// Fonction pour récupérer TOUTES les activités (sans filtre userId)
 export async function getAllCraActivities() {
   const db = await getMongoDb();
   try {
-    const pipeline = getLookupPipeline();
+    const pipeline = getLookupPipeline(); // Utilise le pipeline commun sans $match initial
     const activities = await db
       .collection(COLLECTION_NAME)
       .aggregate(pipeline)
@@ -149,15 +161,11 @@ export async function createCraActivity(data) {
     date_activite: new Date(data.date_activite),
     temps_passe: data.temps_passe,
     description_activite: data.description_activite || null,
-    // S'assurer que type_activite est stocké comme ObjectId si c'est un ID valide, sinon comme chaîne
-    // Note: Le lookup utilise maintenant le champ 'id' (string) de la collection activitytypes
-    type_activite: ObjectId.isValid(data.type_activite)
-      ? data.type_activite
-      : String(data.type_activite), // Stocker comme string si c'est déjà une string valide pour le lookup 'id'
+    type_activite: String(data.type_activite),
     client_id: String(data.client_id) || null,
     override_non_working_day: Boolean(data.override_non_working_day),
     status: data.status || "draft",
-    user_id: data.user_id,
+    user_id: data.user_id, // user_id est l'azureAdUserId ici
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -166,7 +174,6 @@ export async function createCraActivity(data) {
     console.log(
       `MongoDB ${COLLECTION_NAME}: Activité CRA créée avec ID: ${result.insertedId}`
     );
-    // Retourne un objet simple avec l'ID, la récupération complète se fera via fetchActivitiesForMonth
     return { id: result.insertedId.toString(), ...newActivity };
   } catch (error) {
     console.error(
@@ -194,14 +201,8 @@ export async function updateCraActivity(id, updateData) {
     updateDoc.$set.temps_passe = updateData.temps_passe;
   if (updateData.description_activite !== undefined)
     updateDoc.$set.description_activite = updateData.description_activite;
-
-  if (updateData.type_activite !== undefined) {
-    // Note: Le lookup utilise maintenant le champ 'id' (string) de la collection activitytypes
-    updateDoc.$set.type_activite = ObjectId.isValid(updateData.type_activite)
-      ? updateData.type_activite
-      : String(updateData.type_activite); // Stocker comme string si c'est déjà une string valide pour le lookup 'id'
-  }
-
+  if (updateData.type_activite !== undefined)
+    updateDoc.$set.type_activite = String(updateData.type_activite);
   if (updateData.client_id !== undefined) {
     updateDoc.$set.client_id = String(updateData.client_id);
   }
@@ -223,8 +224,7 @@ export async function updateCraActivity(id, updateData) {
         res.value ? "Succès" : "Non trouvée"
       }.`
     );
-    // Retourne un objet simple avec l'ID, la récupération complète se fera via fetchActivitiesForMonth
-    return { id: id, ...updateData }; // Retourne les données mises à jour avec l'ID
+    return { id: id, ...updateData };
   } catch (error) {
     console.error(
       `MongoDB ${COLLECTION_NAME}: Erreur lors de la mise à jour de l'activité CRA par ID ${id}:`,
@@ -265,11 +265,12 @@ export async function deleteCraActivity(id) {
   }
 }
 
+// Fonction pour récupérer les activités par userId et plage de dates
 export async function getCraActivitiesByDateRange(userId, startDate, endDate) {
   const db = await getMongoDb();
   try {
     const query = {
-      user_id: userId,
+      user_id: userId, // Ici, user_id est l'azureAdUserId
       date_activite: {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
@@ -282,7 +283,7 @@ export async function getCraActivitiesByDateRange(userId, startDate, endDate) {
     ];
 
     console.log(
-      `MongoDB ${COLLECTION_NAME}: Exécution de l'agrégation avec le pipeline:`,
+      `MongoDB ${COLLECTION_NAME}: Exécution de l'agrégation avec le pipeline pour userId ${userId}:`,
       JSON.stringify(pipeline, null, 2)
     );
 

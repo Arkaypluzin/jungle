@@ -8,6 +8,7 @@ import CraBoard from "@/components/CraBoard";
 import UnifiedManager from "@/components/UnifiedManager";
 import ReceivedCras from "@/components/ReceivedCras";
 import CraHistory from "@/components/CraHistory";
+import OverviewBoard from "@/components/OverviewBoard"; // NOUVEAU : Import du composant OverviewBoard
 import { startOfMonth, endOfMonth, format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -58,7 +59,7 @@ export default function CRAPage() {
   }, []);
 
   const [activeTab, setActiveTab] = useState("craManager");
-  const [craActivities, setCraActivities] = useState([]);
+  const [craActivities, setCraActivities] = useState([]); // Activités de l'utilisateur courant
   const [clientDefinitions, setClientDefinitions] = useState([]);
   const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
   const [loadingAppData, setLoadingAppData] = useState(true);
@@ -321,7 +322,10 @@ export default function CRAPage() {
             fetchActivityTypes(),
             fetchMonthlyReportsForUser(),
           ]);
-          await fetchCraActivitiesForMonth(currentDisplayedMonth);
+          // Seulement charger les activités de l'utilisateur si on est sur l'onglet craManager
+          if (activeTab === "craManager") {
+            await fetchCraActivitiesForMonth(currentDisplayedMonth);
+          }
         } else {
           setClientDefinitions([]);
           setActivityTypeDefinitions([]);
@@ -353,6 +357,7 @@ export default function CRAPage() {
     fetchMonthlyReportsForUser,
     showMessage,
     currentDisplayedMonth,
+    activeTab, // Ajout de activeTab comme dépendance
   ]);
 
   const handleAddCraActivity = useCallback(
@@ -634,10 +639,9 @@ export default function CRAPage() {
             "Rapport mensuel et activités associées supprimés avec succès !",
             "success"
           );
-          // IMPORTANT : Retourne immédiatement après un succès 204 pour éviter toute exécution ultérieure.
           await fetchCraActivitiesForMonth(currentDisplayedMonth);
           await fetchMonthlyReportsForUser();
-          return; // <--- AJOUT CLÉ ICI
+          return;
         } else if (!reportResponse.ok) {
           const contentType = reportResponse.headers.get("content-type");
           let errorData = {};
@@ -656,11 +660,6 @@ export default function CRAPage() {
               "Échec de la suppression du rapport mensuel."
           );
         }
-        // Si la réponse est OK (mais pas 204, ex: 200 OK avec un corps),
-        // nous pourrions la traiter ici. Pour DELETE, 204 est le plus courant.
-        // Si votre backend renvoie un 200 OK avec un JSON, vous pouvez ajouter une logique ici.
-        // Pour l'instant, si on arrive ici sans être 204 et sans être une erreur (!ok),
-        // c'est un cas inattendu pour DELETE, mais on va afficher un message générique.
         showMessage(
           "Opération de suppression terminée avec succès (statut non 204) !",
           "success"
@@ -1036,6 +1035,17 @@ export default function CRAPage() {
           >
             CRAs Reçus
           </button>
+          {/* NOUVEAU BOUTON POUR L'ONGLET "VUE D'ENSEMBLE" */}
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
+              activeTab === "overview"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+            }`}
+          >
+            Vue d'ensemble
+          </button>
         </div>
 
         {activeTab === "craManager" && (
@@ -1091,6 +1101,16 @@ export default function CRAPage() {
             activityTypeDefinitions={activityTypeDefinitions}
             monthlyReports={monthlyReports}
             onDeleteMonthlyReport={requestDeleteReportConfirmation}
+          />
+        )}
+
+        {/* NOUVEAU : Rendu conditionnel du composant OverviewBoard */}
+        {activeTab === "overview" && (
+          <OverviewBoard
+            activityTypeDefinitions={activityTypeDefinitions}
+            clientDefinitions={clientDefinitions}
+            showMessage={showMessage}
+            userRole={currentUserRole} // Passe le rôle pour la gestion des accès
           />
         )}
       </div>

@@ -1,12 +1,12 @@
 // app/api/cra_activities/controller.js
-import * as craActivityModel from "./model"; // Importe toutes les exports de model.js sous l'objet craActivityModel
+import * as craActivityModel from "./model";
 import { NextResponse } from "next/server";
 
 export async function getAllCraActivitiesController() {
   try {
+    // Cette fonction appelle le modèle pour obtenir TOUTES les activités.
+    // Elle ne doit PAS ajouter de filtre userId ici.
     const activities = await craActivityModel.getAllCraActivities();
-    // Le modèle devrait déjà avoir transformé _id en id.
-    // Donc, nous renvoyons directement les activités.
     console.log(
       "Controller (CRA Activities): Récupération de toutes les activités:",
       activities.length,
@@ -36,7 +36,6 @@ export async function getCraActivityByIdController(id) {
     );
     const activity = await craActivityModel.getCraActivityById(id);
     if (activity) {
-      // Le modèle devrait déjà avoir transformé _id en id.
       console.log(
         "Controller (CRA Activities): Activité trouvée (getCraActivityById):",
         JSON.stringify(activity),
@@ -71,41 +70,25 @@ export async function createCraActivityController(activityData) {
     activityData
   );
 
-  // --- NOUVEAUX LOGS DE DIAGNOSTIC ---
-  console.log(
-    `Controller (CRA Activities) - Validation Debug: date_activite: "${
-      activityData.date_activite
-    }" (truthy: ${!!activityData.date_activite})`
-  );
-  console.log(
-    `Controller (CRA Activities) - Validation Debug: temps_passe: "${
-      activityData.temps_passe
-    }" (truthy: ${!!activityData.temps_passe})`
-  );
-  console.log(
-    `Controller (CRA Activities) - Validation Debug: type_activite: "${
-      activityData.type_activite
-    }" (truthy: ${!!activityData.type_activite})`
-  );
-  // --- FIN NOUVEAUX LOGS ---
-
-  // Validation côté serveur
   if (
     !activityData.date_activite ||
     !activityData.temps_passe ||
-    !activityData.type_activite
+    !activityData.type_activite ||
+    !activityData.user_id // Assurez-vous que user_id est toujours requis pour la création
   ) {
     console.warn(
       "Controller (CRA Activities): Données d'activité manquantes (validation échouée)."
     );
     return NextResponse.json(
-      { message: "La date, le temps passé et le type d'activité sont requis." },
+      {
+        message:
+          "La date, le temps passé, le type d'activité et l'ID utilisateur sont requis.",
+      },
       { status: 400 }
     );
   }
   try {
     const newActivity = await craActivityModel.createCraActivity(activityData);
-    // Le modèle devrait déjà avoir transformé _id en id.
     console.log(
       "Controller (CRA Activities): Activité CRA créée avec succès. ID:",
       newActivity.id,
@@ -122,7 +105,7 @@ export async function createCraActivityController(activityData) {
         message:
           error.message || "Erreur lors de la création de l'activité CRA.",
       },
-      { status: error.cause?.name === "ValidationError" ? 400 : 500 } // Exemple de gestion d'erreur plus fine
+      { status: error.cause?.name === "ValidationError" ? 400 : 500 }
     );
   }
 }
@@ -150,7 +133,6 @@ export async function updateCraActivityController(id, updateData) {
       updateData
     );
     if (updatedActivity) {
-      // Le modèle devrait déjà avoir transformé _id en id.
       console.log(
         "Controller (CRA Activities): Activité CRA mise à jour avec succès. ID:",
         updatedActivity.id,
@@ -222,12 +204,12 @@ export async function getCraActivitiesByDateRangeController(
     console.log(
       `Controller (CRA Activities): Récupération des activités pour userId: ${userId}, du ${startDate} au ${endDate}`
     );
+    // Cette fonction appelle le modèle avec un filtre userId
     const activities = await craActivityModel.getCraActivitiesByDateRange(
       userId,
       startDate,
       endDate
     );
-    // Le modèle devrait déjà avoir transformé _id en id et géré les populations.
     console.log(
       "Controller (CRA Activities): Activités CRA par plage de dates récupérées:",
       activities.length,

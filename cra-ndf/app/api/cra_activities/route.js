@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import {
   createCraActivityController,
   getCraActivitiesByDateRangeController,
+  // getCraActivityByIdController, // Non utilisé directement ici
+  // updateCraActivityController, // Non utilisé directement ici
+  // deleteCraActivityController, // Non utilisé directement ici
+  getAllCraActivitiesController, // Importé pour gérer les requêtes sans userId
 } from "./controller";
 
 export async function GET(request) {
@@ -11,33 +15,42 @@ export async function GET(request) {
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
+  // Si aucun userId n'est fourni, la requête est pour TOUTES les activités (vue d'ensemble)
   if (!userId) {
-    return NextResponse.json(
-      { message: "L'ID utilisateur est requis." },
-      { status: 400 }
+    console.log(
+      "Route (CRA Activities): Requête pour toutes les activités (pas de userId)."
     );
+    // Appelle le contrôleur qui récupère TOUTES les activités sans filtre utilisateur.
+    // Il est crucial que getAllCraActivitiesController et son modèle sous-jacent ne filtrent PAS par userId.
+    return getAllCraActivitiesController();
   }
 
-  // Si startDate et endDate sont fournis, utiliser la fonction par plage de dates
-  if (startDate && endDate) {
-    return getCraActivitiesByDateRangeController(userId, startDate, endDate);
-  } else {
-    // Sinon, utiliser la fonction pour toutes les activités de l'utilisateur (si implémentée)
-    // Pour l'instant, nous redirigeons vers la plage de dates si aucune n'est spécifiée.
-    // Vous pouvez implémenter une logique pour récupérer toutes les activités d'un user ici si nécessaire.
+  // Si userId est fourni, ALORS startDate et endDate sont requis.
+  if (!startDate || !endDate) {
+    console.warn(
+      "Route (CRA Activities): Requête avec userId mais sans startDate/endDate."
+    );
     return NextResponse.json(
       {
         message:
-          "Veuillez fournir startDate et endDate pour récupérer les activités CRA.",
+          "Les paramètres startDate et endDate sont requis lorsque l'ID utilisateur est fourni.",
       },
       { status: 400 }
     );
   }
+
+  // Si userId ET startDate/endDate sont fournis, récupérer les activités de cet utilisateur pour la plage de dates
+  console.log(
+    `Route (CRA Activities): Requête pour activités de l'utilisateur ${userId} entre ${startDate} et ${endDate}.`
+  );
+  return getCraActivitiesByDateRangeController(userId, startDate, endDate);
 }
 
 export async function POST(request) {
-  // C'est ici que la correction est appliquée :
-  // Vous devez AWAIT le parsing du corps JSON de la requête.
   const activityData = await request.json();
   return createCraActivityController(activityData);
 }
+
+// Les fonctions PUT et DELETE pour les routes dynamiques ([id]) ne sont pas gérées ici,
+// mais dans un fichier route.js séparé comme app/api/cra_activities/[id]/route.js.
+// Assurez-vous que vos fichiers app/api/cra_activities/[id]/route.js existent et gèrent PUT/DELETE.
