@@ -60,74 +60,41 @@ export async function handlePut(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
     const userRoles = session?.user?.roles || [];
-    const ndf = await getNdfById(params.id);
-    if (!ndf) {
+    const detail = await getDetailById(params.id);
+    if (!detail) {
         return Response.json({ error: "Not found" }, { status: 404 });
     }
-    const isOwner = ndf.user_id === userId;
+    const isOwner = detail.user_id === userId;
     const isAdmin = userRoles.includes("Admin");
     const body = await req.json();
-    const { month, year, statut, motif_refus } = body;
+
     if (!isOwner && !isAdmin) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (ndf.statut === "Provisoire" && isOwner) {
-        const updated = await updateNdf(params.id, {
-            month: month ?? ndf.month,
-            year: year ?? ndf.year,
-            statut: statut ?? ndf.statut,
-            motif_refus: undefined,
-        });
-        return Response.json(updated);
+
+    let tvaValue = body.tva;
+    if (body.tva && Array.isArray(body.multiTaux)) {
+        tvaValue = body.multiTaux.map(mt => `${mt.taux}%`).join(" / ");
     }
-    if (isAdmin) {
-        if (ndf.statut === "Déclaré" && statut === "Validé") {
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut,
-                motif_refus: undefined,
-            });
-            return Response.json(updated);
-        }
-        if (ndf.statut === "Validé" && statut === "Remboursé") {
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut,
-                motif_refus: undefined,
-            });
-            return Response.json(updated);
-        }
-        if (ndf.statut === "Déclaré" && statut === "Provisoire") {
-            if (
-                !motif_refus ||
-                typeof motif_refus !== "string" ||
-                !motif_refus.trim()
-            ) {
-                return Response.json(
-                    { error: "Le motif de refus est obligatoire." },
-                    { status: 400 }
-                );
-            }
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut,
-                motif_refus: motif_refus.trim(),
-            });
-            return Response.json(updated);
-        }
-        return Response.json(
-            { error: "Modification impossible, statut verrouillé" },
-            { status: 403 }
-        );
+
+    const updateData = {
+        date_str: body.date_str,
+        nature: body.nature,
+        description: body.description,
+        tva: tvaValue,
+        montant: body.montant,
+        img_url: body.img_url,
+        client_id: body.client_id,
+        projet_id: body.projet_id,
+    };
+    if (Array.isArray(body.multiTaux)) {
+        updateData.multiTaux = body.multiTaux;
     }
-    return Response.json(
-        { error: "Modification impossible, statut verrouillé" },
-        { status: 403 }
-    );
+
+    const updated = await updateDetail(params.id, updateData);
+    return Response.json(updated);
 }
+
 
 export async function handleDelete(req, { params }) {
     const session = await auth();
@@ -160,5 +127,5 @@ export async function handleDelete(req, { params }) {
     }
     const deleted = await deleteNdf(params.id);
     return Response.json(deleted);
-    
+
 }

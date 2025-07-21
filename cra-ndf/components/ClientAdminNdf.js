@@ -120,7 +120,7 @@ export default function ClientAdminNdf() {
         const ttc = details.reduce((sum, d) => {
           const montant = parseFloat(d.montant) || 0;
           let taux = 0;
-          if (d.tva && d.tva !== "0%") {
+          if (typeof d.tva === "string" && d.tva !== "0%") {
             const tauxs = d.tva.split("/").map(e => parseFloat(e.replace(/[^\d.,]/g, "").replace(",", "."))).filter(Boolean);
             taux = tauxs.reduce((acc, t) => acc + (montant * t) / 100, 0);
           }
@@ -145,7 +145,7 @@ export default function ClientAdminNdf() {
         const ttc = details.reduce((sum, d) => {
           const montant = parseFloat(d.montant) || 0;
           let taux = 0;
-          if (d.tva && d.tva !== "0%") {
+          if (typeof d.tva === "string" && d.tva !== "0%") {
             const tauxs = d.tva.split("/").map(e => parseFloat(e.replace(/[^\d.,]/g, "").replace(",", "."))).filter(Boolean);
             taux = tauxs.reduce((acc, t) => acc + (montant * t) / 100, 0);
           }
