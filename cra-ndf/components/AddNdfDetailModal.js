@@ -32,8 +32,8 @@ export default function AddNdfDetailModal({
   const [nature, setNature] = useState(NATURES[0]);
   const [description, setDescription] = useState("");
   const [tva, setTva] = useState("0%");
-  const [montant, setMontant] = useState("");
-  const [valeurTTC, setValeurTTC] = useState("");
+  const [montant, setMontant] = useState(""); // Montant HT (calculé)
+  const [valeurTTC, setValeurTTC] = useState(""); // Saisi par l'utilisateur
   const [autreTaux, setAutreTaux] = useState("");
   const [multiTaux, setMultiTaux] = useState([{ taux: "", montant: "" }]);
   const [imgFile, setImgFile] = useState(null);
@@ -89,6 +89,7 @@ export default function AddNdfDetailModal({
     setDescription("");
     setTva("0%");
     setMontant("");
+    setValeurTTC("");
     setAutreTaux("");
     setMultiTaux([{ taux: "", montant: "" }]);
     setImgFile(null);
@@ -97,18 +98,47 @@ export default function AddNdfDetailModal({
     setSelectedProjet("");
   }
 
+  // --- Mono-taux : Calcul HT automatique à partir de TTC ---
+  const tauxMono = useMemo(() => {
+    if (tva === "autre taux" && autreTaux) {
+      return parseFloat(autreTaux.replace("%", "").replace(",", ".")) || 0;
+    }
+    if (TVAS.includes(tva) && tva !== "multi-taux" && tva !== "autre taux") {
+      return parseFloat(tva.replace("%", "").replace(",", ".")) || 0;
+    }
+    return 0;
+  }, [tva, autreTaux]);
+
+  // Champ HT : calculé à partir de TTC (sauf multi-taux)
+  useEffect(() => {
+    if (tva === "multi-taux") return;
+    if (!valeurTTC || !tauxMono) {
+      setMontant("");
+      return;
+    }
+    // Formule : HT = TTC / (1 + taux)
+    const ttcNum = parseFloat(valeurTTC.replace(",", "."));
+    const htNum = ttcNum / (1 + tauxMono / 100);
+    setMontant(isNaN(htNum) ? "" : htNum.toFixed(2));
+  }, [valeurTTC, tauxMono, tva]);
+
+  // Valeur TVA calculée pour mono-taux
+  const valeurTvaMono = useMemo(() => {
+    if (tva === "multi-taux" || !montant || !tauxMono) return "";
+    const montantNum = parseFloat(montant) || 0;
+    const brut = montantNum * tauxMono / 100;
+    const brutStr = (brut * 1000).toFixed(0);
+    const intPart = Math.floor(brut * 100);
+    const third = +brutStr % 10;
+    let arrondi = intPart / 100;
+    if (third >= 5) arrondi = (intPart + 1) / 100;
+    return arrondi.toFixed(2);
+  }, [montant, tauxMono, tva]);
+
+  // Multi-taux : identique à avant
   const montantMultiHt = useMemo(() => {
     if (tva !== "multi-taux") return null;
     return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
-  }, [multiTaux, tva]);
-
-  const montantMultiTtc = useMemo(() => {
-    if (tva !== "multi-taux") return null;
-    return multiTaux.reduce((acc, mt) => {
-      const m = parseFloat(mt.montant) || 0;
-      const taux = parseFloat(mt.taux) || 0;
-      return acc + m * (1 + taux / 100);
-    }, 0).toFixed(2);
   }, [multiTaux, tva]);
 
   async function handleSubmit(e) {
@@ -130,20 +160,6 @@ export default function AddNdfDetailModal({
       setError("Veuillez sélectionner un projet.");
       setLoading(false);
       return;
-    }
-
-    if (tva !== "multi-taux") {
-      const montantHt = parseFloat(montant) || 0;
-      const tvaVal = parseFloat(valeurTvaMono) || 0;
-      const ttcUser = parseFloat(valeurTTC) || 0;
-      const ttcCalcule = (montantHt + tvaVal);
-      if (ttcUser.toFixed(2) !== ttcCalcule.toFixed(2)) {
-        setError(
-          `La somme Montant HT + TVA (${ttcCalcule.toFixed(2)} €) ne correspond pas à la valeur TTC saisie (${ttcUser.toFixed(2)} €). Vérifiez les montants.`
-        );
-        setLoading(false);
-        return;
-      }
     }
 
     let img_url = null;
@@ -193,7 +209,7 @@ export default function AddNdfDetailModal({
       description,
       tva: tvaValue,
       montant: montantValue,
-      valeur_ttc: parseFloat(valeurTTC),
+      valeur_ttc: parseFloat(valeurTTC) || null,
       img_url,
       client_id: selectedClient,
       projet_id: selectedProjet,
@@ -239,39 +255,6 @@ export default function AddNdfDetailModal({
       setMontant(montantMultiHt || "");
     }
   }, [montantMultiHt, tva]);
-
-  const totalTVA = useMemo(() =>
-    multiTaux.reduce((acc, mt) => {
-      const tauxNum = parseFloat(mt.taux) || 0;
-      const montantNum = parseFloat(mt.montant) || 0;
-      const brut = montantNum * tauxNum / 100;
-      const brutStr = (brut * 1000).toFixed(0);
-      const intPart = Math.floor(brut * 100);
-      const third = +brutStr % 10;
-      let arrondi = intPart / 100;
-      if (third >= 5) arrondi = (intPart + 1) / 100;
-      return acc + arrondi;
-    }, 0).toFixed(2)
-    , [multiTaux]);
-
-  const valeurTvaMono = useMemo(() => {
-    if (tva === "multi-taux" || !montant) return "";
-    let tauxNum = 0;
-    if (TVAS.includes(tva) && tva !== "autre taux") {
-      tauxNum = parseFloat(tva.replace("%", "")) || 0;
-    } else if (tva === "autre taux" && autreTaux) {
-      tauxNum = parseFloat(autreTaux.replace("%", "")) || 0;
-    }
-    const montantNum = parseFloat(montant) || 0;
-    if (!montantNum || !tauxNum) return "0.00";
-    const brut = montantNum * tauxNum / 100;
-    const brutStr = (brut * 1000).toFixed(0);
-    const intPart = Math.floor(brut * 100);
-    const third = +brutStr % 10;
-    let arrondi = intPart / 100;
-    if (third >= 5) arrondi = (intPart + 1) / 100;
-    return arrondi.toFixed(2);
-  }, [montant, tva, autreTaux]);
 
   return (
     <>
@@ -373,46 +356,36 @@ export default function AddNdfDetailModal({
                 />
               </div>
               <div>
-                <label
-                  htmlFor="ttc-input"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Valeur TTC (€) :
                 </label>
                 <input
                   type="number"
-                  id="ttc-input"
                   className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   value={valeurTTC}
                   min={0}
                   step="0.01"
-                  required
-                  onChange={(e) => setValeurTTC(e.target.value)}
+                  required={tva !== "multi-taux"}
+                  onChange={e => setValeurTTC(e.target.value)}
                   placeholder="Montant TTC du ticket"
+                  disabled={tva === "multi-taux"}
                 />
               </div>
-
               <div>
-                <label
-                  htmlFor="tva-select"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   TVA :
                 </label>
                 <select
-                  id="tva-select"
                   className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   value={tva}
-                  onChange={(e) => {
+                  onChange={e => {
                     setTva(e.target.value);
                     setAutreTaux("");
                     setMultiTaux([{ taux: "", montant: "" }]);
                   }}
                 >
                   {TVAS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
               </div>
@@ -547,34 +520,28 @@ export default function AddNdfDetailModal({
               {tva !== "multi-taux" && (
                 <div className="flex gap-4 items-end">
                   <div className="flex-1">
-                    <label
-                      htmlFor="montant-input"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Montant HT (€) :
                     </label>
                     <input
                       type="number"
-                      id="montant-input"
                       className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                       value={montant}
                       min={0}
                       step="0.01"
                       required
                       onChange={(e) => setMontant(e.target.value)}
-                      disabled={tva === "multi-taux"}
+                      readOnly
+                      tabIndex={-1}
+                      title="Montant HT calculé automatiquement à partir du TTC"
                     />
                   </div>
                   <div className="w-48">
-                    <label
-                      htmlFor="valeur-tva"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Valeur TVA (€) :
                     </label>
                     <input
                       type="text"
-                      id="valeur-tva"
                       className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
                       value={valeurTvaMono}
                       readOnly
