@@ -40,11 +40,9 @@ export default function AddNdfDetailModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Ajout ANALYTIQUES - Client
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState("");
 
-  // Ajout ANALYTIQUES - Projet
   const [projets, setProjets] = useState([]);
   const [selectedProjet, setSelectedProjet] = useState("");
 
@@ -123,7 +121,6 @@ export default function AddNdfDetailModal({
       setLoading(false);
       return;
     }
-    // Validation client + projet
     if (!selectedClient) {
       setError("Veuillez sélectionner un client.");
       setLoading(false);
@@ -133,6 +130,20 @@ export default function AddNdfDetailModal({
       setError("Veuillez sélectionner un projet.");
       setLoading(false);
       return;
+    }
+
+    if (tva !== "multi-taux") {
+      const montantHt = parseFloat(montant) || 0;
+      const tvaVal = parseFloat(valeurTvaMono) || 0;
+      const ttcUser = parseFloat(valeurTTC) || 0;
+      const ttcCalcule = (montantHt + tvaVal);
+      if (ttcUser.toFixed(2) !== ttcCalcule.toFixed(2)) {
+        setError(
+          `La somme Montant HT + TVA (${ttcCalcule.toFixed(2)} €) ne correspond pas à la valeur TTC saisie (${ttcUser.toFixed(2)} €). Vérifiez les montants.`
+        );
+        setLoading(false);
+        return;
+      }
     }
 
     let img_url = null;
@@ -209,7 +220,6 @@ export default function AddNdfDetailModal({
     }
   }
 
-  // Multi-taux
   function handleMultiTauxChange(idx, field, value) {
     setMultiTaux((prev) =>
       prev.map((mt, i) =>
@@ -244,10 +254,8 @@ export default function AddNdfDetailModal({
     }, 0).toFixed(2)
     , [multiTaux]);
 
-  // Calcul valeur TVA pour monotaux
   const valeurTvaMono = useMemo(() => {
     if (tva === "multi-taux" || !montant) return "";
-    // Extraction taux
     let tauxNum = 0;
     if (TVAS.includes(tva) && tva !== "autre taux") {
       tauxNum = parseFloat(tva.replace("%", "")) || 0;
@@ -256,9 +264,8 @@ export default function AddNdfDetailModal({
     }
     const montantNum = parseFloat(montant) || 0;
     if (!montantNum || !tauxNum) return "0.00";
-    // Arrondi au centime supérieur
     const brut = montantNum * tauxNum / 100;
-    const brutStr = (brut * 1000).toFixed(0); // millième pour arrondi
+    const brutStr = (brut * 1000).toFixed(0);
     const intPart = Math.floor(brut * 100);
     const third = +brutStr % 10;
     let arrondi = intPart / 100;
@@ -436,13 +443,12 @@ export default function AddNdfDetailModal({
                     Taux multiples (%) – montants HT – valeur TVA :
                   </label>
                   {multiTaux.map((mt, idx) => {
-                    // Calcul de la valeur TVA pour cette ligne, arrondi au centime sup
                     const tauxNum = parseFloat(mt.taux) || 0;
                     const montantNum = parseFloat(mt.montant) || 0;
                     let tvaValeur = "";
                     if (mt.taux && mt.montant) {
                       const brut = montantNum * tauxNum / 100;
-                      const brutStr = (brut * 1000).toFixed(0); // millième pour arrondi
+                      const brutStr = (brut * 1000).toFixed(0);
                       const intPart = Math.floor(brut * 100);
                       const third = +brutStr % 10;
                       let arrondi = intPart / 100;
@@ -527,7 +533,6 @@ export default function AddNdfDetailModal({
                         type="text"
                         readOnly
                         value={
-                          // Sécurité si vide ou NaN
                           (parseFloat(valeurTTC) - parseFloat(totalTVA || "0")).toFixed(2)
                         }
                         className="w-32 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
