@@ -109,33 +109,31 @@ export async function handlePost(req) {
 }
 
 export async function handlePut(req, { params }) {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-    const detail = await getDetailById(params.id);
-    if (!detail) return Response.json({ error: "Not found" }, { status: 404 });
-
-    const ndf = await getNdfById(detail.id_ndf);
-    if (!ndf || ndf.user_id !== userId) return Response.json({ error: "Forbidden" }, { status: 403 });
-
-    if (ndf.statut !== "Provisoire") {
-        return Response.json({ error: "Impossible de modifier une dépense sur une NDF non Provisoire" }, { status: 403 });
-    }
-
-    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux } = await req.json();
-
-    if (img_url && detail.img_url && img_url !== detail.img_url) {
-        const oldImgPath = path.join(process.cwd(), "public", detail.img_url);
-        try {
-            await fs.unlink(oldImgPath);
-        } catch (e) {
-            console.error("Error deleting old image:", e);
-            return Response.json({ error: "Failed to delete old image" }, { status: 500 });
-        }
-    }
+    const body = await req.json();
+    // Prends en compte les deux styles
+    const valeurTTC = body.valeurTTC ?? body.valeur_ttc;
+    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, multiTaux } = body;
 
     const tvaArr = buildTvaArray({ tva, montant, multiTaux });
+
+    // Vérification : uniquement si pas multi-taux
+    if (
+        (!multiTaux || !Array.isArray(multiTaux) || multiTaux.length <= 1)
+        && typeof valeurTTC !== "undefined"
+        && valeurTTC !== null
+        && tvaArr.length === 1
+    ) {
+        const montantNum = parseFloat(montant) || 0;
+        const tvaVal = parseFloat(tvaArr[0].valeur_tva) || 0;
+        const ttcNum = parseFloat(valeurTTC) || 0;
+        const totalCalc = Math.round((montantNum + tvaVal) * 100) / 100;
+        const ttcRounded = Math.round(ttcNum * 100) / 100;
+        if (totalCalc !== ttcRounded) {
+            return Response.json(
+                { error: `Le montant TTC saisi (${ttcRounded}€) ne correspond pas à Montant HT (${montantNum}€) + TVA calculée (${tvaVal}€) = ${totalCalc}€.` },
+            );
+        }
+    }
 
     const updated = await updateDetail(params.id, {
         date_str,
@@ -143,7 +141,7 @@ export async function handlePut(req, { params }) {
         description,
         tva: tvaArr,
         montant,
-        valeur_ttc,
+        valeur_ttc: valeurTTC,
         img_url: img_url || null,
         client_id,
         projet_id

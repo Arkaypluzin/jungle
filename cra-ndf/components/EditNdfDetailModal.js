@@ -7,22 +7,21 @@ const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
-    // Init multi-taux à partir de string ou array
     function getMultiTauxFromDetail(detail) {
         if (Array.isArray(detail.tva)) {
-            // Nouveau format déjà array [{ taux, montant }]
             return detail.tva.map(mt => ({
                 taux: String(mt.taux ?? ""),
                 montant: String(mt.montant ?? "")
             }));
         }
+
         if (detail.multiTaux && Array.isArray(detail.multiTaux)) {
             return detail.multiTaux.map(mt => ({
                 taux: String(mt.taux ?? ""),
                 montant: String(mt.montant ?? "")
             }));
         }
-        // Ancien format: string genre "20% / 10%"
+
         if (typeof detail.tva === "string" && detail.tva.includes("/")) {
             const tauxList = detail.tva.split("/").map(t => t.replace("%", "").trim());
             let montantGlobal = parseFloat(detail.montant) || 0;
@@ -33,7 +32,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         return [{ taux: "", montant: "" }];
     }
 
-    // Init nature du taux (pour l'UI)
     function detectTvaType(detail) {
         if (Array.isArray(detail.tva) || (detail.multiTaux && Array.isArray(detail.multiTaux)) || (typeof detail.tva === "string" && detail.tva.includes("/"))) {
             return "multi-taux";
@@ -68,7 +66,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
     const [valeurTTC, setValeurTTC] = useState(detail.valeurTTC || "");
 
-    // Fonction utilitaire pour calculer TTC (pareil que dans ta table)
     function getTTC(montant, tva, multiTaux, tvaType) {
         let base = parseFloat(montant) || 0;
         if (tvaType === "multi-taux" && Array.isArray(multiTaux)) {
@@ -78,15 +75,14 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                 return acc + ht * (1 + taux / 100);
             }, 0).toFixed(2);
         }
-        // autre taux / taux simple
+
         if (!tva || tva === "0%") return base.toFixed(2);
         if (tva && typeof tva === "string" && tva.includes("/")) {
-            // split des taux si format "10% / 20%"
             const tauxList = tva.split("/").map(t => parseFloat(t.replace("%", "").trim()) || 0);
             const nb = tauxList.length;
             return (base * (1 + tauxList.reduce((s, t) => s + t, 0) / (100 * nb))).toFixed(2);
         }
-        // taux simple (ex: "20%")
+
         const taux = parseFloat(tva.replace("%", "")) || 0;
         return (base * (1 + taux / 100)).toFixed(2);
     }
@@ -104,7 +100,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         }
     }, [open]);
 
-    // Multi-taux gestion
     function handleMultiTauxChange(idx, field, value) {
         setMultiTaux(prev =>
             prev.map((mt, i) =>
@@ -118,7 +113,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     function removeMultiTauxField(idx) {
         if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
     }
-    // Montant HT global calculé
+
     const montantMultiHt = useMemo(() => {
         if (tva !== "multi-taux") return null;
         return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
@@ -129,7 +124,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         }
     }, [montantMultiHt, tva]);
 
-    // ------- HANDLE UPDATE / SUBMIT -------
     async function handleSubmit(e) {
         e.preventDefault();
         setLoading(true);
@@ -146,6 +140,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             setLoading(false);
             return;
         }
+
         if (imgFile) {
             const formData = new FormData();
             formData.append("file", imgFile);
@@ -164,33 +159,52 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
 
         let tvaValue = tva;
         let montantValue = tva === "multi-taux" ? parseFloat(montantMultiHt) : parseFloat(montant);
-        let body = {
-            date_str: dateStr,
-            nature,
-            description,
-            montant: montantValue,
-            img_url,
-            client_id: selectedClient,
-            projet_id: selectedProjet
-        };
+        let extra = {};
+        let calculTTC = 0;
 
         if (tva === "autre taux") {
-            body.tva = autreTaux;
+            tvaValue = autreTaux;
+            const taux = parseFloat(autreTaux.replace("%", "")) || 0;
+            calculTTC = (parseFloat(montant) || 0) * (1 + taux / 100);
         } else if (tva === "multi-taux") {
-            // Validation
             if (multiTaux.some(mt => !mt.taux || !mt.montant)) {
                 setError("Veuillez compléter tous les taux et montants en multi-taux.");
                 setLoading(false);
                 return;
             }
-            // On envoie un ARRAY [{ taux, montant }]
-            body.tva = multiTaux.map(mt => ({
-                taux: mt.taux,
-                montant: mt.montant
-            }));
+            tvaValue = multiTaux.map(mt => `${mt.taux}%`).join(" / ");
+            extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
+            calculTTC = multiTaux.reduce((acc, mt) => {
+                const ht = parseFloat(mt.montant) || 0;
+                const taux = parseFloat(mt.taux) || 0;
+                return acc + ht * (1 + taux / 100);
+            }, 0);
         } else {
-            body.tva = tva;
+            const taux = parseFloat(tva.replace("%", "")) || 0;
+            calculTTC = (parseFloat(montant) || 0) * (1 + taux / 100);
         }
+
+        if (tva !== "multi-taux") {
+            const valeurTTCFloat = parseFloat(valeurTTC || 0);
+            if (Math.abs(calculTTC - valeurTTCFloat) > 0.01) {
+                setError(`Le montant TTC indiqué (${valeurTTC} €) ne correspond pas (${calculTTC.toFixed(2)} €)`);
+                setLoading(false);
+                return;
+            }
+        }
+
+        const body = {
+            date_str: dateStr,
+            nature,
+            description,
+            tva: tvaValue,
+            montant: montantValue,
+            img_url,
+            client_id: selectedClient,
+            projet_id: selectedProjet,
+            valeur_ttc: valeurTTC,
+            ...extra,
+        };
 
         const res = await fetch(`/api/ndf_details/${detail.uuid}`, {
             method: "PUT",
@@ -206,7 +220,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         setLoading(false);
     }
 
-    // ----- UI identique à avant -----
     return (
         <>
             <button
