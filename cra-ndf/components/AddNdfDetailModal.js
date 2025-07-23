@@ -21,6 +21,8 @@ const MONTHS_MAP = {
   Décembre: 11,
 };
 
+const MOYENS_PAIEMENT = ["Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"];
+
 export default function AddNdfDetailModal({
   ndfId,
   ndfStatut,
@@ -32,8 +34,8 @@ export default function AddNdfDetailModal({
   const [nature, setNature] = useState(NATURES[0]);
   const [description, setDescription] = useState("");
   const [tva, setTva] = useState("0%");
-  const [montant, setMontant] = useState(""); // Montant HT (calculé)
-  const [valeurTTC, setValeurTTC] = useState(""); // Saisi par l'utilisateur
+  const [montant, setMontant] = useState("");
+  const [valeurTTC, setValeurTTC] = useState("");
   const [autreTaux, setAutreTaux] = useState("");
   const [multiTaux, setMultiTaux] = useState([{ taux: "", montant: "" }]);
   const [imgFile, setImgFile] = useState(null);
@@ -45,6 +47,8 @@ export default function AddNdfDetailModal({
 
   const [projets, setProjets] = useState([]);
   const [selectedProjet, setSelectedProjet] = useState("");
+
+  const [moyenPaiement, setMoyenPaiement] = useState(MOYENS_PAIEMENT[0]);
 
   useEffect(() => {
     if (open) {
@@ -96,9 +100,9 @@ export default function AddNdfDetailModal({
     setError("");
     setSelectedClient("");
     setSelectedProjet("");
+    setMoyenPaiement(MOYENS_PAIEMENT[0]);
   }
 
-  // --- Mono-taux : Calcul HT automatique à partir de TTC ---
   const tauxMono = useMemo(() => {
     if (tva === "autre taux" && autreTaux) {
       return parseFloat(autreTaux.replace("%", "").replace(",", ".")) || 0;
@@ -109,20 +113,17 @@ export default function AddNdfDetailModal({
     return 0;
   }, [tva, autreTaux]);
 
-  // Champ HT : calculé à partir de TTC (sauf multi-taux)
   useEffect(() => {
     if (tva === "multi-taux") return;
     if (!valeurTTC || !tauxMono) {
       setMontant("");
       return;
     }
-    // Formule : HT = TTC / (1 + taux)
     const ttcNum = parseFloat(valeurTTC.replace(",", "."));
     const htNum = ttcNum / (1 + tauxMono / 100);
     setMontant(isNaN(htNum) ? "" : htNum.toFixed(2));
   }, [valeurTTC, tauxMono, tva]);
 
-  // Valeur TVA calculée pour mono-taux
   const valeurTvaMono = useMemo(() => {
     if (tva === "multi-taux" || !montant || !tauxMono) return "";
     const montantNum = parseFloat(montant) || 0;
@@ -135,7 +136,6 @@ export default function AddNdfDetailModal({
     return arrondi.toFixed(2);
   }, [montant, tauxMono, tva]);
 
-  // Multi-taux : identique à avant
   const montantMultiHt = useMemo(() => {
     if (tva !== "multi-taux") return null;
     return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
@@ -213,6 +213,7 @@ export default function AddNdfDetailModal({
       img_url,
       client_id: selectedClient,
       projet_id: selectedProjet,
+      moyen_paiement: moyenPaiement,
       ...extra,
     };
 
@@ -336,6 +337,22 @@ export default function AddNdfDetailModal({
                     <option key={n} value={n}>
                       {n}
                     </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Moyen de paiement :
+                </label>
+                <select
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  value={moyenPaiement}
+                  onChange={e => setMoyenPaiement(e.target.value)}
+                  required
+                >
+                  {MOYENS_PAIEMENT.map(mp => (
+                    <option key={mp} value={mp}>{mp}</option>
                   ))}
                 </select>
               </div>

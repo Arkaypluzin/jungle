@@ -5,6 +5,7 @@ import { Pencil, X } from "lucide-react";
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
+const MOYENS_PAIEMENT = ["Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"];
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
     function getMultiTauxFromDetail(detail) {
@@ -65,27 +66,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
     const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
     const [valeurTTC, setValeurTTC] = useState(detail.valeurTTC || "");
-
-    function getTTC(montant, tva, multiTaux, tvaType) {
-        let base = parseFloat(montant) || 0;
-        if (tvaType === "multi-taux" && Array.isArray(multiTaux)) {
-            return multiTaux.reduce((acc, mt) => {
-                const ht = parseFloat(mt.montant) || 0;
-                const taux = parseFloat(mt.taux) || 0;
-                return acc + ht * (1 + taux / 100);
-            }, 0).toFixed(2);
-        }
-
-        if (!tva || tva === "0%") return base.toFixed(2);
-        if (tva && typeof tva === "string" && tva.includes("/")) {
-            const tauxList = tva.split("/").map(t => parseFloat(t.replace("%", "").trim()) || 0);
-            const nb = tauxList.length;
-            return (base * (1 + tauxList.reduce((s, t) => s + t, 0) / (100 * nb))).toFixed(2);
-        }
-
-        const taux = parseFloat(tva.replace("%", "")) || 0;
-        return (base * (1 + taux / 100)).toFixed(2);
-    }
+    const [moyenPaiement, setMoyenPaiement] = useState(detail.moyen_paiement || MOYENS_PAIEMENT[0]);
 
     useEffect(() => {
         if (open) {
@@ -203,6 +184,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             client_id: selectedClient,
             projet_id: selectedProjet,
             valeur_ttc: valeurTTC,
+            moyen_paiement: moyenPaiement,
             ...extra,
         };
 
@@ -268,6 +250,21 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                         onChange={e => setNature(e.target.value)}
                                     >
                                         {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Moyen de paiement :
+                                    </label>
+                                    <select
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        value={moyenPaiement}
+                                        onChange={e => setMoyenPaiement(e.target.value)}
+                                        required
+                                    >
+                                        {MOYENS_PAIEMENT.map(mp => (
+                                            <option key={mp} value={mp}>{mp}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="md:col-span-2">

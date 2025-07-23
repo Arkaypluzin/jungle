@@ -78,7 +78,7 @@ export async function handlePost(req) {
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux } = await req.json();
+    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux, moyen_paiement } = await req.json();
 
     const ndf = await getNdfById(id_ndf);
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
@@ -101,7 +101,8 @@ export async function handlePost(req) {
         valeur_ttc,
         img_url: img_url || null,
         client_id,
-        projet_id
+        projet_id,
+        moyen_paiement
     };
     await createDetail(newDetail);
 
@@ -110,13 +111,11 @@ export async function handlePost(req) {
 
 export async function handlePut(req, { params }) {
     const body = await req.json();
-    // Prends en compte les deux styles
     const valeurTTC = body.valeurTTC ?? body.valeur_ttc;
-    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, multiTaux } = body;
+    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, multiTaux, moyen_paiement } = body;
 
     const tvaArr = buildTvaArray({ tva, montant, multiTaux });
 
-    // Vérification : uniquement si pas multi-taux
     if (
         (!multiTaux || !Array.isArray(multiTaux) || multiTaux.length <= 1)
         && typeof valeurTTC !== "undefined"
@@ -144,7 +143,8 @@ export async function handlePut(req, { params }) {
         valeur_ttc: valeurTTC,
         img_url: img_url || null,
         client_id,
-        projet_id
+        projet_id,
+        moyen_paiement
     });
     return Response.json(updated);
 }
