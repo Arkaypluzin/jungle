@@ -21,7 +21,9 @@ const MONTHS_MAP = {
   Décembre: 11,
 };
 
-const MOYENS_PAIEMENT = ["Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"];
+const MOYENS_PAIEMENT = [
+  "Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"
+];
 
 export default function AddNdfDetailModal({
   ndfId,
@@ -113,6 +115,7 @@ export default function AddNdfDetailModal({
     return 0;
   }, [tva, autreTaux]);
 
+  // Mode mono-taux : calcul du HT à partir du TTC et du taux
   useEffect(() => {
     if (tva === "multi-taux") return;
     if (!valeurTTC || !tauxMono) {
@@ -124,6 +127,7 @@ export default function AddNdfDetailModal({
     setMontant(isNaN(htNum) ? "" : htNum.toFixed(2));
   }, [valeurTTC, tauxMono, tva]);
 
+  // Mono-taux : calcul TVA à partir du HT et taux
   const valeurTvaMono = useMemo(() => {
     if (tva === "multi-taux" || !montant || !tauxMono) return "";
     const montantNum = parseFloat(montant) || 0;
@@ -136,10 +140,33 @@ export default function AddNdfDetailModal({
     return arrondi.toFixed(2);
   }, [montant, tauxMono, tva]);
 
-  const montantMultiHt = useMemo(() => {
-    if (tva !== "multi-taux") return null;
-    return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
+  // Multi-taux : calcul total HT, total TVA
+  const totalHTMulti = useMemo(() => {
+    if (tva !== "multi-taux") return 0;
+    return multiTaux.reduce((sum, mt) => sum + (parseFloat(mt.montant) || 0), 0);
   }, [multiTaux, tva]);
+
+  const totalTVA = useMemo(() => {
+    if (tva !== "multi-taux") return 0;
+    return multiTaux.reduce((sum, mt) => {
+      const tauxNum = parseFloat(mt.taux) || 0;
+      const montantNum = parseFloat(mt.montant) || 0;
+      const brut = montantNum * tauxNum / 100;
+      const brutStr = (brut * 1000).toFixed(0);
+      const intPart = Math.floor(brut * 100);
+      const third = +brutStr % 10;
+      let arrondi = intPart / 100;
+      if (third >= 5) arrondi = (intPart + 1) / 100;
+      return sum + arrondi;
+    }, 0);
+  }, [multiTaux, tva]);
+
+  // Actualisation du montant HT (sauvegardé) pour multi-taux
+  useEffect(() => {
+    if (tva === "multi-taux") {
+      setMontant(totalHTMulti.toFixed(2));
+    }
+  }, [totalHTMulti, tva]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -160,6 +187,31 @@ export default function AddNdfDetailModal({
       setError("Veuillez sélectionner un projet.");
       setLoading(false);
       return;
+    }
+
+    // Vérification multi-taux
+    if (tva === "multi-taux") {
+      if (!valeurTTC) {
+        setError("Veuillez entrer la valeur TTC.");
+        setLoading(false);
+        return;
+      }
+      if (multiTaux.some((mt) => !mt.taux || !mt.montant)) {
+        setError("Veuillez compléter tous les taux et montants en multi-taux.");
+        setLoading(false);
+        return;
+      }
+      const totalHT = totalHTMulti;
+      const tvaTotal = totalTVA;
+      const ttc = parseFloat(valeurTTC);
+      const precision = 0.01;
+      if (Math.abs(ttc - (totalHT + tvaTotal)) > precision) {
+        setError(
+          `Le total TTC (${ttc.toFixed(2)}€) doit être égal à la somme du Total HT (${totalHT.toFixed(2)}€) + Total TVA (${tvaTotal.toFixed(2)}€).`
+        );
+        setLoading(false);
+        return;
+      }
     }
 
     let img_url = null;
@@ -185,20 +237,13 @@ export default function AddNdfDetailModal({
     }
 
     let tvaValue = tva;
-    let montantValue = tva === "multi-taux" ? parseFloat(montantMultiHt) : parseFloat(montant);
+    let montantValue = tva === "multi-taux" ? parseFloat(totalHTMulti) : parseFloat(montant);
     let extra = {};
 
     if (tva === "autre taux") {
       tvaValue = autreTaux;
     } else if (tva === "multi-taux") {
-      if (multiTaux.some((mt) => !mt.taux || mt.taux === "" || !mt.montant || mt.montant === "")) {
-        setError("Veuillez compléter tous les taux et montants en multi-taux.");
-        setLoading(false);
-        return;
-      }
-      tvaValue = multiTaux
-        .map((mt) => `${parseFloat(mt.taux) || 0}%`)
-        .join(" / ");
+      tvaValue = multiTaux.map((mt) => `${parseFloat(mt.taux) || 0}%`).join(" / ");
       extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
     }
 
@@ -209,7 +254,7 @@ export default function AddNdfDetailModal({
       description,
       tva: tvaValue,
       montant: montantValue,
-      valeur_ttc: parseFloat(valeurTTC) || null,
+      valeur_ttc: valeurTTC ? parseFloat(valeurTTC) : null,
       img_url,
       client_id: selectedClient,
       projet_id: selectedProjet,
@@ -250,12 +295,6 @@ export default function AddNdfDetailModal({
   function removeMultiTauxField(idx) {
     if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
   }
-
-  useEffect(() => {
-    if (tva === "multi-taux") {
-      setMontant(montantMultiHt || "");
-    }
-  }, [montantMultiHt, tva]);
 
   return (
     <>
@@ -302,16 +341,13 @@ export default function AddNdfDetailModal({
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label
-                  htmlFor="date-input"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label htmlFor="date-input" className="block text-sm font-medium text-gray-700 mb-2">
                   Date :
                 </label>
                 <input
                   type="date"
                   id="date-input"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                   value={dateStr}
                   required
                   onChange={(e) => setDateStr(e.target.value)}
@@ -321,15 +357,12 @@ export default function AddNdfDetailModal({
               </div>
 
               <div>
-                <label
-                  htmlFor="nature-select"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label htmlFor="nature-select" className="block text-sm font-medium text-gray-700 mb-2">
                   Nature :
                 </label>
                 <select
                   id="nature-select"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                   value={nature}
                   onChange={(e) => setNature(e.target.value)}
                 >
@@ -346,7 +379,7 @@ export default function AddNdfDetailModal({
                   Moyen de paiement :
                 </label>
                 <select
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                   value={moyenPaiement}
                   onChange={e => setMoyenPaiement(e.target.value)}
                   required
@@ -358,42 +391,40 @@ export default function AddNdfDetailModal({
               </div>
 
               <div>
-                <label
-                  htmlFor="description-input"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label htmlFor="description-input" className="block text-sm font-medium text-gray-700 mb-2">
                   Description :
                 </label>
                 <input
                   type="text"
                   id="description-input"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Valeur TTC (€) :
                 </label>
                 <input
                   type="number"
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                   value={valeurTTC}
                   min={0}
                   step="0.01"
-                  required={tva !== "multi-taux"}
+                  required
                   onChange={e => setValeurTTC(e.target.value)}
                   placeholder="Montant TTC du ticket"
-                  disabled={tva === "multi-taux"}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   TVA :
                 </label>
                 <select
-                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                   value={tva}
                   onChange={e => {
                     setTva(e.target.value);
@@ -409,17 +440,10 @@ export default function AddNdfDetailModal({
 
               {tva === "autre taux" && (
                 <div>
-                  <label
-                    htmlFor="autre-taux-input"
-                    className="block text-sm font-medium text-gray-700 mb-2 sr-only"
-                  >
-                    Taux personnalisé (%)
-                  </label>
                   <input
                     type="text"
-                    id="autre-taux-input"
                     placeholder="Taux personnalisé (%) (ex: 8.5)"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                     value={autreTaux}
                     required
                     onChange={(e) => setAutreTaux(e.target.value)}
@@ -445,11 +469,10 @@ export default function AddNdfDetailModal({
                       if (third >= 5) arrondi = (intPart + 1) / 100;
                       tvaValeur = arrondi.toFixed(2);
                     }
-
                     return (
                       <div key={idx} className="flex items-center gap-3">
                         <select
-                          className="block w-20 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          className="block w-20 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                           value={mt.taux}
                           required
                           onChange={e => handleMultiTauxChange(idx, "taux", e.target.value)}
@@ -466,14 +489,14 @@ export default function AddNdfDetailModal({
                           placeholder="Montant HT"
                           min={0}
                           step="0.01"
-                          className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                           value={mt.montant}
                           required
                           onChange={e => handleMultiTauxChange(idx, "montant", e.target.value)}
                         />
                         <input
                           type="text"
-                          className="block w-28 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                          className="block w-28 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800"
                           value={tvaValeur}
                           readOnly
                           tabIndex={-1}
@@ -514,26 +537,24 @@ export default function AddNdfDetailModal({
                       </div>
                     );
                   })}
-                  {tva === "multi-taux" && valeurTTC && !isNaN(Number(valeurTTC)) && (
-                    <div className="flex items-center gap-2 mt-3">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Total HT calculé :
-                      </label>
-                      <input
-                        type="text"
-                        readOnly
-                        value={
-                          (parseFloat(valeurTTC) - parseFloat(totalTVA || "0")).toFixed(2)
-                        }
-                        className="w-32 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
-                        tabIndex={-1}
-                      />
-                      <span className="text-gray-400 text-xs"></span>
+                  {/* Affichage des totaux */}
+                  <div className="flex flex-col gap-1 mt-3 text-sm text-gray-700">
+                    <div>
+                      <span className="font-medium">Total HT saisi : </span>
+                      <span>{totalHTMulti.toFixed(2)} €</span>
                     </div>
-                  )}
-
+                    <div>
+                      <span className="font-medium">Total TVA calculé : </span>
+                      <span>{totalTVA.toFixed(2)} €</span>
+                    </div>
+                    <div>
+                      <span className="font-medium">Total TTC attendu : </span>
+                      <span>{(totalHTMulti + totalTVA).toFixed(2)} €</span>
+                    </div>
+                  </div>
                 </div>
               )}
+
               {tva !== "multi-taux" && (
                 <div className="flex gap-4 items-end">
                   <div className="flex-1">
@@ -542,7 +563,7 @@ export default function AddNdfDetailModal({
                     </label>
                     <input
                       type="number"
-                      className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                      className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                       value={montant}
                       min={0}
                       step="0.01"
@@ -559,7 +580,7 @@ export default function AddNdfDetailModal({
                     </label>
                     <input
                       type="text"
-                      className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800 focus:outline-none sm:text-sm"
+                      className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800"
                       value={valeurTvaMono}
                       readOnly
                       tabIndex={-1}
@@ -568,18 +589,17 @@ export default function AddNdfDetailModal({
                   </div>
                 </div>
               )}
+
+              {/* ANALYTIQUES */}
               <div className="pt-4 border-t border-gray-200 mt-4">
                 <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
                 <div className="mb-4">
-                  <label
-                    htmlFor="client-select"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
+                  <label htmlFor="client-select" className="block text-sm font-medium text-gray-700 mb-2">
                     Client :
                   </label>
                   <select
                     id="client-select"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                     value={selectedClient}
                     onChange={(e) => setSelectedClient(e.target.value)}
                     required
@@ -594,15 +614,12 @@ export default function AddNdfDetailModal({
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="projet-select"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
+                  <label htmlFor="projet-select" className="block text-sm font-medium text-gray-700 mb-2">
                     Projet :
                   </label>
                   <select
                     id="projet-select"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                     value={selectedProjet}
                     onChange={(e) => setSelectedProjet(e.target.value)}
                     required
@@ -617,10 +634,7 @@ export default function AddNdfDetailModal({
                 </div>
               </div>
               <div>
-                <label
-                  htmlFor="justificatif-file"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label htmlFor="justificatif-file" className="block text-sm font-medium text-gray-700 mb-2">
                   Justificatif :
                 </label>
                 <input
@@ -633,10 +647,7 @@ export default function AddNdfDetailModal({
               </div>
 
               {error && (
-                <div
-                  className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm"
-                  role="alert"
-                >
+                <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm" role="alert">
                   {error}
                 </div>
               )}
