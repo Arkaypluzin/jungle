@@ -133,6 +133,7 @@ export default function NdfDetailTable({
         "Description",
         "Client",
         "Projet",
+        "Moyen de paiement",
         "Montant HT",
         "TVA",
         "Montant TTC"
@@ -145,6 +146,7 @@ export default function NdfDetailTable({
       detail.description,
       getClientName(detail.client_id),
       getProjetName(detail.projet_id),
+      detail.moyen_paiement || "-", // <-- AJOUT ICI
       `${parseFloat(detail.montant).toFixed(2)}€`,
       formatTvaPdf(detail),
       `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
@@ -179,15 +181,16 @@ export default function NdfDetailTable({
         fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "center", cellWidth: 30 },
-        1: { halign: "center", cellWidth: 30 },
-        2: { halign: "center", minCellWidth: 50, cellWidth: 55 },
-        3: { halign: "center", cellWidth: 35 },
-        4: { halign: "center", cellWidth: 35 },
-        5: { halign: "center", cellWidth: 28 },
-        6: { halign: "center", cellWidth: 32 },
-        7: { halign: "center", fontStyle: "bold", cellWidth: 28 },
-        8: { halign: "center", cellWidth: 25 },
+        0: { halign: "center", cellWidth: 30 }, // Date
+        1: { halign: "center", cellWidth: 30 }, // Nature
+        2: { halign: "center", minCellWidth: 50, cellWidth: 55 }, // Description
+        3: { halign: "center", cellWidth: 35 }, // Client
+        4: { halign: "center", cellWidth: 35 }, // Projet
+        5: { halign: "center", cellWidth: 40 }, // Moyen de paiement
+        6: { halign: "center", cellWidth: 28 }, // Montant HT
+        7: { halign: "center", cellWidth: 32 }, // TVA
+        8: { halign: "center", fontStyle: "bold", cellWidth: 28 }, // Montant TTC
+        9: { halign: "center", cellWidth: 25 }, // Justificatif
       },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
@@ -473,6 +476,9 @@ export default function NdfDetailTable({
                   Projet
                 </th>
                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Moyen de paiement
+                </th>
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant HT
                 </th>
                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -507,6 +513,9 @@ export default function NdfDetailTable({
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {getProjetName(detail.projet_id) || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {detail.moyen_paiement || <span className="italic text-gray-400">-</span>}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800 text-center">
                       {parseFloat(detail.montant).toFixed(2)}€
@@ -582,7 +591,7 @@ export default function NdfDetailTable({
                 <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total HT
                 </td>
-                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalHT.toFixed(2)}€
                 </td>
               </tr>
@@ -590,7 +599,7 @@ export default function NdfDetailTable({
                 <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   Total TVA
                 </td>
-                <td colSpan={7} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                <td colSpan={8} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   {totalTVA.toFixed(2)}€
                 </td>
               </tr>
@@ -598,12 +607,12 @@ export default function NdfDetailTable({
                 <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total TTC
                 </td>
-                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalTTC.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={10} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+                <td colSpan={11} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
                   Nombre total de lignes de note de frais : {filteredDetails.length}
                 </td>
               </tr>
