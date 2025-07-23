@@ -78,7 +78,7 @@ export async function handlePost(req) {
     const userId = session?.user?.id;
     if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux, moyen_paiement } = await req.json();
+    const { id_ndf, date_str, nature, description, tva, montant, img_url, client_id, projet_id, valeur_ttc, multiTaux, moyen_paiement, type_repas, inviter } = await req.json();
 
     const ndf = await getNdfById(id_ndf);
     if (!ndf) return Response.json({ error: "NDF Not found" }, { status: 404 });
@@ -102,7 +102,9 @@ export async function handlePost(req) {
         img_url: img_url || null,
         client_id,
         projet_id,
-        moyen_paiement
+        moyen_paiement,
+        type_repas,
+        inviter
     };
     await createDetail(newDetail);
 
@@ -112,7 +114,7 @@ export async function handlePost(req) {
 export async function handlePut(req, { params }) {
     const body = await req.json();
     const valeurTTC = body.valeurTTC ?? body.valeur_ttc;
-    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, multiTaux, moyen_paiement } = body;
+    const { date_str, nature, description, tva, montant, img_url, client_id, projet_id, multiTaux, moyen_paiement, type_repas, inviter } = body;
 
     const tvaArr = buildTvaArray({ tva, montant, multiTaux });
 
@@ -144,7 +146,9 @@ export async function handlePut(req, { params }) {
         img_url: img_url || null,
         client_id,
         projet_id,
-        moyen_paiement
+        moyen_paiement,
+        type_repas,
+        inviter
     });
     return Response.json(updated);
 }

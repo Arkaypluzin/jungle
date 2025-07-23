@@ -1,11 +1,20 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { X } from "lucide-react";
+import { X, Plus, Trash } from "lucide-react";
 
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
-
+const MOYENS_PAIEMENT = [
+  "Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"
+];
+const TYPE_REPAS = [
+  "Petit-déjeuner",
+  "Déjeuner",
+  "Dîner",
+  "Collation",
+  "Autre"
+];
 const MONTHS_MAP = {
   Janvier: 0,
   Février: 1,
@@ -20,10 +29,6 @@ const MONTHS_MAP = {
   Novembre: 10,
   Décembre: 11,
 };
-
-const MOYENS_PAIEMENT = [
-  "Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"
-];
 
 export default function AddNdfDetailModal({
   ndfId,
@@ -43,21 +48,22 @@ export default function AddNdfDetailModal({
   const [imgFile, setImgFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState("");
-
   const [projets, setProjets] = useState([]);
   const [selectedProjet, setSelectedProjet] = useState("");
-
   const [moyenPaiement, setMoyenPaiement] = useState(MOYENS_PAIEMENT[0]);
+
+  // Champs REPAS
+  const [typeRepas, setTypeRepas] = useState(TYPE_REPAS[0]);
+  const [invite, setInvite] = useState("");
+  const [inviter, setInviter] = useState([]);
 
   useEffect(() => {
     if (open) {
       fetch("/api/client")
         .then((res) => res.json())
         .then((data) => setClients(Array.isArray(data) ? data : []));
-
       fetch("/api/projets")
         .then((res) => res.json())
         .then((data) => setProjets(Array.isArray(data) ? data : []));
@@ -103,6 +109,9 @@ export default function AddNdfDetailModal({
     setSelectedClient("");
     setSelectedProjet("");
     setMoyenPaiement(MOYENS_PAIEMENT[0]);
+    setTypeRepas(TYPE_REPAS[0]);
+    setInvite("");
+    setInviter([]);
   }
 
   const tauxMono = useMemo(() => {
@@ -115,7 +124,6 @@ export default function AddNdfDetailModal({
     return 0;
   }, [tva, autreTaux]);
 
-  // Mode mono-taux : calcul du HT à partir du TTC et du taux
   useEffect(() => {
     if (tva === "multi-taux") return;
     if (!valeurTTC || !tauxMono) {
@@ -127,7 +135,6 @@ export default function AddNdfDetailModal({
     setMontant(isNaN(htNum) ? "" : htNum.toFixed(2));
   }, [valeurTTC, tauxMono, tva]);
 
-  // Mono-taux : calcul TVA à partir du HT et taux
   const valeurTvaMono = useMemo(() => {
     if (tva === "multi-taux" || !montant || !tauxMono) return "";
     const montantNum = parseFloat(montant) || 0;
@@ -140,7 +147,6 @@ export default function AddNdfDetailModal({
     return arrondi.toFixed(2);
   }, [montant, tauxMono, tva]);
 
-  // Multi-taux : calcul total HT, total TVA
   const totalHTMulti = useMemo(() => {
     if (tva !== "multi-taux") return 0;
     return multiTaux.reduce((sum, mt) => sum + (parseFloat(mt.montant) || 0), 0);
@@ -161,7 +167,6 @@ export default function AddNdfDetailModal({
     }, 0);
   }, [multiTaux, tva]);
 
-  // Actualisation du montant HT (sauvegardé) pour multi-taux
   useEffect(() => {
     if (tva === "multi-taux") {
       setMontant(totalHTMulti.toFixed(2));
@@ -188,8 +193,6 @@ export default function AddNdfDetailModal({
       setLoading(false);
       return;
     }
-
-    // Vérification multi-taux
     if (tva === "multi-taux") {
       if (!valeurTTC) {
         setError("Veuillez entrer la valeur TTC.");
@@ -247,6 +250,7 @@ export default function AddNdfDetailModal({
       extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
     }
 
+    // AJOUT des champs repas si besoin
     const body = {
       id_ndf: ndfId,
       date_str: dateStr,
@@ -261,6 +265,10 @@ export default function AddNdfDetailModal({
       moyen_paiement: moyenPaiement,
       ...extra,
     };
+    if (nature === "repas") {
+      body.type_repas = typeRepas;
+      body.inviter = inviter;
+    }
 
     try {
       const res = await fetch("/api/ndf_details", {
@@ -294,6 +302,18 @@ export default function AddNdfDetailModal({
   }
   function removeMultiTauxField(idx) {
     if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
+  }
+
+  // GESTION INVITES
+  function handleAddInvite(e) {
+    e.preventDefault();
+    if (invite && invite.trim().length > 0) {
+      setInviter(prev => [...prev, invite.trim()]);
+      setInvite("");
+    }
+  }
+  function handleRemoveInvite(idx) {
+    setInviter(prev => prev.filter((_, i) => i !== idx));
   }
 
   return (
@@ -373,7 +393,67 @@ export default function AddNdfDetailModal({
                   ))}
                 </select>
               </div>
-
+              {nature === "repas" && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Type de repas :
+                    </label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
+                      value={typeRepas}
+                      onChange={e => setTypeRepas(e.target.value)}
+                    >
+                      {TYPE_REPAS.map(tp => (
+                        <option key={tp} value={tp}>{tp}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Invité(s) :
+                    </label>
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        className="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
+                        value={invite}
+                        onChange={e => setInvite(e.target.value)}
+                        placeholder="Nom de l'invité"
+                        onKeyDown={e => {
+                          if (e.key === "Enter") handleAddInvite(e);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="p-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200 flex items-center"
+                        onClick={handleAddInvite}
+                        tabIndex={0}
+                        title="Ajouter l'invité"
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                    {inviter.length > 0 && (
+                      <ul className="pl-2 space-y-1">
+                        {inviter.map((nom, idx) => (
+                          <li key={idx} className="flex items-center gap-2 text-sm text-gray-800">
+                            <span className="flex-1">{nom}</span>
+                            <button
+                              type="button"
+                              className="text-red-600 hover:bg-red-100 rounded-full p-1"
+                              onClick={() => handleRemoveInvite(idx)}
+                              title="Retirer"
+                            >
+                              <Trash size={14} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Moyen de paiement :

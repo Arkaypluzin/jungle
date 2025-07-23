@@ -502,8 +502,26 @@ export default function NdfDetailTable({
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {detail.date_str}
                     </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
+                    <td
+                      className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 relative group"
+                    >
                       {detail.nature}
+                      {detail.nature === "repas" && (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0)) && (
+                        <div className="absolute left-1/2 z-30 top-full mt-2 w-max min-w-[200px] -translate-x-1/2 px-4 py-2 rounded-xl shadow-lg bg-white text-sm text-gray-900 border border-gray-200 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 whitespace-pre-line">
+                          {detail.type_repas && (
+                            <div>
+                              <span className="font-semibold text-gray-700">Type de repas : </span>
+                              {detail.type_repas}
+                            </div>
+                          )}
+                          {Array.isArray(detail.inviter) && detail.inviter.length > 0 && (
+                            <div>
+                              <span className="font-semibold text-gray-700">Invités : </span>
+                              {detail.inviter.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
                       {detail.description}
