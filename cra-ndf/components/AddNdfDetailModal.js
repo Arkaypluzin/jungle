@@ -11,9 +11,7 @@ const MOYENS_PAIEMENT = [
 const TYPE_REPAS = [
   "Petit-déjeuner",
   "Déjeuner",
-  "Dîner",
-  "Collation",
-  "Autre"
+  "Dîner"
 ];
 const MONTHS_MAP = {
   Janvier: 0,
@@ -54,7 +52,6 @@ export default function AddNdfDetailModal({
   const [selectedProjet, setSelectedProjet] = useState("");
   const [moyenPaiement, setMoyenPaiement] = useState(MOYENS_PAIEMENT[0]);
 
-  // Champs REPAS
   const [typeRepas, setTypeRepas] = useState(TYPE_REPAS[0]);
   const [invite, setInvite] = useState("");
   const [inviter, setInviter] = useState([]);
@@ -250,7 +247,6 @@ export default function AddNdfDetailModal({
       extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
     }
 
-    // AJOUT des champs repas si besoin
     const body = {
       id_ndf: ndfId,
       date_str: dateStr,
@@ -304,7 +300,6 @@ export default function AddNdfDetailModal({
     if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
   }
 
-  // GESTION INVITES
   function handleAddInvite(e) {
     e.preventDefault();
     if (invite && invite.trim().length > 0) {
@@ -617,7 +612,7 @@ export default function AddNdfDetailModal({
                       </div>
                     );
                   })}
-                  {/* Affichage des totaux */}
+                  
                   <div className="flex flex-col gap-1 mt-3 text-sm text-gray-700">
                     <div>
                       <span className="font-medium">Total HT saisi : </span>
@@ -670,7 +665,6 @@ export default function AddNdfDetailModal({
                 </div>
               )}
 
-              {/* ANALYTIQUES */}
               <div className="pt-4 border-t border-gray-200 mt-4">
                 <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
                 <div className="mb-4">
