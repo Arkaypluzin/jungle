@@ -1,8 +1,8 @@
 "use client";
+import React from "react";
 import EditNdfDetailModal from "@/components/EditNdfDetailModal";
 import DeleteNdfDetailButton from "@/components/DeleteNdfDetailButton";
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, SlidersHorizontal, X, ArrowUp, ArrowDown } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -496,32 +496,14 @@ export default function NdfDetailTable({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {filteredDetails.map((detail) => {
-                return (
-                  <tr key={detail.uuid} className="hover:bg-gray-50 transition-colors duration-150">
+              {filteredDetails.map((detail) => (
+                <React.Fragment key={detail.uuid}>
+                  <tr className="hover:bg-gray-50 transition-colors duration-150">
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {detail.date_str}
                     </td>
-                    <td
-                      className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 relative group"
-                    >
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
                       {detail.nature}
-                      {detail.nature === "repas" && (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0)) && (
-                        <div className="absolute left-1/2 z-30 top-full mt-2 w-max min-w-[200px] -translate-x-1/2 px-4 py-2 rounded-xl shadow-lg bg-white text-sm text-gray-900 border border-gray-200 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200 whitespace-pre-line">
-                          {detail.type_repas && (
-                            <div>
-                              <span className="font-semibold text-gray-700">Type de repas : </span>
-                              {detail.type_repas}
-                            </div>
-                          )}
-                          {Array.isArray(detail.inviter) && detail.inviter.length > 0 && (
-                            <div>
-                              <span className="font-semibold text-gray-700">Invités : </span>
-                              {detail.inviter.join(", ")}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </td>
                     <td className="py-3 px-3 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
                       {detail.description}
@@ -601,8 +583,24 @@ export default function NdfDetailTable({
                       )}
                     </td>
                   </tr>
-                );
-              })}
+                  {detail.nature === "repas" && (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0)) && (
+                    <tr key={detail.uuid + "-repas"}>
+                      <td colSpan={11} className="bg-gray-50 px-8 py-2 text-gray-700 text-sm border-t border-b border-gray-200">
+                        {detail.type_repas && (
+                          <div>
+                            <span className="font-semibold text-gray-800">Type de repas :</span> {detail.type_repas}
+                          </div>
+                        )}
+                        {Array.isArray(detail.inviter) && detail.inviter.length > 0 && (
+                          <div>
+                            <span className="font-semibold text-gray-800">Invités :</span> {detail.inviter.join(", ")}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
             </tbody>
             <tfoot className="bg-gray-100 border-t-2 border-gray-300">
               <tr>
