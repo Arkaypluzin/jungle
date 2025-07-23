@@ -60,13 +60,11 @@ export default function NdfDetailTable({
   const refresh = async () => window.location.reload();
 
   function formatTvaPdf(detail) {
-    // Si multi-taux au format array [{taux, valeur_tva}], ou bien tva string contenant "/"
     let arr = Array.isArray(detail.tva)
       ? detail.tva
       : getTvaArray(detail.tva, detail.montant);
 
     if (!arr.length || arr.length === 1) {
-      // Affiche le taux et la valeur éventuelle si calculée
       let tvaUnique = arr[0];
       if (tvaUnique && tvaUnique.taux !== undefined) {
         return `${tvaUnique.taux}%` +
@@ -74,10 +72,8 @@ export default function NdfDetailTable({
             ? ` > +${parseFloat(tvaUnique.valeur_tva).toFixed(2)}€`
             : "");
       }
-      // fallback string
       return typeof detail.tva === "string" ? detail.tva : "";
     }
-    // Sinon, on retourne chaque taux/valeur sur une ligne
     return arr
       .map(
         (tvaObj) =>
@@ -140,18 +136,47 @@ export default function NdfDetailTable({
       ],
     ];
 
-    const rows = filteredDetails.map((detail) => [
-      detail.date_str,
-      detail.nature,
-      detail.description,
-      getClientName(detail.client_id),
-      getProjetName(detail.projet_id),
-      detail.moyen_paiement || "-",
-      `${parseFloat(detail.montant).toFixed(2)}€`,
-      formatTvaPdf(detail),
-      `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
-      detail.img_url ? "Oui" : "Non",
-    ]);
+    const rows = [];
+    filteredDetails.forEach((detail) => {
+      rows.push([
+        detail.date_str,
+        detail.nature,
+        detail.description,
+        getClientName(detail.client_id),
+        getProjetName(detail.projet_id),
+        detail.moyen_paiement || "-",
+        `${parseFloat(detail.montant).toFixed(2)}€`,
+        formatTvaPdf(detail),
+        `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
+        detail.img_url ? "Oui" : "Non",
+      ]);
+
+      if (
+        detail.nature === "repas" &&
+        (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0))
+      ) {
+        let sousLigneTexte = [];
+        if (detail.type_repas) {
+          sousLigneTexte.push(`Type de repas : ${detail.type_repas}`);
+        }
+        if (Array.isArray(detail.inviter) && detail.inviter.length > 0) {
+          sousLigneTexte.push(`Invités : ${detail.inviter.join(", ")}`);
+        }
+        rows.push([
+          {
+            content: sousLigneTexte.join("\n"),
+            colSpan: 10,
+            styles: {
+              fontStyle: "italic",
+              fontSize: 9,
+              textColor: [100, 100, 100],
+              halign: "left",
+              cellPadding: { top: 2, bottom: 2, left: 8, right: 2 },
+            }
+          }
+        ]);
+      }
+    });
 
     autoTable(doc, {
       head,
