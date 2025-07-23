@@ -146,7 +146,7 @@ export default function NdfDetailTable({
       detail.description,
       getClientName(detail.client_id),
       getProjetName(detail.projet_id),
-      detail.moyen_paiement || "-", // <-- AJOUT ICI
+      detail.moyen_paiement || "-",
       `${parseFloat(detail.montant).toFixed(2)}€`,
       formatTvaPdf(detail),
       `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
@@ -182,14 +182,14 @@ export default function NdfDetailTable({
       },
       columnStyles: {
         0: { halign: "center", cellWidth: 30 }, // Date
-        1: { halign: "center", cellWidth: 30 }, // Nature
-        2: { halign: "center", minCellWidth: 50, cellWidth: 55 }, // Description
-        3: { halign: "center", cellWidth: 35 }, // Client
-        4: { halign: "center", cellWidth: 35 }, // Projet
+        1: { halign: "center", cellWidth: 25 }, // Nature
+        2: { halign: "center", minCellWidth: 35, cellWidth: 40 }, // Description
+        3: { halign: "center", cellWidth: 25 }, // Client
+        4: { halign: "center", cellWidth: 25 }, // Projet
         5: { halign: "center", cellWidth: 40 }, // Moyen de paiement
-        6: { halign: "center", cellWidth: 28 }, // Montant HT
-        7: { halign: "center", cellWidth: 32 }, // TVA
-        8: { halign: "center", fontStyle: "bold", cellWidth: 28 }, // Montant TTC
+        6: { halign: "center", cellWidth: 30 }, // Montant HT
+        7: { halign: "center", cellWidth: 35 }, // TVA
+        8: { halign: "center", fontStyle: "bold", cellWidth: 30 }, // Montant TTC
         9: { halign: "center", cellWidth: 25 }, // Justificatif
       },
       didDrawPage: (data) => {

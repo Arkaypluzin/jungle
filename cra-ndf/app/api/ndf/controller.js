@@ -60,11 +60,11 @@ export async function handlePut(req, { params }) {
     const session = await auth();
     const userId = session?.user?.id;
     const userRoles = session?.user?.roles || [];
-    const detail = await getDetailById(params.id);
-    if (!detail) {
+    const ndf = await getNdfById(params.id);
+    if (!ndf) {
         return Response.json({ error: "Not found" }, { status: 404 });
     }
-    const isOwner = detail.user_id === userId;
+    const isOwner = ndf.user_id === userId;
     const isAdmin = userRoles.includes("Admin");
     const body = await req.json();
 
@@ -72,29 +72,16 @@ export async function handlePut(req, { params }) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    let tvaValue = body.tva;
-    if (body.tva && Array.isArray(body.multiTaux)) {
-        tvaValue = body.multiTaux.map(mt => `${mt.taux}%`).join(" / ");
-    }
-
     const updateData = {
-        date_str: body.date_str,
-        nature: body.nature,
-        description: body.description,
-        tva: tvaValue,
-        montant: body.montant,
-        img_url: body.img_url,
-        client_id: body.client_id,
-        projet_id: body.projet_id,
+        month: body.month ?? ndf.month,
+        year: body.year ?? ndf.year,
+        statut: body.statut ?? ndf.statut,
+        motif_refus: body.motif_refus ?? ndf.motif_refus,
     };
-    if (Array.isArray(body.multiTaux)) {
-        updateData.multiTaux = body.multiTaux;
-    }
 
-    const updated = await updateDetail(params.id, updateData);
+    const updated = await updateNdf(params.id, updateData);
     return Response.json(updated);
 }
-
 
 export async function handleDelete(req, { params }) {
     const session = await auth();
