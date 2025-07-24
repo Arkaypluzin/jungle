@@ -109,6 +109,7 @@ export default function ClientAdminNdf() {
     return filteredNdfs.reduce((acc, ndf) => acc + (totaux[ndf.uuid] || 0), 0);
   }, [filteredNdfs, totaux]);
 
+  // Pour le total général (admin)
   useEffect(() => {
     let isMounted = true;
     async function getTotals() {
@@ -118,13 +119,29 @@ export default function ClientAdminNdf() {
         if (!res.ok) continue;
         const details = await res.json();
         const ttc = details.reduce((sum, d) => {
-          const montant = parseFloat(d.montant) || 0;
-          let taux = 0;
-          if (typeof d.tva === "string" && d.tva !== "0%") {
-            const tauxs = d.tva.split("/").map(e => parseFloat(e.replace(/[^\d.,]/g, "").replace(",", "."))).filter(Boolean);
-            taux = tauxs.reduce((acc, t) => acc + (montant * t) / 100, 0);
+          const base = parseFloat(d.montant) || 0;
+          let arr;
+          if (!d.tva || d.tva === "0%") {
+            arr = [];
+          } else if (Array.isArray(d.tva)) {
+            arr = d.tva;
+          } else if (typeof d.tva === "string" && d.tva.includes("/")) {
+            const montantNum = parseFloat(d.montant) || 0;
+            arr = d.tva.split("/").map(t => {
+              const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+              const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+              return { taux: tauxNum, valeur_tva };
+            });
+          } else if (typeof d.tva === "string") {
+            const tauxNum = parseFloat(d.tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+            const montantNum = parseFloat(d.montant) || 0;
+            const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+            arr = [{ taux: tauxNum, valeur_tva }];
+          } else {
+            arr = [];
           }
-          return sum + montant + taux;
+          const totalTva = arr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+          return sum + Math.round((base + totalTva) * 100) / 100;
         }, 0);
         t[ndf.uuid] = ttc;
       }
@@ -134,6 +151,7 @@ export default function ClientAdminNdf() {
     return () => { isMounted = false; };
   }, [JSON.stringify(filteredNdfs.map(ndf => ndf.uuid))]);
 
+  // Pour le total perso
   useEffect(() => {
     let isMounted = true;
     async function getTotalsPerso() {
@@ -143,13 +161,29 @@ export default function ClientAdminNdf() {
         if (!res.ok) continue;
         const details = await res.json();
         const ttc = details.reduce((sum, d) => {
-          const montant = parseFloat(d.montant) || 0;
-          let taux = 0;
-          if (typeof d.tva === "string" && d.tva !== "0%") {
-            const tauxs = d.tva.split("/").map(e => parseFloat(e.replace(/[^\d.,]/g, "").replace(",", "."))).filter(Boolean);
-            taux = tauxs.reduce((acc, t) => acc + (montant * t) / 100, 0);
+          const base = parseFloat(d.montant) || 0;
+          let arr;
+          if (!d.tva || d.tva === "0%") {
+            arr = [];
+          } else if (Array.isArray(d.tva)) {
+            arr = d.tva;
+          } else if (typeof d.tva === "string" && d.tva.includes("/")) {
+            const montantNum = parseFloat(d.montant) || 0;
+            arr = d.tva.split("/").map(t => {
+              const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+              const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+              return { taux: tauxNum, valeur_tva };
+            });
+          } else if (typeof d.tva === "string") {
+            const tauxNum = parseFloat(d.tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+            const montantNum = parseFloat(d.montant) || 0;
+            const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+            arr = [{ taux: tauxNum, valeur_tva }];
+          } else {
+            arr = [];
           }
-          return sum + montant + taux;
+          const totalTva = arr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+          return sum + Math.round((base + totalTva) * 100) / 100;
         }, 0);
         t[ndf.uuid] = ttc;
       }
