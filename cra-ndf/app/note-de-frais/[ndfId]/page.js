@@ -44,7 +44,6 @@ export default async function NdfDetailsPage({ params }) {
             <div className="flex items-center justify-between mb-6 gap-4">
                 <div className="flex gap-4">
                     <AddNdfDetailModal ndfId={ndfId} ndfStatut={ndf.statut} parentNdfMonth={ndf.month} parentNdfYear={ndf.year} />
-                    <AddNdfKiloModal ndfId={ndfId} ndfStatut={ndf.statut} />
                 </div>
                 <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
             </div>

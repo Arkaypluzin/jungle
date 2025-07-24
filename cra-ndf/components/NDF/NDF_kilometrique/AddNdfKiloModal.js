@@ -7,6 +7,70 @@ const TRAJET_TYPES = [
     { label: "Aller-Retour", value: 2 }
 ];
 
+// ===== Helpers barème indemnités =====
+function calcIndemniteVoiture(cv, total) {
+    total = parseFloat(total);
+    if (isNaN(total) || !cv) return "";
+    let bar = null;
+    if (cv === "3-") bar = 3;
+    if (cv === "4") bar = 4;
+    if (cv === "5") bar = 5;
+    if (cv === "6") bar = 6;
+    if (cv === "7+") bar = 7;
+    if (!bar) return "";
+    if (bar === 3) {
+        if (total <= 5000) return (total * 0.529).toFixed(2);
+        if (total <= 20000) return (total * 0.316 + 1061).toFixed(2);
+        return (total * 0.369).toFixed(2);
+    }
+    if (bar === 4) {
+        if (total <= 5000) return (total * 0.606).toFixed(2);
+        if (total <= 20000) return (total * 0.340 + 1330).toFixed(2);
+        return (total * 0.408).toFixed(2);
+    }
+    if (bar === 5) {
+        if (total <= 5000) return (total * 0.636).toFixed(2);
+        if (total <= 20000) return (total * 0.356 + 1391).toFixed(2);
+        return (total * 0.427).toFixed(2);
+    }
+    if (bar === 6) {
+        if (total <= 5000) return (total * 0.665).toFixed(2);
+        if (total <= 20000) return (total * 0.374 + 1457).toFixed(2);
+        return (total * 0.448).toFixed(2);
+    }
+    if (bar === 7) {
+        if (total <= 5000) return (total * 0.697).toFixed(2);
+        if (total <= 20000) return (total * 0.394 + 1512).toFixed(2);
+        return (total * 0.470).toFixed(2);
+    }
+    return "";
+}
+function calcIndemniteMoto(cv, total) {
+    total = parseFloat(total);
+    if (isNaN(total) || !cv) return "";
+    if (cv === "1") {
+        if (total <= 3000) return (total * 0.395).toFixed(2);
+        if (total <= 6000) return (total * 0.099 + 891).toFixed(2);
+        return (total * 0.248).toFixed(2);
+    }
+    if (cv === "2-3-4-5") {
+        if (total <= 3000) return (total * 0.468).toFixed(2);
+        if (total <= 6000) return (total * 0.082 + 1158).toFixed(2);
+        return (total * 0.275).toFixed(2);
+    }
+    if (cv === "plus5") {
+        if (total <= 3000) return (total * 0.606).toFixed(2);
+        if (total <= 6000) return (total * 0.079 + 1583).toFixed(2);
+        return (total * 0.343).toFixed(2);
+    }
+    return "";
+}
+function calcIndemnite(type_vehicule, cv, total) {
+    if (type_vehicule === "voiture") return calcIndemniteVoiture(cv, total);
+    if (type_vehicule === "moto") return calcIndemniteMoto(cv, total);
+    return "";
+}
+
 // Helper pour comparer les dates
 function isDateInvalid(dateDebut, dateFin) {
     if (!dateDebut || !dateFin) return false;
@@ -33,8 +97,10 @@ export default function AddNdfKiloModal({ ndfId, onAdded }) {
     function handleChange(field, value) {
         setForm(f => {
             const newForm = { ...f, [field]: value };
+
             // reset CV si type_vehicule change
             if (field === "type_vehicule") newForm.cv = "";
+
             // recalcule le total si nécessaire
             if (field === "distance" || field === "type_trajet") {
                 const d = parseFloat(field === "distance" ? value : newForm.distance);
@@ -49,7 +115,6 @@ export default function AddNdfKiloModal({ ndfId, onAdded }) {
         e.preventDefault();
         setError("");
 
-        // === Vérif dates ===
         if (
             form.date_debut &&
             form.date_fin &&
@@ -101,7 +166,7 @@ export default function AddNdfKiloModal({ ndfId, onAdded }) {
         }
     }
 
-    // Listes pour le champ "CV" selon le type de véhicule
+    // Les listes pour le champ "CV" selon le type de véhicule sélectionné
     const cvOptionsMoto = [
         { value: "1", label: "1 CV" },
         { value: "2-3-4-5", label: "2, 3, 4 ou 5 CV" },
@@ -259,6 +324,15 @@ export default function AddNdfKiloModal({ ndfId, onAdded }) {
                                     type="number"
                                     className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-gray-100 cursor-not-allowed"
                                     value={form.total_euro}
+                                    readOnly
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Indemnités (€)</label>
+                                <input
+                                    type="text"
+                                    className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-gray-100 cursor-not-allowed"
+                                    value={calcIndemnite(form.type_vehicule, form.cv, form.total_euro)}
                                     readOnly
                                 />
                             </div>

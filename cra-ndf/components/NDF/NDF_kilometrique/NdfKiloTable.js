@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 
 const TRAJET_TYPES = [
@@ -7,42 +7,89 @@ const TRAJET_TYPES = [
     { label: "Aller-Retour", value: 2 }
 ];
 
+// ===== Helpers barème indemnités =====
+function calcIndemniteVoiture(cv, total) {
+    total = parseFloat(total);
+    if (isNaN(total) || !cv) return "";
+    let bar = null;
+    if (cv === "3-") bar = 3;
+    if (cv === "4") bar = 4;
+    if (cv === "5") bar = 5;
+    if (cv === "6") bar = 6;
+    if (cv === "7+") bar = 7;
+    if (!bar) return "";
+    if (bar === 3) {
+        if (total <= 5000) return (total * 0.529).toFixed(2);
+        if (total <= 20000) return (total * 0.316 + 1061).toFixed(2);
+        return (total * 0.369).toFixed(2);
+    }
+    if (bar === 4) {
+        if (total <= 5000) return (total * 0.606).toFixed(2);
+        if (total <= 20000) return (total * 0.340 + 1330).toFixed(2);
+        return (total * 0.408).toFixed(2);
+    }
+    if (bar === 5) {
+        if (total <= 5000) return (total * 0.636).toFixed(2);
+        if (total <= 20000) return (total * 0.356 + 1391).toFixed(2);
+        return (total * 0.427).toFixed(2);
+    }
+    if (bar === 6) {
+        if (total <= 5000) return (total * 0.665).toFixed(2);
+        if (total <= 20000) return (total * 0.374 + 1457).toFixed(2);
+        return (total * 0.448).toFixed(2);
+    }
+    if (bar === 7) {
+        if (total <= 5000) return (total * 0.697).toFixed(2);
+        if (total <= 20000) return (total * 0.394 + 1512).toFixed(2);
+        return (total * 0.470).toFixed(2);
+    }
+    return "";
+}
+function calcIndemniteMoto(cv, total) {
+    total = parseFloat(total);
+    if (isNaN(total) || !cv) return "";
+    if (cv === "1") {
+        if (total <= 3000) return (total * 0.395).toFixed(2);
+        if (total <= 6000) return (total * 0.099 + 891).toFixed(2);
+        return (total * 0.248).toFixed(2);
+    }
+    if (cv === "2-3-4-5") {
+        if (total <= 3000) return (total * 0.468).toFixed(2);
+        if (total <= 6000) return (total * 0.082 + 1158).toFixed(2);
+        return (total * 0.275).toFixed(2);
+    }
+    if (cv === "plus5") {
+        if (total <= 3000) return (total * 0.606).toFixed(2);
+        if (total <= 6000) return (total * 0.079 + 1583).toFixed(2);
+        return (total * 0.343).toFixed(2);
+    }
+    return "";
+}
+function calcIndemnite(type_vehicule, cv, total) {
+    if (type_vehicule === "voiture") return calcIndemniteVoiture(cv, total);
+    if (type_vehicule === "moto") return calcIndemniteMoto(cv, total);
+    return "";
+}
+
 function toYYYYMMDD(date) {
     if (!date) return "";
     const d = new Date(date);
     return d.toISOString().slice(0, 10);
 }
 
-// ---------- AJOUT: Helper pour comparer dates ----------
 function isDateInvalid(dateDebut, dateFin) {
-    if (!dateDebut || !dateFin) return false; // rien à comparer
+    if (!dateDebut || !dateFin) return false;
     return new Date(dateDebut) > new Date(dateFin);
 }
 
-export default function NdfKiloTable({ ndfId, ndfStatut }) {
-    const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    // Pour l'édition
+export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = false, reloadRows }) {
+    // --- plus de gestion de rows ici ---
     const [editRow, setEditRow] = useState(null);
     const [editForm, setEditForm] = useState(null);
     const [editLoading, setEditLoading] = useState(false);
     const [editError, setEditError] = useState("");
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
-    // Pour la suppression (modal de confirmation)
-    const [deleteTarget, setDeleteTarget] = useState(null); // uuid
-
-    const fetchRows = async () => {
-        setLoading(true);
-        const res = await fetch(`/api/ndf_kilo?id_ndf=${ndfId}`);
-        const data = await res.json();
-        setRows(Array.isArray(data) ? data : []);
-        setLoading(false);
-    };
-
-    useEffect(() => { if (ndfId) fetchRows(); }, [ndfId]);
-
-    // Ouvre la modale de modification
     function handleEdit(row) {
         setEditRow(row);
         setEditForm({
@@ -86,12 +133,10 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
         });
     }
 
-    // ---------- Edition PATCH ----------
     async function handleEditSubmit(e) {
         e.preventDefault();
         setEditError("");
 
-        // ------ AJOUT: validation dates ------
         if (
             editForm.date_debut &&
             editForm.date_fin &&
@@ -113,7 +158,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                 throw new Error(data.error || "Erreur lors de la modification.");
             }
             closeEditModal();
-            fetchRows();
+            if (reloadRows) reloadRows();
         } catch (err) {
             setEditError(err.message);
         } finally {
@@ -121,21 +166,18 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
         }
     }
 
-    // Ouvre le modal de suppression
     function askDelete(uuid) {
         setDeleteTarget(uuid);
     }
 
-    // Supprime la ligne après confirmation
     async function confirmDelete() {
         const uuid = deleteTarget;
         setDeleteTarget(null);
         if (!uuid) return;
         await fetch(`/api/ndf_kilo/${uuid}`, { method: "DELETE" });
-        fetchRows();
+        if (reloadRows) reloadRows();
     }
 
-    // Ferme le modal de suppression sans rien faire
     function cancelDelete() {
         setDeleteTarget(null);
     }
@@ -146,12 +188,21 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
     function totalEuro() {
         return rows.reduce((acc, r) => acc + (parseFloat(r.total_euro) || 0), 0);
     }
+    function totalIndemnites() {
+        return rows.reduce(
+            (acc, r) =>
+                acc +
+                (parseFloat(calcIndemnite(r.type_vehicule, r.cv, r.total_euro)) || 0),
+            0
+        );
+    }
 
     return (
         <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 border">
                     <thead className="bg-gray-50">
+                        {/* ... en-tête inchangé ... */}
                         <tr>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date début</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date fin</th>
@@ -163,6 +214,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Trajet</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Motif</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Total</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Indemnités</th>
                             {ndfStatut === "Provisoire" && (
                                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                             )}
@@ -171,20 +223,20 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={11} className="py-8 text-center text-gray-400">Chargement...</td>
+                                <td colSpan={12} className="py-8 text-center text-gray-400">Chargement...</td>
                             </tr>
                         ) : rows.length === 0 ? (
                             <tr>
-                                <td colSpan={11} className="py-8 text-center text-gray-400">Aucune ligne kilométrique.</td>
+                                <td colSpan={12} className="py-8 text-center text-gray-400">Aucune ligne kilométrique.</td>
                             </tr>
                         ) : (
                             rows.map(row => (
                                 <tr key={row.uuid} className="hover:bg-gray-50 text-gray-900">
+                                    {/* ... mêmes colonnes qu’avant ... */}
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_debut)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_fin)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{row.depart}</td>
                                     <td className="px-2 py-2 text-sm text-center">{row.arrivee}</td>
-                                    {/* Type véhicule */}
                                     <td className="px-2 py-2 text-sm text-center">
                                         {row.type_vehicule === "moto"
                                             ? "Moto"
@@ -192,7 +244,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                                                 ? "Voiture"
                                                 : ""}
                                     </td>
-                                    {/* CV */}
                                     <td className="px-2 py-2 text-sm text-center">
                                         {row.type_vehicule === "moto" &&
                                             (row.cv === "1"
@@ -221,6 +272,9 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                                     </td>
                                     <td className="px-2 py-2 text-sm text-center">{row.motif}</td>
                                     <td className="px-2 py-2 text-sm text-center font-bold">{parseFloat(row.total_euro).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-sm text-center font-bold">
+                                        {calcIndemnite(row.type_vehicule, row.cv, row.total_euro)}
+                                    </td>
                                     {ndfStatut === "Provisoire" && (
                                         <td className="px-2 py-2 text-center flex gap-2 justify-center">
                                             <button
@@ -253,7 +307,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                             <td className="py-3 px-4 text-right text-base font-bold text-blue-900">
                                 {totalKm().toFixed(1)}
                             </td>
-                            <td colSpan={8}></td>
+                            <td colSpan={9}></td>
                             {ndfStatut === "Provisoire" && <td></td>}
                         </tr>
                         <tr>
@@ -263,13 +317,22 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                             <td className="py-3 px-4 text-right text-base font-bold text-green-800">
                                 {totalEuro().toFixed(2)}
                             </td>
-                            <td colSpan={8}></td>
+                            <td colSpan={9}></td>
+                            {ndfStatut === "Provisoire" && <td></td>}
+                        </tr>
+                        <tr>
+                            <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                                Total indemnités
+                            </td>
+                            <td className="py-3 px-4 text-right text-base font-bold text-purple-800">
+                                {totalIndemnites().toFixed(2)}
+                            </td>
+                            <td colSpan={9}></td>
                             {ndfStatut === "Provisoire" && <td></td>}
                         </tr>
                     </tfoot>
                 </table>
             </div>
-
             {/* --- Modal Edition --- */}
             {editRow && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
