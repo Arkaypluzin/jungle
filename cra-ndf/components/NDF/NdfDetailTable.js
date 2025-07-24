@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
-import EditNdfDetailModal from "@/components/EditNdfDetailModal";
-import DeleteNdfDetailButton from "@/components/DeleteNdfDetailButton";
+import EditNdfDetailModal from "@/components/NDF/NDF_ACTIONS/EditNdfDetailModal";
+import DeleteNdfDetailButton from "@/components/NDF/NDF_ACTIONS/DeleteNdfDetailButton";
 import { useState, useMemo, useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";

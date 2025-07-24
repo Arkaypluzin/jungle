@@ -13,6 +13,12 @@ function toYYYYMMDD(date) {
     return d.toISOString().slice(0, 10);
 }
 
+// ---------- AJOUT: Helper pour comparer dates ----------
+function isDateInvalid(dateDebut, dateFin) {
+    if (!dateDebut || !dateFin) return false; // rien à comparer
+    return new Date(dateDebut) > new Date(dateFin);
+}
+
 export default function NdfKiloTable({ ndfId, ndfStatut }) {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -47,7 +53,9 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
             distance: row.distance,
             type_trajet: row.type_trajet,
             motif: row.motif,
-            total_euro: calculateTotal(row.distance, row.type_trajet)
+            total_euro: calculateTotal(row.distance, row.type_trajet),
+            type_vehicule: row.type_vehicule || "",
+            cv: row.cv || "",
         });
         setEditError("");
     }
@@ -78,10 +86,22 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
         });
     }
 
+    // ---------- Edition PATCH ----------
     async function handleEditSubmit(e) {
         e.preventDefault();
-        setEditLoading(true);
         setEditError("");
+
+        // ------ AJOUT: validation dates ------
+        if (
+            editForm.date_debut &&
+            editForm.date_fin &&
+            isDateInvalid(editForm.date_debut, editForm.date_fin)
+        ) {
+            setEditError("La date de début ne peut pas être supérieure à la date de fin.");
+            return;
+        }
+
+        setEditLoading(true);
         try {
             const res = await fetch(`/api/ndf_kilo/${editRow.uuid}`, {
                 method: "PUT",
@@ -137,10 +157,12 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date fin</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Départ</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Arrivée</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Distance (km)</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Type de trajet</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Véhicule</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Cheveaux Fiscaux</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">km</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Trajet</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Motif</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Total €</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Total</th>
                             {ndfStatut === "Provisoire" && (
                                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                             )}
@@ -149,11 +171,11 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={9} className="py-8 text-center text-gray-400">Chargement...</td>
+                                <td colSpan={11} className="py-8 text-center text-gray-400">Chargement...</td>
                             </tr>
                         ) : rows.length === 0 ? (
                             <tr>
-                                <td colSpan={9} className="py-8 text-center text-gray-400">Aucune ligne kilométrique.</td>
+                                <td colSpan={11} className="py-8 text-center text-gray-400">Aucune ligne kilométrique.</td>
                             </tr>
                         ) : (
                             rows.map(row => (
@@ -162,12 +184,43 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_fin)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{row.depart}</td>
                                     <td className="px-2 py-2 text-sm text-center">{row.arrivee}</td>
+                                    {/* Type véhicule */}
+                                    <td className="px-2 py-2 text-sm text-center">
+                                        {row.type_vehicule === "moto"
+                                            ? "Moto"
+                                            : row.type_vehicule === "voiture"
+                                                ? "Voiture"
+                                                : ""}
+                                    </td>
+                                    {/* CV */}
+                                    <td className="px-2 py-2 text-sm text-center">
+                                        {row.type_vehicule === "moto" &&
+                                            (row.cv === "1"
+                                                ? "1 CV"
+                                                : row.cv === "2-3-4-5"
+                                                    ? "2, 3, 4 ou 5 CV"
+                                                    : row.cv === "plus5"
+                                                        ? "Plus de 5 CV"
+                                                        : "")}
+                                        {row.type_vehicule === "voiture" &&
+                                            (row.cv === "3-"
+                                                ? "3 CV et moins"
+                                                : row.cv === "4"
+                                                    ? "4 CV"
+                                                    : row.cv === "5"
+                                                        ? "5 CV"
+                                                        : row.cv === "6"
+                                                            ? "6 CV"
+                                                            : row.cv === "7+"
+                                                                ? "7 CV et plus"
+                                                                : "")}
+                                    </td>
                                     <td className="px-2 py-2 text-sm text-center">{row.distance}</td>
                                     <td className="px-2 py-2 text-sm text-center">
                                         {TRAJET_TYPES.find(t => t.value === row.type_trajet)?.label}
                                     </td>
                                     <td className="px-2 py-2 text-sm text-center">{row.motif}</td>
-                                    <td className="px-2 py-2 text-sm text-center font-bold">{parseFloat(row.total_euro).toFixed(2)}€</td>
+                                    <td className="px-2 py-2 text-sm text-center font-bold">{parseFloat(row.total_euro).toFixed(2)}</td>
                                     {ndfStatut === "Provisoire" && (
                                         <td className="px-2 py-2 text-center flex gap-2 justify-center">
                                             <button
@@ -208,7 +261,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                                 Total
                             </td>
                             <td className="py-3 px-4 text-right text-base font-bold text-green-800">
-                                {totalEuro().toFixed(2)}€
+                                {totalEuro().toFixed(2)}
                             </td>
                             <td colSpan={8}></td>
                             {ndfStatut === "Provisoire" && <td></td>}
@@ -272,6 +325,60 @@ export default function NdfKiloTable({ ndfId, ndfStatut }) {
                                     />
                                 </div>
                             </div>
+                            {/* Type de véhicule */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Type de véhicule</label>
+                                <select
+                                    required
+                                    className="block w-full border border-gray-300 rounded-md py-2 px-3"
+                                    value={editForm.type_vehicule || ""}
+                                    onChange={e => {
+                                        handleEditFormChange("type_vehicule", e.target.value);
+                                        // Réinitialise le champ CV lors du changement de type de véhicule
+                                        handleEditFormChange("cv", "");
+                                    }}
+                                >
+                                    <option value="">Sélectionner</option>
+                                    <option value="voiture">Voiture</option>
+                                    <option value="moto">Moto</option>
+                                </select>
+                            </div>
+
+                            {/* Champ CV, qui change selon le type de véhicule */}
+                            {editForm.type_vehicule === "moto" && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">CV (Moto)</label>
+                                    <select
+                                        required
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3"
+                                        value={editForm.cv || ""}
+                                        onChange={e => handleEditFormChange("cv", e.target.value)}
+                                    >
+                                        <option value="">Sélectionner</option>
+                                        <option value="1">1 CV</option>
+                                        <option value="2-3-4-5">2, 3, 4 ou 5 CV</option>
+                                        <option value="plus5">Plus de 5 CV</option>
+                                    </select>
+                                </div>
+                            )}
+                            {editForm.type_vehicule === "voiture" && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">CV (Voiture)</label>
+                                    <select
+                                        required
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3"
+                                        value={editForm.cv || ""}
+                                        onChange={e => handleEditFormChange("cv", e.target.value)}
+                                    >
+                                        <option value="">Sélectionner</option>
+                                        <option value="3-">3 CV et moins</option>
+                                        <option value="4">4 CV</option>
+                                        <option value="5">5 CV</option>
+                                        <option value="6">6 CV</option>
+                                        <option value="7+">7 CV et plus</option>
+                                    </select>
+                                </div>
+                            )}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Distance (km)</label>

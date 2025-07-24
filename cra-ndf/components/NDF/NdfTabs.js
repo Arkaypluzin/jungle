@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import NdfDetailTable from "@/components/NdfDetailTable";
-import NdfKiloTable from "@/components/NdfKiloTable";
+import NdfDetailTable from "@/components/NDF/NdfDetailTable";
+import NdfKiloTable from "@/components/NDF/NDF_kilometrique/NdfKiloTable";
 
 export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }) {
     const [tab, setTab] = useState("ndf");
@@ -25,7 +25,7 @@ export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }
                         }`}
                     onClick={() => setTab("kilo")}
                 >
-                    Frais kilométriques
+                    NDF kilométriques
                 </button>
             </div>
 

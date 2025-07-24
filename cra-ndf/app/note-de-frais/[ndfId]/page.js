@@ -2,10 +2,10 @@ import { auth } from "@/auth";
 import { getAllDetailsByNdf } from "@/app/api/ndf_details/model";
 import { getNdfById } from "@/app/api/ndf/model";
 import BtnRetour from "@/components/BtnRetour";
-import AddNdfDetailModal from "@/components/AddNdfDetailModal";
-import DeclareNdfButton from "@/components/DeclareNdfButton";
-import NdfTabs from "@/components/NdfTabs";
-import AddNdfKiloModal from "@/components/AddNdfKiloModal";
+import AddNdfDetailModal from "@/components/NDF/NDF_ACTIONS/AddNdfDetailModal";
+import DeclareNdfButton from "@/components/NDF/NDF_ACTIONS/DeclareNdfButton";
+import NdfTabs from "@/components/NDF/NdfTabs";
+import AddNdfKiloModal from "@/components/NDF/NDF_kilometrique/AddNdfKiloModal";
 
 export default async function NdfDetailsPage({ params }) {
     const { ndfId } = await params;

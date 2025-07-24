@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import CreateNdfModal from "@/components/CreateNdfModal";
+import CreateNdfModal from "@/components/NDF/NDF_ACTIONS/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
-import EditNdfModal from "@/components/EditNdfModal";
-import DeleteNdfButton from "@/components/DeleteNdfButton";
-import ValidateNdfButton from "@/components/ValidateNdfButton";
-import RefuseNdfButton from "@/components/RefuseNdfButton";
+import EditNdfModal from "@/components/NDF/NDF_ACTIONS/EditNdfModal";
+import DeleteNdfButton from "@/components/NDF/NDF_ACTIONS/DeleteNdfButton";
+import ValidateNdfButton from "@/components/NDF/NDF_ACTIONS/ValidateNdfButton";
+import RefuseNdfButton from "@/components/NDF/NDF_ACTIONS/RefuseNdfButton";
 
 const MONTHS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
