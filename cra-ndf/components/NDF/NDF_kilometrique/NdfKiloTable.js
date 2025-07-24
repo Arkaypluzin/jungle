@@ -213,7 +213,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">km</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Trajet</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Motif</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Total</th>
+                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Total km</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Indemnités</th>
                             {ndfStatut === "Provisoire" && (
                                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
@@ -271,9 +271,9 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                                         {TRAJET_TYPES.find(t => t.value === row.type_trajet)?.label}
                                     </td>
                                     <td className="px-2 py-2 text-sm text-center">{row.motif}</td>
-                                    <td className="px-2 py-2 text-sm text-center font-bold">{parseFloat(row.total_euro).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-sm text-center font-bold">{parseFloat(row.total_euro).toFixed(2)} km</td>
                                     <td className="px-2 py-2 text-sm text-center font-bold">
-                                        {calcIndemnite(row.type_vehicule, row.cv, row.total_euro)}
+                                        {calcIndemnite(row.type_vehicule, row.cv, row.total_euro)} €
                                     </td>
                                     {ndfStatut === "Provisoire" && (
                                         <td className="px-2 py-2 text-center flex gap-2 justify-center">
@@ -302,32 +302,28 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                     <tfoot className="bg-gray-100 border-t-2 border-gray-300">
                         <tr>
                             <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                                Total kilomètres
+                                Total km
                             </td>
-                            <td className="py-3 px-4 text-right text-base font-bold text-blue-900">
-                                {totalKm().toFixed(1)}
-                            </td>
-                            <td colSpan={9}></td>
-                            {ndfStatut === "Provisoire" && <td></td>}
-                        </tr>
-                        <tr>
-                            <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                                Total
-                            </td>
-                            <td className="py-3 px-4 text-right text-base font-bold text-green-800">
+                            <td colSpan={2} className="py-3 px-4 text-right text-base font-bold text-gray-900">
                                 {totalEuro().toFixed(2)}
                             </td>
-                            <td colSpan={9}></td>
+                            <td colSpan={1} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                                km
+                            </td>
+                            <td colSpan={6}></td>
                             {ndfStatut === "Provisoire" && <td></td>}
                         </tr>
                         <tr>
                             <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                                 Total indemnités
                             </td>
-                            <td className="py-3 px-4 text-right text-base font-bold text-purple-800">
+                            <td colSpan={2} className="py-3 px-4 text-right text-base font-bold text-gray-900">
                                 {totalIndemnites().toFixed(2)}
                             </td>
-                            <td colSpan={9}></td>
+                            <td colSpan={1} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                                €
+                            </td>
+                            <td colSpan={6}></td>
                             {ndfStatut === "Provisoire" && <td></td>}
                         </tr>
                     </tfoot>
