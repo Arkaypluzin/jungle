@@ -5,108 +5,139 @@ import { Pencil, X } from "lucide-react";
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
+const MOYENS_PAIEMENT = ["Carte Bancaire", "Espèce", "PAYPAL", "Prélèvement Automatique", "TÉLÉPEAGE", "Chèque"];
+
+function getMultiTauxFromDetail(detail) {
+    if (detail.multiTaux && Array.isArray(detail.multiTaux)) {
+        return detail.multiTaux.map(mt => ({
+            taux: String(mt.taux ?? ""),
+            montant: String(mt.montant ?? "")
+        }));
+    }
+    if (typeof detail.tva === "string" && detail.tva.includes("/")) {
+        const tauxList = detail.tva.split("/").map(t => t.replace("%", "").trim());
+        let montantGlobal = parseFloat(detail.montant) || 0;
+        let nb = tauxList.length;
+        let approx = nb ? (montantGlobal / nb).toFixed(2) : "";
+        return tauxList.map(t => ({ taux: t, montant: approx }));
+    }
+    return [{ taux: "", montant: "" }];
+}
+
+function detectTvaType(detail) {
+    if ((detail.multiTaux && Array.isArray(detail.multiTaux)) || (typeof detail.tva === "string" && detail.tva.includes("/"))) {
+        return "multi-taux";
+    }
+    if (typeof detail.tva === "string" && TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
+    if (typeof detail.tva === "string" && detail.tva) return "autre taux";
+    return "0%";
+}
 
 export default function EditNdfDetailModal({ detail, onEdited }) {
-    // Init multi-taux à partir de string ou array
-    function getMultiTauxFromDetail(detail) {
-        if (Array.isArray(detail.tva)) {
-            // Nouveau format déjà array [{ taux, montant }]
-            return detail.tva.map(mt => ({
-                taux: String(mt.taux ?? ""),
-                montant: String(mt.montant ?? "")
-            }));
-        }
-        if (detail.multiTaux && Array.isArray(detail.multiTaux)) {
-            return detail.multiTaux.map(mt => ({
-                taux: String(mt.taux ?? ""),
-                montant: String(mt.montant ?? "")
-            }));
-        }
-        // Ancien format: string genre "20% / 10%"
-        if (typeof detail.tva === "string" && detail.tva.includes("/")) {
-            const tauxList = detail.tva.split("/").map(t => t.replace("%", "").trim());
-            let montantGlobal = parseFloat(detail.montant) || 0;
-            let nb = tauxList.length;
-            let approx = nb ? (montantGlobal / nb).toFixed(2) : "";
-            return tauxList.map(t => ({ taux: t, montant: approx }));
-        }
-        return [{ taux: "", montant: "" }];
-    }
+    const [open, setOpen] = useState(false);
 
-    // Init nature du taux (pour l'UI)
-    function detectTvaType(detail) {
-        if (Array.isArray(detail.tva) || (detail.multiTaux && Array.isArray(detail.multiTaux)) || (typeof detail.tva === "string" && detail.tva.includes("/"))) {
-            return "multi-taux";
-        }
-        if (typeof detail.tva === "string" && TVAS.includes(detail.tva.split(" ")[0])) return detail.tva;
-        return "autre taux";
-    }
-
+    const [dateStr, setDateStr] = useState(detail.date_str || "");
+    const [nature, setNature] = useState(detail.nature || NATURES[0]);
+    const [description, setDescription] = useState(detail.description || "");
     const [tva, setTva] = useState(() => detectTvaType(detail));
     const [autreTaux, setAutreTaux] = useState(() => {
-        if (
-            typeof detail.tva === "string" &&
-            !TVAS.includes(detail.tva.split(" ")[0]) &&
-            !detail.tva.includes("/")
-        ) {
+        if (typeof detail.tva === "string" && !TVAS.includes(detail.tva.split(" ")[0]) && !detail.tva.includes("/")) {
             return detail.tva;
         }
         return "";
     });
     const [multiTaux, setMultiTaux] = useState(() => getMultiTauxFromDetail(detail));
-    const [open, setOpen] = useState(false);
-    const [dateStr, setDateStr] = useState(detail.date_str);
-    const [nature, setNature] = useState(detail.nature);
-    const [description, setDescription] = useState(detail.description);
-    const [montant, setMontant] = useState(detail.montant);
+    const [montant, setMontant] = useState(detail.montant ? String(detail.montant) : "");
+    const [valeurTTC, setValeurTTC] = useState(
+        detail.valeur_ttc !== undefined && detail.valeur_ttc !== null ? String(detail.valeur_ttc) : ""
+    );
     const [imgFile, setImgFile] = useState(null);
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
     const [clients, setClients] = useState([]);
     const [projets, setProjets] = useState([]);
     const [selectedClient, setSelectedClient] = useState(detail.client_id || "");
     const [selectedProjet, setSelectedProjet] = useState(detail.projet_id || "");
-    const [valeurTTC, setValeurTTC] = useState(detail.valeurTTC || "");
-
-    // Fonction utilitaire pour calculer TTC (pareil que dans ta table)
-    function getTTC(montant, tva, multiTaux, tvaType) {
-        let base = parseFloat(montant) || 0;
-        if (tvaType === "multi-taux" && Array.isArray(multiTaux)) {
-            return multiTaux.reduce((acc, mt) => {
-                const ht = parseFloat(mt.montant) || 0;
-                const taux = parseFloat(mt.taux) || 0;
-                return acc + ht * (1 + taux / 100);
-            }, 0).toFixed(2);
-        }
-        // autre taux / taux simple
-        if (!tva || tva === "0%") return base.toFixed(2);
-        if (tva && typeof tva === "string" && tva.includes("/")) {
-            // split des taux si format "10% / 20%"
-            const tauxList = tva.split("/").map(t => parseFloat(t.replace("%", "").trim()) || 0);
-            const nb = tauxList.length;
-            return (base * (1 + tauxList.reduce((s, t) => s + t, 0) / (100 * nb))).toFixed(2);
-        }
-        // taux simple (ex: "20%")
-        const taux = parseFloat(tva.replace("%", "")) || 0;
-        return (base * (1 + taux / 100)).toFixed(2);
-    }
+    const [moyenPaiement, setMoyenPaiement] = useState(detail.moyen_paiement || MOYENS_PAIEMENT[0]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
     useEffect(() => {
         if (open) {
             fetch("/api/client")
                 .then(res => res.json())
-                .then(data => setClients(Array.isArray(data) ? data : []))
-                .catch(() => setClients([]));
+                .then(data => setClients(Array.isArray(data) ? data : []));
             fetch("/api/projets")
                 .then(res => res.json())
-                .then(data => setProjets(Array.isArray(data) ? data : []))
-                .catch(() => setProjets([]));
+                .then(data => setProjets(Array.isArray(data) ? data : []));
         }
     }, [open]);
 
-    // Multi-taux gestion
+    // TVA simple ou autre taux
+    const tauxMono = useMemo(() => {
+        if (tva === "autre taux" && autreTaux) {
+            return parseFloat(autreTaux.replace("%", "").replace(",", ".")) || 0;
+        }
+        if (TVAS.includes(tva) && tva !== "multi-taux" && tva !== "autre taux") {
+            return parseFloat(tva.replace("%", "").replace(",", ".")) || 0;
+        }
+        return 0;
+    }, [tva, autreTaux]);
+
+    // Pour HT auto (sauf multi-taux)
+    useEffect(() => {
+        if (tva === "multi-taux") return;
+        if (!valeurTTC || !tauxMono) {
+            setMontant("");
+            return;
+        }
+        const ttcNum = parseFloat(valeurTTC.replace(",", "."));
+        const htNum = ttcNum / (1 + tauxMono / 100);
+        setMontant(isNaN(htNum) ? "" : htNum.toFixed(2));
+    }, [valeurTTC, tauxMono, tva]);
+
+    // Calcul TVA simple
+    const valeurTvaMono = useMemo(() => {
+        if (tva === "multi-taux" || !montant || !tauxMono) return "";
+        const montantNum = parseFloat(montant) || 0;
+        const brut = montantNum * tauxMono / 100;
+        const brutStr = (brut * 1000).toFixed(0);
+        const intPart = Math.floor(brut * 100);
+        const third = +brutStr % 10;
+        let arrondi = intPart / 100;
+        if (third >= 5) arrondi = (intPart + 1) / 100;
+        return arrondi.toFixed(2);
+    }, [montant, tauxMono, tva]);
+
+    // Multi-taux
+    const totalHTMulti = useMemo(() => {
+        if (tva !== "multi-taux") return 0;
+        return multiTaux.reduce((sum, mt) => sum + (parseFloat(mt.montant) || 0), 0);
+    }, [multiTaux, tva]);
+
+    const totalTVA = useMemo(() => {
+        if (tva !== "multi-taux") return 0;
+        return multiTaux.reduce((sum, mt) => {
+            const tauxNum = parseFloat(mt.taux) || 0;
+            const montantNum = parseFloat(mt.montant) || 0;
+            const brut = montantNum * tauxNum / 100;
+            const brutStr = (brut * 1000).toFixed(0);
+            const intPart = Math.floor(brut * 100);
+            const third = +brutStr % 10;
+            let arrondi = intPart / 100;
+            if (third >= 5) arrondi = (intPart + 1) / 100;
+            return sum + arrondi;
+        }, 0);
+    }, [multiTaux, tva]);
+
+    // Montant HT maj auto si multi-taux
+    useEffect(() => {
+        if (tva === "multi-taux") {
+            setMontant(totalHTMulti.toFixed(2));
+        }
+    }, [totalHTMulti, tva]);
+
+    // --- Handlers multi-taux
     function handleMultiTauxChange(idx, field, value) {
-        setMultiTaux(prev =>
+        setMultiTaux((prev) =>
             prev.map((mt, i) =>
                 i === idx ? { ...mt, [field]: value } : mt
             )
@@ -118,18 +149,8 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
     function removeMultiTauxField(idx) {
         if (multiTaux.length > 1) setMultiTaux(multiTaux.filter((_, i) => i !== idx));
     }
-    // Montant HT global calculé
-    const montantMultiHt = useMemo(() => {
-        if (tva !== "multi-taux") return null;
-        return multiTaux.reduce((acc, mt) => acc + (parseFloat(mt.montant) || 0), 0).toFixed(2);
-    }, [multiTaux, tva]);
-    useEffect(() => {
-        if (tva === "multi-taux") {
-            setMontant(montantMultiHt || "");
-        }
-    }, [montantMultiHt, tva]);
 
-    // ------- HANDLE UPDATE / SUBMIT -------
+    // --- SUBMIT
     async function handleSubmit(e) {
         e.preventDefault();
         setLoading(true);
@@ -146,6 +167,32 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
             setLoading(false);
             return;
         }
+
+        // Vérification multi-taux stricte
+        if (tva === "multi-taux") {
+            if (!valeurTTC) {
+                setError("Veuillez entrer la valeur TTC.");
+                setLoading(false);
+                return;
+            }
+            if (multiTaux.some((mt) => !mt.taux || !mt.montant)) {
+                setError("Veuillez compléter tous les taux et montants en multi-taux.");
+                setLoading(false);
+                return;
+            }
+            const totalHT = totalHTMulti;
+            const tvaTotal = totalTVA;
+            const ttc = parseFloat(valeurTTC);
+            const precision = 0.01;
+            if (Math.abs(ttc - (totalHT + tvaTotal)) > precision) {
+                setError(
+                    `Le total TTC (${ttc.toFixed(2)}€) doit être égal à la somme du Total HT (${totalHT.toFixed(2)}€) + Total TVA (${totalTVA.toFixed(2)}€).`
+                );
+                setLoading(false);
+                return;
+            }
+        }
+
         if (imgFile) {
             const formData = new FormData();
             formData.append("file", imgFile);
@@ -163,34 +210,28 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         }
 
         let tvaValue = tva;
-        let montantValue = tva === "multi-taux" ? parseFloat(montantMultiHt) : parseFloat(montant);
-        let body = {
+        let montantValue = tva === "multi-taux" ? parseFloat(totalHTMulti) : parseFloat(montant);
+        let extra = {};
+        if (tva === "autre taux") {
+            tvaValue = autreTaux;
+        } else if (tva === "multi-taux") {
+            tvaValue = multiTaux.map(mt => `${parseFloat(mt.taux) || 0}%`).join(" / ");
+            extra = { multiTaux: multiTaux.map(mt => ({ taux: mt.taux, montant: mt.montant })) };
+        }
+
+        const body = {
             date_str: dateStr,
             nature,
             description,
+            tva: tvaValue,
             montant: montantValue,
+            valeur_ttc: valeurTTC ? parseFloat(valeurTTC) : null,
             img_url,
             client_id: selectedClient,
-            projet_id: selectedProjet
+            projet_id: selectedProjet,
+            moyen_paiement: moyenPaiement,
+            ...extra,
         };
-
-        if (tva === "autre taux") {
-            body.tva = autreTaux;
-        } else if (tva === "multi-taux") {
-            // Validation
-            if (multiTaux.some(mt => !mt.taux || !mt.montant)) {
-                setError("Veuillez compléter tous les taux et montants en multi-taux.");
-                setLoading(false);
-                return;
-            }
-            // On envoie un ARRAY [{ taux, montant }]
-            body.tva = multiTaux.map(mt => ({
-                taux: mt.taux,
-                montant: mt.montant
-            }));
-        } else {
-            body.tva = tva;
-        }
 
         const res = await fetch(`/api/ndf_details/${detail.uuid}`, {
             method: "PUT",
@@ -206,7 +247,6 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
         setLoading(false);
     }
 
-    // ----- UI identique à avant -----
     return (
         <>
             <button
@@ -232,77 +272,56 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                             <h2 className="text-2xl font-bold text-gray-800 mb-8 text-center border-b pb-3">
                                 Modifier la dépense
                             </h2>
-                            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                            <form onSubmit={handleSubmit} className="space-y-5">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Date :
                                     </label>
                                     <input
                                         type="date"
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
                                         value={dateStr}
                                         required
                                         onChange={e => setDateStr(e.target.value)}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Nature :
                                     </label>
                                     <select
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
                                         value={nature}
                                         onChange={e => setNature(e.target.value)}
                                     >
                                         {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
                                     </select>
                                 </div>
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Moyen de paiement :
+                                    </label>
+                                    <select
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
+                                        value={moyenPaiement}
+                                        onChange={e => setMoyenPaiement(e.target.value)}
+                                        required
+                                    >
+                                        {MOYENS_PAIEMENT.map(mp => (
+                                            <option key={mp} value={mp}>{mp}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Description :
                                     </label>
                                     <input
                                         type="text"
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
                                         value={description}
                                         onChange={e => setDescription(e.target.value)}
                                     />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Client :
-                                    </label>
-                                    <select
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                        value={selectedClient}
-                                        onChange={e => setSelectedClient(e.target.value)}
-                                        required
-                                    >
-                                        <option value="">Sélectionner un client</option>
-                                        {clients.map(c => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.nom_client}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Projet :
-                                    </label>
-                                    <select
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                        value={selectedProjet}
-                                        onChange={e => setSelectedProjet(e.target.value)}
-                                        required
-                                    >
-                                        <option value="">Sélectionner un projet</option>
-                                        {projets.map(p => (
-                                            <option key={p.id || p.uuid} value={p.id || p.uuid}>
-                                                {p.nom}
-                                            </option>
-                                        ))}
-                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -310,7 +329,7 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     </label>
                                     <input
                                         type="number"
-                                        className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                        className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                                         value={valeurTTC}
                                         min={0}
                                         step="0.01"
@@ -320,11 +339,11 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
                                         TVA :
                                     </label>
                                     <select
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
                                         value={tva}
                                         onChange={e => {
                                             setTva(e.target.value);
@@ -336,14 +355,11 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     </select>
                                 </div>
                                 {tva === "autre taux" && (
-                                    <div className="md:col-span-2">
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Taux personnalisé (%)
-                                        </label>
+                                    <div>
                                         <input
                                             type="text"
-                                            placeholder="Taux personnalisé (%)"
-                                            className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="Taux personnalisé (%) (ex: 8.5)"
+                                            className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
                                             value={autreTaux}
                                             required
                                             onChange={e => setAutreTaux(e.target.value)}
@@ -351,15 +367,27 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     </div>
                                 )}
                                 {tva === "multi-taux" && (
-                                    <div className="md:col-span-2">
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Taux multiples (%) et montants :
+                                    <div className="space-y-3">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Taux multiples (%) – montants HT – valeur TVA :
                                         </label>
-                                        <div className="flex flex-col gap-2">
-                                            {multiTaux.map((mt, idx) => (
-                                                <div key={idx} className="flex items-center gap-2">
+                                        {multiTaux.map((mt, idx) => {
+                                            const tauxNum = parseFloat(mt.taux) || 0;
+                                            const montantNum = parseFloat(mt.montant) || 0;
+                                            let tvaValeur = "";
+                                            if (mt.taux && mt.montant) {
+                                                const brut = montantNum * tauxNum / 100;
+                                                const brutStr = (brut * 1000).toFixed(0);
+                                                const intPart = Math.floor(brut * 100);
+                                                const third = +brutStr % 10;
+                                                let arrondi = intPart / 100;
+                                                if (third >= 5) arrondi = (intPart + 1) / 100;
+                                                tvaValeur = arrondi.toFixed(2);
+                                            }
+                                            return (
+                                                <div key={idx} className="flex items-center gap-3">
                                                     <select
-                                                        className="block w-28 border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        className="block w-20 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                                                         value={mt.taux}
                                                         required
                                                         onChange={e => handleMultiTauxChange(idx, "taux", e.target.value)}
@@ -374,10 +402,19 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                                         placeholder="Montant HT"
                                                         min={0}
                                                         step="0.01"
-                                                        className="block w-28 border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        className="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
                                                         value={mt.montant}
                                                         required
                                                         onChange={e => handleMultiTauxChange(idx, "montant", e.target.value)}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        className="block w-28 border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800"
+                                                        value={tvaValeur}
+                                                        readOnly
+                                                        tabIndex={-1}
+                                                        placeholder="Valeur TVA"
+                                                        title="Valeur TVA calculée automatiquement"
                                                     />
                                                     {multiTaux.length > 1 && (
                                                         <button
@@ -411,30 +448,101 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                                         </button>
                                                     )}
                                                 </div>
-                                            ))}
-                                            <div className="text-right text-xs text-gray-500 mt-1">
-                                                Total HT multi-taux : <span className="font-semibold">{montantMultiHt} €</span>
+                                            );
+                                        })}
+                                        {/* Affichage des totaux */}
+                                        <div className="flex flex-col gap-1 mt-3 text-sm text-gray-700">
+                                            <div>
+                                                <span className="font-medium">Total HT saisi : </span>
+                                                <span>{totalHTMulti.toFixed(2)} €</span>
+                                            </div>
+                                            <div>
+                                                <span className="font-medium">Total TVA calculé : </span>
+                                                <span>{totalTVA.toFixed(2)} €</span>
+                                            </div>
+                                            <div>
+                                                <span className="font-medium">Total TTC attendu : </span>
+                                                <span>{(totalHTMulti + totalTVA).toFixed(2)} €</span>
                                             </div>
                                         </div>
                                     </div>
                                 )}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Montant HT (€) :
-                                    </label>
-                                    <input
-                                        type="number"
-                                        className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                        value={montant}
-                                        min={0}
-                                        step="0.01"
-                                        required
-                                        onChange={e => setMontant(e.target.value)}
-                                        disabled={tva === "multi-taux"}
-                                    />
+                                {tva !== "multi-taux" && (
+                                    <div className="flex gap-4 items-end">
+                                        <div className="flex-1">
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Montant HT (€) :
+                                            </label>
+                                            <input
+                                                type="number"
+                                                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900"
+                                                value={montant}
+                                                min={0}
+                                                step="0.01"
+                                                required
+                                                onChange={e => setMontant(e.target.value)}
+                                                readOnly
+                                                tabIndex={-1}
+                                                title="Montant HT calculé automatiquement à partir du TTC"
+                                            />
+                                        </div>
+                                        <div className="w-48">
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Valeur TVA (€) :
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="block w-full border border-gray-200 rounded-md shadow-sm py-2 px-3 bg-gray-100 text-gray-800"
+                                                value={valeurTvaMono}
+                                                readOnly
+                                                tabIndex={-1}
+                                                title="Valeur TVA calculée automatiquement"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {/* ANALYTIQUES */}
+                                <div className="pt-4 border-t border-gray-200 mt-4">
+                                    <h3 className="text-lg font-semibold mb-3 text-gray-800">ANALYTIQUES</h3>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Client :
+                                        </label>
+                                        <select
+                                            className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
+                                            value={selectedClient}
+                                            onChange={e => setSelectedClient(e.target.value)}
+                                            required
+                                        >
+                                            <option value="">Sélectionner un client</option>
+                                            {clients.map(c => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.nom_client}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Projet :
+                                        </label>
+                                        <select
+                                            className="block w-full border border-gray-300 rounded-md py-2 px-3 bg-white text-gray-900"
+                                            value={selectedProjet}
+                                            onChange={e => setSelectedProjet(e.target.value)}
+                                            required
+                                        >
+                                            <option value="">Sélectionner un projet</option>
+                                            {projets.map(p => (
+                                                <option key={p.id || p.uuid} value={p.id || p.uuid}>
+                                                    {p.nom}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Justificatif :
                                     </label>
                                     <div className="flex items-center gap-4">
@@ -453,11 +561,11 @@ export default function EditNdfDetailModal({ detail, onEdited }) {
                                     </div>
                                 </div>
                                 {error && (
-                                    <div className="md:col-span-2 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm text-center">
+                                    <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm text-center">
                                         {error}
                                     </div>
                                 )}
-                                <div className="md:col-span-2 flex justify-end gap-3 pt-6 mt-4 border-t border-gray-100">
+                                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                                     <button
                                         type="button"
                                         className="px-5 py-2 bg-gray-200 text-gray-700 font-medium rounded-md shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors duration-200"

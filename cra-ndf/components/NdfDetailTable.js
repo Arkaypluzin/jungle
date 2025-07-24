@@ -1,8 +1,8 @@
 "use client";
+import React from "react";
 import EditNdfDetailModal from "@/components/EditNdfDetailModal";
 import DeleteNdfDetailButton from "@/components/DeleteNdfDetailButton";
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, SlidersHorizontal, X, ArrowUp, ArrowDown } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -60,13 +60,11 @@ export default function NdfDetailTable({
   const refresh = async () => window.location.reload();
 
   function formatTvaPdf(detail) {
-    // Si multi-taux au format array [{taux, valeur_tva}], ou bien tva string contenant "/"
     let arr = Array.isArray(detail.tva)
       ? detail.tva
       : getTvaArray(detail.tva, detail.montant);
 
     if (!arr.length || arr.length === 1) {
-      // Affiche le taux et la valeur éventuelle si calculée
       let tvaUnique = arr[0];
       if (tvaUnique && tvaUnique.taux !== undefined) {
         return `${tvaUnique.taux}%` +
@@ -74,10 +72,8 @@ export default function NdfDetailTable({
             ? ` > +${parseFloat(tvaUnique.valeur_tva).toFixed(2)}€`
             : "");
       }
-      // fallback string
       return typeof detail.tva === "string" ? detail.tva : "";
     }
-    // Sinon, on retourne chaque taux/valeur sur une ligne
     return arr
       .map(
         (tvaObj) =>
@@ -133,23 +129,54 @@ export default function NdfDetailTable({
         "Description",
         "Client",
         "Projet",
+        "Moyen de paiement",
         "Montant HT",
         "TVA",
         "Montant TTC"
       ],
     ];
 
-    const rows = filteredDetails.map((detail) => [
-      detail.date_str,
-      detail.nature,
-      detail.description,
-      getClientName(detail.client_id),
-      getProjetName(detail.projet_id),
-      `${parseFloat(detail.montant).toFixed(2)}€`,
-      formatTvaPdf(detail),
-      `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
-      detail.img_url ? "Oui" : "Non",
-    ]);
+    const rows = [];
+    filteredDetails.forEach((detail) => {
+      rows.push([
+        detail.date_str,
+        detail.nature,
+        detail.description,
+        getClientName(detail.client_id),
+        getProjetName(detail.projet_id),
+        detail.moyen_paiement || "-",
+        `${parseFloat(detail.montant).toFixed(2)}€`,
+        formatTvaPdf(detail),
+        `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
+        detail.img_url ? "Oui" : "Non",
+      ]);
+
+      if (
+        detail.nature === "repas" &&
+        (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0))
+      ) {
+        let sousLigneTexte = [];
+        if (detail.type_repas) {
+          sousLigneTexte.push(`Type de repas : ${detail.type_repas}`);
+        }
+        if (Array.isArray(detail.inviter) && detail.inviter.length > 0) {
+          sousLigneTexte.push(`Invités : ${detail.inviter.join(", ")}`);
+        }
+        rows.push([
+          {
+            content: sousLigneTexte.join("\n"),
+            colSpan: 10,
+            styles: {
+              fontStyle: "italic",
+              fontSize: 9,
+              textColor: [100, 100, 100],
+              halign: "left",
+              cellPadding: { top: 2, bottom: 2, left: 8, right: 2 },
+            }
+          }
+        ]);
+      }
+    });
 
     autoTable(doc, {
       head,
@@ -179,15 +206,16 @@ export default function NdfDetailTable({
         fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "center", cellWidth: 30 },
-        1: { halign: "center", cellWidth: 30 },
-        2: { halign: "center", minCellWidth: 50, cellWidth: 55 },
-        3: { halign: "center", cellWidth: 35 },
-        4: { halign: "center", cellWidth: 35 },
-        5: { halign: "center", cellWidth: 28 },
-        6: { halign: "center", cellWidth: 32 },
-        7: { halign: "center", fontStyle: "bold", cellWidth: 28 },
-        8: { halign: "center", cellWidth: 25 },
+        0: { halign: "center", cellWidth: 30 }, // Date
+        1: { halign: "center", cellWidth: 25 }, // Nature
+        2: { halign: "center", minCellWidth: 35, cellWidth: 40 }, // Description
+        3: { halign: "center", cellWidth: 25 }, // Client
+        4: { halign: "center", cellWidth: 25 }, // Projet
+        5: { halign: "center", cellWidth: 40 }, // Moyen de paiement
+        6: { halign: "center", cellWidth: 30 }, // Montant HT
+        7: { halign: "center", cellWidth: 35 }, // TVA
+        8: { halign: "center", fontStyle: "bold", cellWidth: 30 }, // Montant TTC
+        9: { halign: "center", cellWidth: 25 }, // Justificatif
       },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
@@ -473,6 +501,9 @@ export default function NdfDetailTable({
                   Projet
                 </th>
                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Moyen de paiement
+                </th>
+                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
                   Montant HT
                 </th>
                 <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -490,9 +521,9 @@ export default function NdfDetailTable({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {filteredDetails.map((detail) => {
-                return (
-                  <tr key={detail.uuid} className="hover:bg-gray-50 transition-colors duration-150">
+              {filteredDetails.map((detail) => (
+                <React.Fragment key={detail.uuid}>
+                  <tr className="hover:bg-gray-50 transition-colors duration-150">
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {detail.date_str}
                     </td>
@@ -507,6 +538,9 @@ export default function NdfDetailTable({
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {getProjetName(detail.projet_id) || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {detail.moyen_paiement || <span className="italic text-gray-400">-</span>}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800 text-center">
                       {parseFloat(detail.montant).toFixed(2)}€
@@ -574,15 +608,31 @@ export default function NdfDetailTable({
                       )}
                     </td>
                   </tr>
-                );
-              })}
+                  {detail.nature === "repas" && (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0)) && (
+                    <tr key={detail.uuid + "-repas"}>
+                      <td colSpan={11} className="bg-gray-50 px-8 py-2 text-gray-700 text-sm border-t border-b border-gray-200">
+                        {detail.type_repas && (
+                          <div>
+                            <span className="font-semibold text-gray-800">Type de repas :</span> {detail.type_repas}
+                          </div>
+                        )}
+                        {Array.isArray(detail.inviter) && detail.inviter.length > 0 && (
+                          <div>
+                            <span className="font-semibold text-gray-800">Invités :</span> {detail.inviter.join(", ")}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
             </tbody>
             <tfoot className="bg-gray-100 border-t-2 border-gray-300">
               <tr>
                 <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total HT
                 </td>
-                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalHT.toFixed(2)}€
                 </td>
               </tr>
@@ -590,7 +640,7 @@ export default function NdfDetailTable({
                 <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   Total TVA
                 </td>
-                <td colSpan={7} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                <td colSpan={8} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
                   {totalTVA.toFixed(2)}€
                 </td>
               </tr>
@@ -598,12 +648,12 @@ export default function NdfDetailTable({
                 <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   Total TTC
                 </td>
-                <td colSpan={7} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
                   {totalTTC.toFixed(2)}€
                 </td>
               </tr>
               <tr>
-                <td colSpan={10} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+                <td colSpan={11} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
                   Nombre total de lignes de note de frais : {filteredDetails.length}
                 </td>
               </tr>

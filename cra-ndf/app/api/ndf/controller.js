@@ -67,66 +67,20 @@ export async function handlePut(req, { params }) {
     const isOwner = ndf.user_id === userId;
     const isAdmin = userRoles.includes("Admin");
     const body = await req.json();
-    const { month, year, statut, motif_refus } = body;
+
     if (!isOwner && !isAdmin) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (ndf.statut === "Provisoire" && isOwner) {
-        const updated = await updateNdf(params.id, {
-            month: month ?? ndf.month,
-            year: year ?? ndf.year,
-            statut: statut ?? ndf.statut,
-            motif_refus: undefined,
-        });
-        return Response.json(updated);
-    }
-    if (isAdmin) {
-        if (ndf.statut === "Déclaré" && statut === "Validé") {
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut,
-                motif_refus: undefined,
-            });
-            return Response.json(updated);
-        }
-        if (ndf.statut === "Validé" && statut === "Remboursé") {
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut,
-                motif_refus: undefined,
-            });
-            return Response.json(updated);
-        }
-        if (ndf.statut === "Déclaré" && statut === "Provisoire") {
-            if (
-                !motif_refus ||
-                typeof motif_refus !== "string" ||
-                !motif_refus.trim()
-            ) {
-                return Response.json(
-                    { error: "Le motif de refus est obligatoire." },
-                    { status: 400 }
-                );
-            }
-            const updated = await updateNdf(params.id, {
-                month: ndf.month,
-                year: ndf.year,
-                statut,
-                motif_refus: motif_refus.trim(),
-            });
-            return Response.json(updated);
-        }
-        return Response.json(
-            { error: "Modification impossible, statut verrouillé" },
-            { status: 403 }
-        );
-    }
-    return Response.json(
-        { error: "Modification impossible, statut verrouillé" },
-        { status: 403 }
-    );
+
+    const updateData = {
+        month: body.month ?? ndf.month,
+        year: body.year ?? ndf.year,
+        statut: body.statut ?? ndf.statut,
+        motif_refus: body.motif_refus ?? ndf.motif_refus,
+    };
+
+    const updated = await updateNdf(params.id, updateData);
+    return Response.json(updated);
 }
 
 export async function handleDelete(req, { params }) {
@@ -160,5 +114,5 @@ export async function handleDelete(req, { params }) {
     }
     const deleted = await deleteNdf(params.id);
     return Response.json(deleted);
-    
+
 }
