@@ -515,16 +515,34 @@ export default function CRAPage() {
           method: "DELETE",
         });
 
-        if (response.ok || response.status === 204 || response.status === 404) {
-          showMessage("Activité supprimée avec succès !", "success");
+        // NOUVEAU BLOC DE GESTION DES RÉPONSES
+        if (response.ok) {
+          // Vérifie tous les statuts 2xx (ex: 200, 204)
+          if (response.status === 204) {
+            showMessage("Activité supprimée avec succès !", "success");
+          } else {
+            // Si c'est OK (ex: 200) mais pas 204, essaie de parser JSON (si l'API renvoie un message)
+            const responseData = await response.json();
+            showMessage(
+              responseData.message || "Activité supprimée avec succès !",
+              "success"
+            );
+          }
           await fetchCraActivitiesForMonth(currentDisplayedMonth);
           await fetchMonthlyReportsForUser();
         } else {
+          // Gère les réponses non-2xx (erreurs comme 400, 401, 404, 500 etc.)
           const contentType = response.headers.get("content-type");
           let errorData = {};
           if (contentType && contentType.includes("application/json")) {
-            errorData = await response.json();
+            try {
+              errorData = await response.json();
+            } catch (jsonError) {
+              // Fallback si le Content-Type est JSON mais le corps est malformé
+              errorData.message = await response.text();
+            }
           } else {
+            // Si le Content-Type n'est pas JSON, utilise le texte brut
             errorData.message = await response.text();
           }
           console.error(
@@ -551,7 +569,6 @@ export default function CRAPage() {
       fetchMonthlyReportsForUser,
     ]
   );
-
   const handleSendMonthlyReport = useCallback(
     async (reportData) => {
       if (!currentUserId) {
