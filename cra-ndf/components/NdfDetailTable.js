@@ -2,7 +2,7 @@
 import React from "react";
 import EditNdfDetailModal from "@/components/EditNdfDetailModal";
 import DeleteNdfDetailButton from "@/components/DeleteNdfDetailButton";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
