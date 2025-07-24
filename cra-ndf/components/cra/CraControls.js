@@ -1,4 +1,6 @@
 // components/cra/CraControls.js
+"use client";
+
 import React from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -6,7 +8,6 @@ import { fr } from "date-fns/locale";
 export default function CraControls({
   currentMonth,
   userFirstName,
-  // Use specific report statuses for more accurate badge display
   craReportStatus,
   paidLeaveReportStatus,
   readOnly,
@@ -19,11 +20,12 @@ export default function CraControls({
   requestResetMonth,
   craDraftsCount,
   paidLeaveDraftsCount,
+  multiSelectType, // 'activity' ou 'paid_leave'
+  onCycleMultiSelectMode,
 }) {
   let statusBadge = null;
   let badgeClass = "ml-3 text-sm font-bold px-2 py-1 rounded-full";
 
-  // Prioritize status display: Rejected > Validated > Pending Review > Mixed > Draft/Empty
   if (craReportStatus === "rejected" || paidLeaveReportStatus === "rejected") {
     statusBadge = (
       <span className={`${badgeClass} text-red-700 bg-red-100`}>REJETÉ</span>
@@ -47,17 +49,43 @@ export default function CraControls({
       </span>
     );
   } else if (craReportStatus === "mixed" || paidLeaveReportStatus === "mixed") {
-    // If one is mixed, show mixed
     statusBadge = (
       <span className={`${badgeClass} text-purple-700 bg-purple-100`}>
         PARTIEL
       </span>
     );
   } else if (craReportStatus === "draft" || paidLeaveReportStatus === "draft") {
-    statusBadge = null; // No badge for draft, it's the default editable state
+    statusBadge = null;
   } else {
-    statusBadge = null; // No badge for empty
+    statusBadge = null;
   }
+
+  // MODIFIÉ: Logique du bouton pour basculer entre les deux modes
+  let buttonText = "";
+  let buttonClass = "";
+
+  if (multiSelectType === "activity") {
+    buttonText = "Passer en mode Congé";
+    buttonClass = "bg-blue-600 text-white hover:bg-blue-700";
+  } else if (multiSelectType === "paid_leave") {
+    buttonText = "Passer en mode Activité";
+    buttonClass = "bg-yellow-600 text-white hover:bg-yellow-700";
+  } else {
+    // Cas de repli si multiSelectType n'est ni 'activity' ni 'paid_leave' (ne devrait pas arriver avec l'initialisation)
+    buttonText = "Activer Sélection Multiple";
+    buttonClass = "bg-gray-200 text-gray-700 hover:bg-gray-300";
+  }
+
+  const handleClickCycleMode = () => {
+    if (typeof onCycleMultiSelectMode === "function") {
+      onCycleMultiSelectMode();
+    } else {
+      console.error(
+        "[CraControls] Erreur: onCycleMultiSelectMode n'est pas une fonction.",
+        onCycleMultiSelectMode
+      );
+    }
+  };
 
   return (
     <>
@@ -122,6 +150,16 @@ export default function CraControls({
 
       {!readOnly && (
         <div className="flex justify-center space-x-4 mb-8 flex-wrap gap-2">
+          {/* Bouton de mode de sélection multiple */}
+          <button
+            onClick={handleClickCycleMode}
+            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300 ${buttonClass}`}
+            title="Cliquez pour changer le mode de sélection multiple des jours"
+            disabled={readOnly}
+          >
+            {buttonText}
+          </button>
+
           <button
             onClick={handleToggleSummaryReport}
             className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
@@ -181,7 +219,6 @@ export default function CraControls({
             onClick={requestResetMonth}
             className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
               ${
-                // Reset is only possible if NEITHER report is validated, rejected, or pending_review
                 readOnly ||
                 ["validated", "rejected", "pending_review"].includes(
                   craReportStatus

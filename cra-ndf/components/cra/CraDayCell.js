@@ -25,11 +25,14 @@ export default function CraDayCell({
   isOutsideCurrentMonth,
   isPastDay,
   isTempSelected,
+  // Handlers pour la sélection multiple (passés conditionnellement par CraCalendar)
   handleMouseDown,
   handleMouseEnter,
-  handleDayClick, // Reçu de CraBoard
-  handleActivityClick, // Reçu de CraBoard
-  requestDeleteFromCalendar, // Reçu de CraBoard
+  handleMouseUp, // Ce handler est pour la fin du drag de sélection multiple
+  // Handlers pour le clic simple et le D&D individuel (toujours passés par CraCalendar)
+  handleDayClick, // Pour le clic simple sur la cellule (ajout/édition 1 jour)
+  onActivityClick, // Pour le clic sur une activité existante
+  requestDeleteFromCalendar,
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
@@ -39,65 +42,147 @@ export default function CraDayCell({
   userId,
   userFirstName,
   currentMonth,
-  isDragging,
+  // Props pour le D&D individuel (passées par CraCalendar)
+  onDragOverDay,
+  onDropActivity,
+  isDraggingActivity,
+  isDropTargetValid,
+  // Props pour le mode de sélection
+  multiSelectType, // 'none', 'activity', 'paid_leave'
+  isDragging, // Indique si un drag de sélection multiple est en cours (renommé isDraggingMultiSelect dans CraBoard)
   paidLeaveTypeId,
+  onDragStartActivity, // Passé directement de CraBoard à CraActivityItem via CraCalendar
 }) {
   if (!isValid(day)) {
     console.error("CraDayCell: Prop 'day' invalide reçue:", day);
     return null;
   }
 
-  let cellClasses =
-    "relative p-2 h-32 sm:h-40 flex flex-col justify-start border border-gray-200 rounded-lg m-0.5 transition duration-200 overflow-hidden relative";
+  const isDayInteractable = useCallback(() => {
+    if (readOnly) return false;
+    // Un jour est interactif si au moins un des rapports est éditable
+    return isCraEditable || isPaidLeaveEditable;
+  }, [readOnly, isCraEditable, isPaidLeaveEditable]);
 
-  const canInteractWithCellForAnyActivity =
-    !readOnly &&
-    (isCraEditable || isPaidLeaveEditable) &&
-    isValid(currentMonth) &&
-    isSameMonth(day, currentMonth);
+  // --- Détermination des classes CSS et du comportement ---
+  let cellClasses = [
+    "relative p-2 h-32 sm:h-40 flex flex-col justify-start border rounded-lg m-0.5 transition duration-200 overflow-hidden",
+  ];
 
+  // Couleurs de base et opacité pour les jours hors mois
   if (isOutsideCurrentMonth) {
-    cellClasses += " bg-gray-100 opacity-50 cursor-not-allowed";
-  } else if (isTodayHighlight) {
-    cellClasses += " bg-blue-100 border-blue-500 shadow-md text-blue-800";
-  } else if (isTempSelected) {
-    cellClasses += " ring-2 ring-purple-400 border-purple-500 bg-purple-50";
-  } else if (isNonWorkingDay) {
-    cellClasses += " bg-gray-200 text-gray-500";
+    cellClasses.push(
+      "bg-gray-100 text-gray-400 border-gray-200 opacity-50 cursor-not-allowed"
+    );
   } else {
-    cellClasses += " bg-white text-gray-900";
+    // Styles pour les jours dans le mois courant
+    if (isTodayHighlight) {
+      cellClasses.push("bg-blue-100 border-blue-500 shadow-md text-blue-800");
+    } else if (isNonWorkingDay) {
+      cellClasses.push("bg-gray-200 text-gray-500 border-gray-300");
+    } else {
+      cellClasses.push("bg-white text-gray-900 border-gray-300");
+    }
+
+    // Styles pour la sélection temporaire (multi-sélection)
+    if (
+      isTempSelected &&
+      (multiSelectType === "activity" || multiSelectType === "paid_leave")
+    ) {
+      cellClasses.push("ring-2 ring-blue-400 border-blue-500 bg-blue-50");
+    }
+
+    // Styles pour le feedback de D&D individuel
+    // Ces styles sont toujours actifs si un D&D individuel est en cours
+    if (isDraggingActivity) {
+      if (isDropTargetValid) {
+        cellClasses.push("border-dashed border-green-500 bg-green-50");
+      } else {
+        cellClasses.push("border-dashed border-red-500 bg-red-50");
+      }
+    }
+
+    // Curseur en fonction du mode et de l'interactibilité (PAS DE CHANGEMENT DE CURSEUR POUR LES MODES MULTI-SÉLECTION)
+    if (isDayInteractable()) {
+      // Le curseur par défaut est "default" ou "pointer" pour les modes multi-sélection
+      cellClasses.push("cursor-pointer hover:bg-blue-50");
+    } else {
+      cellClasses.push("cursor-not-allowed");
+    }
   }
 
-  if (canInteractWithCellForAnyActivity) {
-    if (isDragging && isPaidLeaveEditable) {
-      cellClasses += " cursor-grabbing";
-    } else {
-      cellClasses += " hover:bg-blue-50 cursor-pointer";
-    }
-  } else {
-    cellClasses += " cursor-not-allowed";
-  }
+  // --- Gestionnaires d'événements conditionnels ---
+
+  // Pour le clic sur la cellule (qui peut initier une sélection multiple ou ouvrir une modale simple)
+  const handleCellClick = useCallback(
+    (e) => {
+      // Empêcher le clic si le jour est hors du mois ou non interactif
+      if (isOutsideCurrentMonth || !isDayInteractable()) {
+        return;
+      }
+
+      // Si le clic vient d'une activité individuelle, ne rien faire (géré par CraActivityItem)
+      if (e && e.target.closest(".cra-activity-item")) {
+        return;
+      }
+
+      // Si un mode de sélection multiple est actif, le clic simple sur la cellule n'ouvre PAS la modale.
+      // L'événement `onMouseDown` initiera la sélection multiple.
+      if (multiSelectType !== "none") {
+        // Si un drag de sélection multiple est déjà en cours, ne rien faire.
+        if (isDragging) return; // isDragging ici est isDraggingMultiSelect de CraBoard
+
+        // Si c'est un clic simple en mode multi-sélection, on initie le drag (simuler mousedown)
+        // Ceci est un fallback si l'utilisateur ne fait pas un "drag" après le clic initial.
+        // Le `onMouseDown` réel capturera le début du drag.
+        if (handleMouseDown) {
+          handleMouseDown(e, day);
+        }
+      } else {
+        // Mode "Glisser-Déposer" (none) : clic simple sur la cellule ouvre la modale pour un seul jour
+        if (handleDayClick) {
+          handleDayClick(day, e);
+        }
+      }
+    },
+    [
+      isOutsideCurrentMonth,
+      isDayInteractable,
+      multiSelectType,
+      isDragging,
+      handleMouseDown,
+      handleDayClick,
+      day,
+    ]
+  );
+
+  // Les handlers de D&D sur la cellule sont toujours actifs (la logique de CraBoard les filtrera)
+  const onCellDragOver = onDragOverDay;
+  const onCellDrop = (e) => onDropActivity(e, day);
 
   return (
     <div
-      className={cellClasses}
-      onClick={(e) => {
-        // <--- MODIFIÉ : Passe l'objet événement
-        if (canInteractWithCellForAnyActivity && isCraEditable) {
-          handleDayClick(day, e); // Passe le jour ET l'événement
-        }
-      }}
-      onMouseDown={(e) =>
-        canInteractWithCellForAnyActivity &&
-        isPaidLeaveEditable &&
-        handleMouseDown(e, day)
+      className={cellClasses.join(" ")}
+      onClick={handleCellClick} // Utilise le nouveau handler de clic pour la cellule
+      // Les handlers de sélection multiple sont attachés si multiSelectType n'est pas 'none'
+      onMouseDown={
+        isDayInteractable() && multiSelectType !== "none" && handleMouseDown
+          ? (e) => handleMouseDown(e, day)
+          : undefined
       }
-      onMouseEnter={() =>
-        canInteractWithCellForAnyActivity &&
-        isPaidLeaveEditable &&
-        handleMouseEnter(day)
+      onMouseEnter={
+        isDayInteractable() && multiSelectType !== "none" && handleMouseEnter
+          ? () => handleMouseEnter(day)
+          : undefined
       }
-      data-date={isValid(day) ? format(day, "yyyy-MM-dd") : ""}
+      onMouseUp={
+        isDayInteractable() && multiSelectType !== "none" && handleMouseUp
+          ? handleMouseUp
+          : undefined
+      }
+      // Les handlers de D&D individuel sont toujours attachés
+      onDragOver={onCellDragOver}
+      onDrop={onCellDrop}
     >
       <span
         className={`text-sm font-semibold mb-1 ${
@@ -165,7 +250,7 @@ export default function CraDayCell({
               activity={activity}
               activityTypeDefinitions={activityTypeDefinitions}
               clientDefinitions={clientDefinitions}
-              handleActivityClick={handleActivityClick}
+              handleActivityClick={onActivityClick} // Toujours actif
               requestDeleteFromCalendar={requestDeleteFromCalendar}
               showMessage={showMessage}
               readOnly={readOnly}
@@ -174,6 +259,13 @@ export default function CraDayCell({
               userId={userId}
               userFirstName={userFirstName}
               paidLeaveTypeId={paidLeaveTypeId}
+              // L'attribut draggable est maintenant géré uniquement par canModifyActivity et readOnly
+              isDraggable={
+                !readOnly &&
+                activity.user_id === userId &&
+                (activity.status === "draft" || activity.status === "rejected")
+              }
+              onDragStartActivity={onDragStartActivity} // Passé directement de CraBoard
             />
           ))}
       </div>

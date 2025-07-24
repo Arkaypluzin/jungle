@@ -19,30 +19,38 @@ import {
   isValid,
 } from "date-fns";
 import { fr } from "date-fns/locale";
-import CraDayCell from "./CraDayCell"; // Import the CraDayCell component
+import CraDayCell from "./CraDayCell";
 
-const CraCalendar = ({
+export default function CraCalendar({
   currentMonth,
   activitiesByDay,
   activityTypeDefinitions,
   clientDefinitions,
   isPublicHoliday,
-  onDayClick,
-  onActivityClick,
-  tempSelectedDays,
-  onMouseDown,
-  onMouseEnter,
-  onMouseUp,
+  onDayClick, // Pour le clic simple (édition/ajout 1 jour)
+  onActivityClick, // Pour le clic sur une activité existante
+  tempSelectedDays, // Jours temporairement sélectionnés pour le style
+  onMouseDown, // Démarre la sélection multiple (passé par CraBoard)
+  onMouseEnter, // Gère le survol pendant la sélection multiple (passé par CraBoard)
+  onMouseUp, // Termine la sélection multiple (passé par CraBoard)
   readOnly = false,
   isCraEditable,
   isPaidLeaveEditable,
-  requestDeleteFromCalendar,
+  requestDeleteFromCalendar, // Appel à la prop de suppression de CraBoard
   showMessage,
   userId,
   userFirstName,
-  isDragging,
-  paidLeaveTypeId, // <--- NOUVEAU : Reçu de CraBoard
-}) => {
+  paidLeaveTypeId,
+  // Props pour le D&D individuel (passées par CraBoard)
+  onDragStartActivity, // Passé à CraDayCell pour être ensuite passé à CraActivityItem
+  onDragOverDay,
+  onDropActivity,
+  isDraggingActivity,
+  isDropTargetValid,
+  // Props pour le mode de sélection
+  multiSelectType, // 'none', 'activity', 'paid_leave'
+  isDragging, // Indique si un drag de sélection multiple est en cours
+}) {
   console.log(
     "CraCalendar: currentMonth received:",
     currentMonth,
@@ -57,7 +65,9 @@ const CraCalendar = ({
     "isPaidLeaveEditable:",
     isPaidLeaveEditable
   );
-  console.log("CraCalendar: isDragging:", isDragging);
+  console.log("CraCalendar: isDraggingActivity:", isDraggingActivity);
+  console.log("CraCalendar: isDragging (multi-select):", isDragging);
+  console.log("CraCalendar: multiSelectType:", multiSelectType); // Nouveau log
 
   const daysInMonth = useMemo(() => {
     if (!isValid(currentMonth)) {
@@ -77,33 +87,9 @@ const CraCalendar = ({
 
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
-    console.log(
-      "CraCalendar: monthStart:",
-      monthStart,
-      "isValid:",
-      isValid(monthStart)
-    );
-    console.log(
-      "CraCalendar: monthEnd:",
-      monthEnd,
-      "isValid:",
-      isValid(monthEnd)
-    );
 
     const startCalendarDay = startOfWeek(monthStart, { weekStartsOn: 1 });
     const endCalendarDay = endOfWeek(monthEnd, { weekStartsOn: 1 });
-    console.log(
-      "CraCalendar: startCalendarDay:",
-      startCalendarDay,
-      "isValid:",
-      isValid(startCalendarDay)
-    );
-    console.log(
-      "CraCalendar: endCalendarDay:",
-      endCalendarDay,
-      "isValid:",
-      isValid(endCalendarDay)
-    );
 
     return eachDayOfInterval({ start: startCalendarDay, end: endCalendarDay });
   }, [currentMonth]);
@@ -115,7 +101,7 @@ const CraCalendar = ({
   return (
     <div className="overflow-x-auto">
       <div className="min-w-full inline-block align-middle">
-        <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-700 mb-2">
+        <div className="grid grid-cols-7 gap-1 text-center font-semibold text-gray-700 mb-2 bg-gray-100 rounded-lg py-3">
           {weekdays.map((day) => (
             <div key={day} className="py-2">
               {day}
@@ -136,6 +122,18 @@ const CraCalendar = ({
               isSameDay(d, day)
             );
 
+            // Les handlers de sélection multiple sont passés si multiSelectType n'est pas 'none'
+            const conditionalOnMouseDown =
+              multiSelectType !== "none" ? onMouseDown : undefined;
+            const conditionalOnMouseEnter =
+              multiSelectType !== "none" ? onMouseEnter : undefined;
+            const conditionalOnMouseUp =
+              multiSelectType !== "none" ? onMouseUp : undefined;
+
+            // Les handlers de D&D sont toujours passés (le CraDayCell décidera si draggable)
+            const conditionalOnDragOverDay = onDragOverDay;
+            const conditionalOnDropActivity = onDropActivity;
+
             return (
               <CraDayCell
                 key={dateString}
@@ -149,10 +147,13 @@ const CraCalendar = ({
                 isOutsideCurrentMonth={isOutsideCurrentMonth}
                 isPastDay={isPastDay}
                 isTempSelected={isTempSelected}
-                handleMouseDown={onMouseDown}
-                handleMouseEnter={onMouseEnter}
+                // Passer les handlers conditionnels pour la sélection multiple
+                handleMouseDown={conditionalOnMouseDown}
+                handleMouseEnter={conditionalOnMouseEnter}
+                handleMouseUp={conditionalOnMouseUp}
+                // Les handlers de clic simple et d'activité sont toujours passés
                 handleDayClick={onDayClick}
-                handleActivityClick={onActivityClick}
+                onActivityClick={onActivityClick}
                 requestDeleteFromCalendar={requestDeleteFromCalendar}
                 activityTypeDefinitions={activityTypeDefinitions}
                 clientDefinitions={clientDefinitions}
@@ -163,8 +164,16 @@ const CraCalendar = ({
                 userId={userId}
                 userFirstName={userFirstName}
                 currentMonth={currentMonth}
-                isDragging={isDragging}
-                paidLeaveTypeId={paidLeaveTypeId} // <--- PASSAGE DE LA PROP
+                // Passer les D&D props (onDragStartActivity est passé via CraActivityItem)
+                onDragOverDay={conditionalOnDragOverDay}
+                onDropActivity={conditionalOnDropActivity}
+                isDraggingActivity={isDraggingActivity}
+                isDropTargetValid={isDropTargetValid}
+                // Props pour le mode de sélection
+                multiSelectType={multiSelectType}
+                isDragging={isDragging} // Indique si un drag de sélection multiple est en cours
+                paidLeaveTypeId={paidLeaveTypeId}
+                onDragStartActivity={onDragStartActivity} // Passé à CraDayCell pour CraActivityItem
               />
             );
           })}
@@ -172,6 +181,4 @@ const CraCalendar = ({
       </div>
     </div>
   );
-};
-
-export default CraCalendar;
+}

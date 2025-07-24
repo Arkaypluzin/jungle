@@ -1,7 +1,7 @@
 // components/cra/CraActivityItem.js
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 
 export default function CraActivityItem({
   activity,
@@ -16,14 +16,23 @@ export default function CraActivityItem({
   isCraEditable,
   isPaidLeaveEditable,
   paidLeaveTypeId,
+  onDragStartActivity, // <-- Handler de drag pour l'activité (passé de CraBoard)
 }) {
-  const client = clientDefinitions.find(
-    (c) => String(c.id) === String(activity.client_id)
+  const client = useMemo(
+    () =>
+      clientDefinitions.find(
+        (c) => String(c.id) === String(activity.client_id)
+      ),
+    [activity.client_id, clientDefinitions]
   );
   const clientLabel = client ? client.nom_client : "Non attribué";
 
-  const activityTypeObj = activityTypeDefinitions.find(
-    (type) => String(type.id) === String(activity.type_activite)
+  const activityTypeObj = useMemo(
+    () =>
+      activityTypeDefinitions.find(
+        (type) => String(type.id) === String(activity.type_activite)
+      ),
+    [activity.type_activite, activityTypeDefinitions]
   );
   const activityTypeLabel = activityTypeObj
     ? activityTypeObj.name
@@ -61,15 +70,26 @@ export default function CraActivityItem({
     return true;
   }, [activity, userId, isCraEditable, isPaidLeaveEditable, paidLeaveTypeId]);
 
-  const typeColorClass =
-    String(activity.type_activite) === String(paidLeaveTypeId)
-      ? "bg-lime-200 text-lime-800"
-      : activityTypeLabel.toLowerCase().includes("absence")
-      ? "bg-red-200 text-red-800"
-      : activityTypeLabel.toLowerCase().includes("heure supplémentaire") ||
-        activityTypeObj?.is_overtime
-      ? "bg-purple-200 text-purple-800"
-      : "bg-blue-200 text-blue-800";
+  const typeColorClass = useMemo(() => {
+    if (String(activity.type_activite) === String(paidLeaveTypeId)) {
+      return "bg-lime-200 text-lime-800";
+    }
+    if (activityTypeLabel.toLowerCase().includes("absence")) {
+      return "bg-red-200 text-red-800";
+    }
+    if (
+      activityTypeLabel.toLowerCase().includes("heure supplémentaire") ||
+      activityTypeObj?.is_overtime
+    ) {
+      return "bg-purple-200 text-purple-800";
+    }
+    return "bg-blue-200 text-blue-800";
+  }, [
+    activity.type_activite,
+    paidLeaveTypeId,
+    activityTypeLabel,
+    activityTypeObj,
+  ]);
 
   const overrideLabel = activity.override_non_working_day
     ? " (Dérogation)"
@@ -107,12 +127,14 @@ export default function CraActivityItem({
       break;
   }
 
-  const isActivityLockedVisually = [
-    "finalized",
-    "validated",
-    "pending_review",
-    "rejected",
-  ].includes(activity.status);
+  const isActivityLockedVisually = useMemo(() => {
+    return ["finalized", "validated", "pending_review"].includes(
+      activity.status
+    );
+  }, [activity.status]);
+
+  // isDraggable est maintenant basé uniquement sur la capacité de modifier l'activité
+  const isDraggable = canModifyActivity() && !readOnly;
 
   return (
     <div
@@ -121,8 +143,8 @@ export default function CraActivityItem({
         isActivityLockedVisually ? "opacity-70" : ""
       }
                   ${
-                    canModifyActivity() && !readOnly
-                      ? "cursor-pointer hover:shadow-md"
+                    isDraggable
+                      ? "cursor-grab active:cursor-grabbing hover:shadow-md" // Curseur pour les éléments draggable
                       : "cursor-not-allowed opacity-60"
                   }
                   group cra-activity-item`}
@@ -132,6 +154,15 @@ export default function CraActivityItem({
           handleActivityClick(activity);
         } else {
           showMessage("Cette activité n'est pas modifiable.", "info");
+        }
+      }}
+      draggable={isDraggable} // <-- Toujours draggable si canModifyActivity() et non readOnly
+      onDragStart={(e) => {
+        e.stopPropagation(); // Empêche le drag de remonter à la cellule
+        if (isDraggable && onDragStartActivity) {
+          onDragStartActivity(e, activity); // Appelle la fonction de drag de CraBoard
+        } else {
+          e.preventDefault(); // Empêche le drag si non draggable
         }
       }}
       title={`Client: ${clientLabel}\nType: ${activityTypeLabel}\nTemps: ${timeSpentLabel}\nDescription: ${
