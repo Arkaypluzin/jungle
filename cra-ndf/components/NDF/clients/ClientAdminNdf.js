@@ -33,6 +33,7 @@ export default function ClientAdminNdf() {
   const [filterStatut, setFilterStatut] = useState("");
   const [totaux, setTotaux] = useState({});
   const [totauxPerso, setTotauxPerso] = useState({});
+  const [indemnitesPerso, setIndemnitesPerso] = useState({});
 
   async function fetchNdfs() {
     setLoading(true);
@@ -190,6 +191,92 @@ export default function ClientAdminNdf() {
       if (isMounted) setTotauxPerso(t);
     }
     getTotalsPerso();
+    return () => { isMounted = false; };
+  }, [JSON.stringify(filteredNdfList.map(ndf => ndf.uuid))]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function getIndemnites() {
+      const ind = {};
+      for (const ndf of filteredNdfList) {
+        const res = await fetch(`/api/ndf_kilo?id_ndf=${ndf.uuid}`);
+        if (!res.ok) continue;
+        const rows = await res.json();
+
+        // Copié de NdfKiloTable.js :
+        function calcIndemniteVoiture(cv, total) {
+          total = parseFloat(total);
+          if (isNaN(total) || !cv) return 0;
+          let bar = null;
+          if (cv === "3-") bar = 3;
+          if (cv === "4") bar = 4;
+          if (cv === "5") bar = 5;
+          if (cv === "6") bar = 6;
+          if (cv === "7+") bar = 7;
+          if (!bar) return 0;
+          if (bar === 3) {
+            if (total <= 5000) return total * 0.529;
+            if (total <= 20000) return total * 0.316 + 1061;
+            return total * 0.369;
+          }
+          if (bar === 4) {
+            if (total <= 5000) return total * 0.606;
+            if (total <= 20000) return total * 0.340 + 1330;
+            return total * 0.408;
+          }
+          if (bar === 5) {
+            if (total <= 5000) return total * 0.636;
+            if (total <= 20000) return total * 0.356 + 1391;
+            return total * 0.427;
+          }
+          if (bar === 6) {
+            if (total <= 5000) return total * 0.665;
+            if (total <= 20000) return total * 0.374 + 1457;
+            return total * 0.448;
+          }
+          if (bar === 7) {
+            if (total <= 5000) return total * 0.697;
+            if (total <= 20000) return total * 0.394 + 1512;
+            return total * 0.470;
+          }
+          return 0;
+        }
+        function calcIndemniteMoto(cv, total) {
+          total = parseFloat(total);
+          if (isNaN(total) || !cv) return 0;
+          if (cv === "1") {
+            if (total <= 3000) return total * 0.395;
+            if (total <= 6000) return total * 0.099 + 891;
+            return total * 0.248;
+          }
+          if (cv === "2-3-4-5") {
+            if (total <= 3000) return total * 0.468;
+            if (total <= 6000) return total * 0.082 + 1158;
+            return total * 0.275;
+          }
+          if (cv === "plus5") {
+            if (total <= 3000) return total * 0.606;
+            if (total <= 6000) return total * 0.079 + 1583;
+            return total * 0.343;
+          }
+          return 0;
+        }
+        function calcIndemnite(type_vehicule, cv, total) {
+          if (type_vehicule === "voiture") return calcIndemniteVoiture(cv, total);
+          if (type_vehicule === "moto") return calcIndemniteMoto(cv, total);
+          return 0;
+        }
+
+        // Calcule la somme pour cette note de frais
+        const totalIndemnites = rows.reduce(
+          (acc, r) => acc + (parseFloat(calcIndemnite(r.type_vehicule, r.cv, r.total_euro)) || 0),
+          0
+        );
+        ind[ndf.uuid] = totalIndemnites;
+      }
+      if (isMounted) setIndemnitesPerso(ind);
+    }
+    getIndemnites();
     return () => { isMounted = false; };
   }, [JSON.stringify(filteredNdfList.map(ndf => ndf.uuid))]);
 
@@ -383,7 +470,9 @@ export default function ClientAdminNdf() {
                       {ndf.statut}
                     </span>
                     <span className="ml-3 text-sm text-blue-700 font-bold">
-                      {typeof totauxPerso[ndf.uuid] === "number" ? `${totauxPerso[ndf.uuid].toFixed(2)} € TTC` : ""}
+                      {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
+                        ? `${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)} € TTC`
+                        : ""}
                     </span>
                   </div>
                   <div className="flex gap-3 flex-wrap justify-end">
