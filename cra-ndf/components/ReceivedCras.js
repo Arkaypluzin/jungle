@@ -105,7 +105,21 @@ export default function ReceivedCras({
       );
 
       if (data && Array.isArray(data.data)) {
-        setReports(data.data);
+        const processedReports = data.data.map((report) => {
+          // Normaliser rejectionReason/rejection_reason pour l'affichage dans le tableau
+          if (
+            report.status === "rejected" &&
+            report.rejectionReason &&
+            !report.rejection_reason
+          ) {
+            return {
+              ...report,
+              rejection_reason: report.rejectionReason,
+            };
+          }
+          return report;
+        });
+        setReports(processedReports);
       } else {
         console.warn(
           "ReceivedCras: La réponse API pour la liste ne contient pas un tableau valide dans 'data.data'. Réponse:",
@@ -260,6 +274,7 @@ export default function ReceivedCras({
 
   const requestRejection = useCallback((report) => {
     setReportToUpdate(report);
+    setRejectionReason(report.rejectionReason || report.rejection_reason || "");
     setShowRejectionConfirmModal(true);
   }, []);
 
@@ -280,7 +295,7 @@ export default function ReceivedCras({
   const handleViewCra = useCallback(
     async (report) => {
       console.log(
-        "[ReceivedCras] handleViewCra appelé avec le rapport:",
+        "[ReceivedCras] handleViewCra appelé avec le rapport (initial):",
         report
       );
       try {
@@ -291,15 +306,84 @@ export default function ReceivedCras({
             errorData.message || "Échec de la récupération du CRA détaillé."
           );
         }
-        const detailedReport = await response.json();
+        let detailedReport = await response.json(); // Utilise 'let' pour pouvoir modifier l'objet
 
+        // --- NOUVEAU LOG CRITIQUE : Contenu brut de la réponse API ---
+        console.log("--- DIAGNOSTIC API BRUTE (handleViewCra) ---");
         console.log(
-          "[ReceivedCras] CRA détaillé reçu pour CraBoard (avant formatage):",
+          "[ReceivedCras] detailedReport reçu de l'API (BRUT):",
           detailedReport
         );
         console.log(
-          "[ReceivedCras] detailedReport.activities_snapshot (raw):",
-          detailedReport.activities_snapshot
+          "[ReceivedCras] detailedReport.status (BRUT):",
+          detailedReport.status
+        );
+        console.log(
+          "[ReceivedCras] detailedReport.rejectionReason (BRUT camelCase):",
+          detailedReport.rejectionReason
+        );
+        console.log(
+          "[ReceivedCras] detailedReport.rejection_reason (BRUT snake_case):",
+          detailedReport.rejection_reason
+        );
+        console.log("--- FIN DIAGNOSTIC API BRUTE ---");
+
+        // Déterminer la raison de rejet à passer, en priorisant rejectionReason (camelCase) si le rapport est rejeté
+        const computedRejectionReason =
+          detailedReport.status === "rejected"
+            ? detailedReport.rejectionReason ||
+              detailedReport.rejection_reason ||
+              null
+            : null;
+
+        // Normaliser detailedReport pour l'affichage dans le tableau si nécessaire
+        // (Ceci est pour le cas où detailedReport serait utilisé ailleurs dans ReceivedCras,
+        // mais pour le CraBoard, nous utilisons computedRejectionReason directement)
+        if (
+          detailedReport.status === "rejected" &&
+          detailedReport.rejectionReason &&
+          !detailedReport.rejection_reason
+        ) {
+          detailedReport = {
+            ...detailedReport,
+            rejection_reason: detailedReport.rejectionReason,
+          };
+        } else if (
+          detailedReport.status === "rejected" &&
+          detailedReport.rejection_reason === undefined &&
+          detailedReport.rejectionReason
+        ) {
+          detailedReport = {
+            ...detailedReport,
+            rejection_reason: detailedReport.rejectionReason,
+          };
+        } else if (
+          detailedReport.status !== "rejected" &&
+          detailedReport.rejection_reason !== null
+        ) {
+          detailedReport = {
+            ...detailedReport,
+            rejection_reason: null,
+          };
+        }
+
+        console.log(
+          "--- DIAGNOSTIC RAISON DE REJET (handleViewCra APRÈS NORMALISATION) ---"
+        );
+        console.log(
+          "detailedReport (objet complet APRÈS NORMALISATION):",
+          detailedReport
+        );
+        console.log(
+          "detailedReport.rejection_reason (APRÈS NORMALISATION):",
+          detailedReport.rejection_reason
+        );
+        console.log(
+          "Computed rejectionReason pour prop:",
+          computedRejectionReason
+        );
+        console.log(
+          "--- FIN DIAGNOSTIC (handleViewCra APRÈS NORMALISATION) ---"
         );
 
         if (!detailedReport) {
@@ -405,18 +489,23 @@ export default function ReceivedCras({
           );
         }
 
-        setCraBoardReportData({
+        const dataForCraBoard = {
           userId: detailedReport.user_id,
           userFirstName: detailedReport.userName,
           currentMonth: craBoardCurrentMonth,
           activities: formattedActivities,
-          rejectionReason:
-            detailedReport.status === "rejected"
-              ? detailedReport.rejectionReason
-              : null,
-          monthlyReports: [detailedReport],
-        });
-        setShowCraBoardModal(true);
+          rejectionReason: computedRejectionReason, // Utilise la valeur calculée
+          monthlyReports: [detailedReport], // detailedReport a maintenant 'rejection_reason' si nécessaire
+        };
+
+        // --- LOG FINAL AVANT SETSTATE ---
+        console.log(
+          "[ReceivedCras] Data prête à être passée à CraBoard (dataForCraBoard - before setState):",
+          dataForCraBoard
+        );
+        // --- FIN LOG FINAL ---
+
+        setCraBoardReportData(dataForCraBoard);
       } catch (err) {
         console.error(
           "ReceivedCras: Erreur lors de la récupération du CRA détaillé:",
@@ -428,9 +517,22 @@ export default function ReceivedCras({
     [showMessage]
   );
 
+  // EFFECT POUR OUVRIR LA MODAL APRÈS QUE LES DONNÉES SOIENT PRÊTES
+  useEffect(() => {
+    if (craBoardReportData) {
+      // --- LOG CRITIQUE DANS L'EFFECT QUI OUVRE LA MODAL ---
+      console.log(
+        "[ReceivedCras] useEffect: craBoardReportData est prêt. RejectionReason depuis l'état (avant ouverture modal):",
+        craBoardReportData.rejectionReason
+      );
+      // --- FIN LOG CRITIQUE ---
+      setShowCraBoardModal(true);
+    }
+  }, [craBoardReportData]);
+
   const handleCloseCraBoardModal = useCallback(() => {
     setShowCraBoardModal(false);
-    setCraBoardReportData(null);
+    setCraBoardReportData(null); // Réinitialiser les données à la fermeture
   }, []);
 
   const handleDeleteClick = useCallback(
@@ -495,7 +597,7 @@ export default function ReceivedCras({
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
       <h3 className="text-3xl font-bold text-gray-800 mb-6 text-center">
-        CRAM Reçus (En attente de révision, validés et refusés)
+        CRAM Reçus
       </h3>
 
       <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner flex flex-wrap gap-4 justify-center items-center">
@@ -704,8 +806,18 @@ export default function ReceivedCras({
                         ? "En attente"
                         : report.status === "validated"
                         ? "Validé"
-                        : "Rejeté"}
+                        : report.status === "rejected"
+                        ? "Rejeté"
+                        : "Brouillon"}{" "}
+                      {/* Ajout de "Brouillon" pour les statuts non gérés */}
                     </span>
+                    {report.status === "rejected" &&
+                      (report.rejection_reason || report.rejectionReason) && (
+                        <p className="text-xs text-red-700 mt-1">
+                          (Raison :{" "}
+                          {report.rejection_reason || report.rejectionReason})
+                        </p>
+                      )}
                   </td>
                   <td className="py-3 px-4 text-sm">
                     <div className="flex flex-wrap gap-2">

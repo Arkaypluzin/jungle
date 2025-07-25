@@ -10,10 +10,10 @@ export default function SummaryReport({
   activities,
   activityTypeDefinitions,
   clientDefinitions,
-  totalWorkingDays,
-  totalActivitiesTime,
-  timeDifference,
-  isPublicHoliday,
+  totalWorkingDays = 0, // Défini à 0 par défaut
+  totalActivitiesTime = 0, // Défini à 0 par défaut
+  timeDifference = "0.00", // Défini à "0.00" par défaut (car c'est déjà une chaîne formatée)
+  isPublicHoliday, // Cette prop est maintenant passée depuis CraBoard
   userFirstName,
   onClose,
   onOpenMonthlyReportPreview,
@@ -39,12 +39,12 @@ export default function SummaryReport({
     return [...activities].sort((a, b) => {
       // S'assurer que date_activite est un objet Date valide pour la comparaison
       const dateA =
-        a.date_activite && isValid(a.date_activite)
-          ? a.date_activite
+        a.date_activite && isValid(new Date(a.date_activite))
+          ? new Date(a.date_activite)
           : new Date(0); // Fallback à une date valide pour le tri
       const dateB =
-        b.date_activite && isValid(b.date_activite)
-          ? b.date_activite
+        b.date_activite && isValid(new Date(b.date_activite))
+          ? new Date(b.date_activite)
           : new Date(0);
       return dateA.getTime() - dateB.getTime();
     });
@@ -54,8 +54,8 @@ export default function SummaryReport({
     const groups = {};
     sortedActivities.forEach((activity) => {
       // S'assurer que activity.date_activite est valide avant de la formater
-      if (isValid(activity.date_activite)) {
-        const dateKey = format(activity.date_activite, "yyyy-MM-dd");
+      if (isValid(new Date(activity.date_activite))) {
+        const dateKey = format(new Date(activity.date_activite), "yyyy-MM-dd");
         if (!groups[dateKey]) {
           groups[dateKey] = [];
         }
@@ -71,6 +71,10 @@ export default function SummaryReport({
   }, [sortedActivities]);
 
   const dailySummaries = useMemo(() => {
+    // S'assurer que isPublicHoliday est une fonction avant de l'appeler
+    const checkIsPublicHoliday =
+      typeof isPublicHoliday === "function" ? isPublicHoliday : () => false;
+
     return Object.keys(groupedActivities).map((dateKey) => {
       const date = parseISO(dateKey); // dateKey est une chaîne, parseISO est correct ici
       const activitiesForDay = groupedActivities[dateKey];
@@ -81,7 +85,8 @@ export default function SummaryReport({
       // Vérifications défensives avant d'utiliser les dates
       const isWeekendDay =
         isValid(date) && isWeekend(date, { weekStartsOn: 1 });
-      const isHoliday = isValid(date) && isPublicHoliday(date);
+      // Utilise la fonction sécurisée
+      const isHoliday = isValid(date) && checkIsPublicHoliday(date);
       const isNonWorkingDay = isWeekendDay || isHoliday;
 
       return {
@@ -93,7 +98,7 @@ export default function SummaryReport({
         isNonWorkingDay: isNonWorkingDay,
       };
     });
-  }, [groupedActivities, isPublicHoliday]);
+  }, [groupedActivities, isPublicHoliday]); // isPublicHoliday reste une dépendance
 
   const renderActivityDetails = (activity) => {
     const activityType = activityTypeDefinitions.find(
@@ -163,9 +168,9 @@ export default function SummaryReport({
           <p className="font-semibold">Écart:</p>
           <p
             className={`text-lg ${
-              timeDifference > 0
+              parseFloat(timeDifference) > 0 // Convertir en nombre pour la comparaison
                 ? "text-red-600"
-                : timeDifference < 0
+                : parseFloat(timeDifference) < 0
                 ? "text-orange-600"
                 : "text-green-600"
             }`}

@@ -1050,7 +1050,7 @@ export default function CRAPage() {
                 : "bg-blue-100 text-blue-700 hover:bg-blue-200"
             }`}
           >
-            CRAs Reçus
+            CRAM Reçus
           </button>
           {/* NOUVEAU BOUTON POUR L'ONGLET "VUE D'ENSEMBLE" */}
           <button

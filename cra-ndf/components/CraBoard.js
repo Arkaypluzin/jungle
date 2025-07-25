@@ -49,9 +49,9 @@ export default function CraBoard({
   showMessage,
   currentMonth: propCurrentMonth,
   onMonthChange,
-  readOnly = false,
+  readOnly = false, // Cette prop est la lecture seule globale du composant parent
   monthlyReports = [],
-  rejectionReason = null,
+  rejectionReason = null, // Cette prop est maintenant utilisée directement pour le bandeau RO
   onSendMonthlyReport,
 }) {
   console.log("[CraBoard] --- Rendu du composant CraBoard (Début) ---");
@@ -67,7 +67,11 @@ export default function CraBoard({
     "Lecture seule (globale):",
     readOnly
   );
-  console.log("[CraBoard] Rapports mensuels reçus:", monthlyReports);
+  console.log(
+    "[CraBoard] Rapports mensuels reçus (prop monthlyReports):",
+    monthlyReports
+  );
+  console.log("[CraBoard] Prop rejectionReason (directe):", rejectionReason);
 
   // --- 1. Déclarations d'état et de références (useState, useRef) ---
   const [currentMonth, setCurrentMonth] = useState(
@@ -140,7 +144,7 @@ export default function CraBoard({
           err
         );
         localShowMessage(
-          `Impossible de charger les jours fériés : ${err.message}`,
+          `Impossible de charger les jours fériés : ${err.message}. Veuillez réessayer.`,
           "error"
         );
         setPublicHolidays([]);
@@ -206,8 +210,21 @@ export default function CraBoard({
   }, [activitiesForCurrentMonth]);
 
   const { craReport, paidLeaveReport } = useMemo(() => {
+    console.log(
+      "[CraBoard - useMemo] Calcul des rapports craReport/paidLeaveReport..."
+    );
+    console.log("[CraBoard - useMemo] monthlyReports:", monthlyReports);
+    console.log("[CraBoard - useMemo] userId:", userId);
+    console.log("[CraBoard - useMemo] currentMonth:", currentMonth);
+
+    // Si en mode lecture seule et un seul rapport est fourni (comme dans la modal ReceivedCras)
     if (readOnly && monthlyReports.length === 1) {
       const singleReport = monthlyReports[0];
+      console.log(
+        "[CraBoard - useMemo] Mode lecture seule avec un seul rapport:",
+        singleReport
+      );
+
       if (singleReport.report_type === "cra") {
         return { craReport: singleReport, paidLeaveReport: null };
       } else if (singleReport.report_type === "paid_leave") {
@@ -215,6 +232,7 @@ export default function CraBoard({
       }
     }
 
+    // Logique standard pour le mode non-lecture seule ou plusieurs rapports
     const currentMonthCraReport = monthlyReports.find(
       (report) =>
         String(report.user_id) === String(userId) &&
@@ -234,28 +252,95 @@ export default function CraBoard({
         report.report_type === "paid_leave"
     );
 
+    console.log(
+      "[CraBoard - useMemo] craReport trouvé (mode standard):",
+      currentMonthCraReport
+    );
+    console.log(
+      "[CraBoard - useMemo] paidLeaveReport trouvé (mode standard):",
+      currentMonthPaidLeaveReport
+    );
+
     return {
       craReport: currentMonthCraReport,
       paidLeaveReport: currentMonthPaidLeaveReport,
     };
-  }, [monthlyReports, userId, currentMonth, readOnly]);
+  }, [monthlyReports, userId, currentMonth, readOnly]); // Dépendances inchangées
 
   const craReportStatus = craReport ? craReport.status : "empty";
   const paidLeaveReportStatus = paidLeaveReport
     ? paidLeaveReport.status
     : "empty";
 
-  const isCraEditable = useMemo(() => {
-    return ["empty", "draft", "rejected"].includes(craReportStatus);
-  }, [craReportStatus]);
+  // Déterminer le statut global du rapport pour les bandeaux
+  const overallReportStatus = useMemo(() => {
+    if (
+      craReportStatus === "validated" ||
+      paidLeaveReportStatus === "validated"
+    )
+      return "validated";
+    if (
+      craReportStatus === "pending_review" ||
+      paidLeaveReportStatus === "pending_review"
+    )
+      return "pending";
+    if (craReportStatus === "rejected" || paidLeaveReportStatus === "rejected")
+      return "refused";
+    return "empty";
+  }, [craReportStatus, paidLeaveReportStatus]);
 
+  const overallRejectionReason = useMemo(() => {
+    if (
+      craReportStatus === "rejected" &&
+      craReport &&
+      craReport.rejection_reason
+    )
+      return craReport.rejection_reason;
+    if (
+      paidLeaveReportStatus === "rejected" &&
+      paidLeaveReport &&
+      paidLeaveReport.rejection_reason
+    )
+      return paidLeaveReport.rejection_reason;
+    return null;
+  }, [craReportStatus, paidLeaveReportStatus, craReport, paidLeaveReport]);
+
+  // Déterminer si les activités CRA sont éditables
+  const isCraEditable = useMemo(() => {
+    // CRA est éditable si:
+    // 1. La prop globale 'readOnly' est false
+    // 2. Le statut du rapport CRA est 'empty', 'draft', ou 'rejected'
+    return (
+      !readOnly && ["empty", "draft", "rejected"].includes(craReportStatus)
+    );
+  }, [craReportStatus, readOnly]);
+
+  // Déterminer si les activités de congés payés sont éditables
   const isPaidLeaveEditable = useMemo(() => {
-    return ["empty", "draft", "rejected"].includes(paidLeaveReportStatus);
-  }, [paidLeaveReportStatus]);
+    // Congé Payé est éditable si:
+    // 1. La prop globale 'readOnly' est false
+    // 2. Le statut du rapport de Congé Payé est 'empty', 'draft', ou 'rejected'
+    return (
+      !readOnly &&
+      ["empty", "draft", "rejected"].includes(paidLeaveReportStatus)
+    );
+  }, [paidLeaveReportStatus, readOnly]);
 
   const isAnyReportEditable = useMemo(() => {
     return isCraEditable || isPaidLeaveEditable;
   }, [isCraEditable, isPaidLeaveEditable]);
+
+  console.log("[CraBoard] Calculated isCraEditable:", isCraEditable);
+  console.log(
+    "[CraBoard] Calculated isPaidLeaveEditable:",
+    isPaidLeaveEditable
+  );
+  console.log("[CraBoard] Global readOnly prop:", readOnly);
+  console.log("[CraBoard] Current Report Status (CRA):", craReportStatus);
+  console.log(
+    "[CraBoard] Current Report Status (Paid Leave):",
+    paidLeaveReportStatus
+  );
 
   const daysInMonth = useMemo(() => {
     const start = startOfMonth(currentMonth);
@@ -273,8 +358,9 @@ export default function CraBoard({
   const handleSaveActivity = useCallback(
     async (activityData) => {
       if (readOnly) {
+        // Vérifie la prop globale readOnly en premier
         localShowMessage(
-          "Opération de sauvegarde désactivée en mode lecture seule.",
+          "Opération de sauvegarde désactivée en mode lecture seule. Vos modifications ne seront pas enregistrées.",
           "info"
         );
         return;
@@ -285,16 +371,17 @@ export default function CraBoard({
       const isPaidLeaveActivity =
         String(activityData.type_activite) === String(paidLeaveTypeId);
 
+      // Vérifier l'éditabilité spécifique au type d'activité
       if (isCRAActivity && !isCraEditable) {
         localShowMessage(
-          "Impossible de sauvegarder cette activité. Le rapport CRA est déjà en attente de révision, validé ou finalisé.",
+          "Impossible de sauvegarder cette activité. Le rapport CRA est verrouillé.",
           "info"
         );
         return;
       }
       if (isPaidLeaveActivity && !isPaidLeaveEditable) {
         localShowMessage(
-          "Impossible de sauvegarder cette activité. Le rapport de congés payés est déjà en attente de révision, validé ou finalisé.",
+          "Impossible de sauvegarder cette activité. Le rapport de congés payés est verrouillé.",
           "info"
         );
         return;
@@ -315,7 +402,7 @@ export default function CraBoard({
           );
           if (!originalActivity) {
             localShowMessage(
-              "Activité originale non trouvée pour la mise à jour.",
+              "Activité originale non trouvée pour la mise à jour. Veuillez rafraîchir la page.",
               "error"
             );
             return;
@@ -362,7 +449,7 @@ export default function CraBoard({
               "Aucun jour sélectionné pour la création d'activité."
             );
             localShowMessage(
-              "Aucun jour sélectionné pour la création d'activité.",
+              "Aucun jour sélectionné pour la création d'activité. Veuillez sélectionner au moins un jour.",
               "error"
             );
             return;
@@ -400,7 +487,7 @@ export default function CraBoard({
               !activityData.override_non_working_day
             ) {
               console.warn(
-                `Tentative d'ajout d'activité normale un jour non ouvré (multi-sélection): ${format(
+                `Tentative d'ajout d'activité normale un jour non ouvrable (multi-sélection): ${format(
                   day,
                   "yyyy-MM-dd"
                 )}. Ignoré.`
@@ -439,7 +526,7 @@ export default function CraBoard({
             );
           } else if (errorCount > 0) {
             localShowMessage(
-              "Échec de l'ajout de toutes les activités sélectionnées.",
+              "Échec de l'ajout de toutes les activités sélectionnées. Veuillez vérifier les jours non ouvrés ou les limites de temps.",
               "error"
             );
           }
@@ -449,10 +536,14 @@ export default function CraBoard({
           "CraBoard: Erreur lors de la sauvegarde de l'activité:",
           error
         );
-        localShowMessage(`Échec de la sauvegarde : ${error.message}`, "error");
+        localShowMessage(
+          `Échec de la sauvegarde : ${error.message}. Veuillez réessayer.`,
+          "error"
+        );
       } finally {
         handleCloseActivityModal();
         if (!readOnly && fetchActivitiesForMonth) {
+          // Utilise la prop globale readOnly ici
           fetchActivitiesForMonth(currentMonth);
         }
       }
@@ -462,7 +553,7 @@ export default function CraBoard({
       onUpdateActivity,
       localShowMessage,
       userId,
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       paidLeaveTypeId,
       isCraEditable,
       isPaidLeaveEditable,
@@ -487,8 +578,9 @@ export default function CraBoard({
       const activity = activityToDel; // Utilise l'activité passée directement
 
       if (readOnly) {
+        // Vérifie la prop globale readOnly en premier
         localShowMessage(
-          "Opération de suppression désactivée en mode lecture seule.",
+          "Opération de suppression désactivée en mode lecture seule. Vous ne pouvez pas supprimer d'activités.",
           "info"
         );
         return;
@@ -497,15 +589,11 @@ export default function CraBoard({
       if (!activity) {
         console.error("Aucune activité à supprimer fournie.");
         localShowMessage(
-          "Aucune activité sélectionnée pour la suppression.",
+          "Aucune activité n'a été sélectionnée pour la suppression. Veuillez réessayer.",
           "error"
         );
         return;
       }
-
-      const isActivityStatusEditable = ["draft", "rejected"].includes(
-        activity.status
-      );
 
       const isCRAActivityType =
         String(activity.type_activite) !== String(paidLeaveTypeId);
@@ -527,16 +615,18 @@ export default function CraBoard({
         return;
       }
 
-      if (!isActivityStatusEditable) {
+      // Re-vérifier le statut de l'activité elle-même (doit être brouillon ou rejeté pour être supprimable)
+      if (!["draft", "rejected"].includes(activity.status)) {
         localShowMessage(
           `Activité verrouillée : statut '${activity.status}'. Suppression impossible.`,
           "info"
         );
         return;
       }
+
       if (String(activity.user_id) !== String(userId)) {
         localShowMessage(
-          "Vous ne pouvez pas supprimer les activités d'autres utilisateurs.",
+          "Vous ne pouvez pas supprimer les activités d'autres utilisateurs. Veuillez contacter un administrateur.",
           "error"
         );
         return;
@@ -553,6 +643,7 @@ export default function CraBoard({
         await onDeleteActivity(activity.id);
         localShowMessage("Activité supprimée avec succès !", "success");
         if (!readOnly && fetchActivitiesForMonth) {
+          // Utilise la prop globale readOnly ici
           fetchActivitiesForMonth(currentMonth);
         }
       } catch (error) {
@@ -560,7 +651,10 @@ export default function CraBoard({
           "CraBoard: Erreur lors de la suppression de l'activité:",
           error
         );
-        localShowMessage(`Échec de la suppression : ${error.message}`, "error");
+        localShowMessage(
+          `Échec de la suppression : ${error.message}. Veuillez réessayer.`,
+          "error"
+        );
       } finally {
         setActivityToDelete(null); // Réinitialise l'activité à supprimer
         deletionTimeoutRef.current = setTimeout(() => {
@@ -573,7 +667,7 @@ export default function CraBoard({
       localShowMessage,
       fetchActivitiesForMonth,
       currentMonth,
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       paidLeaveTypeId,
       userId,
       isCraEditable,
@@ -598,8 +692,9 @@ export default function CraBoard({
       );
 
       if (readOnly) {
+        // Vérifie la prop globale readOnly en premier
         localShowMessage(
-          "Opération de suppression d'activité désactivée en mode lecture seule.",
+          "Opération de suppression d'activité désactivée en mode lecture seule. Vous ne pouvez pas supprimer d'activités.",
           "info"
         );
         return;
@@ -610,13 +705,12 @@ export default function CraBoard({
       );
       if (!activity) {
         console.error("Activité non trouvée pour la suppression:", activityId);
-        localShowMessage("Activité non trouvée pour la suppression.", "error");
+        localShowMessage(
+          "Activité non trouvée pour la suppression. Elle a peut-être déjà été supprimée.",
+          "error"
+        );
         return;
       }
-
-      const isActivityStatusEditable = ["draft", "rejected"].includes(
-        activity.status
-      );
 
       const isCRAActivityType =
         String(activity.type_activite) !== String(paidLeaveTypeId);
@@ -638,16 +732,18 @@ export default function CraBoard({
         return;
       }
 
-      if (!isActivityStatusEditable) {
+      // Re-vérifier le statut de l'activité elle-même
+      if (!["draft", "rejected"].includes(activity.status)) {
         localShowMessage(
           `Activité verrouillée : statut '${activity.status}'. Suppression impossible.`,
           "info"
         );
         return;
       }
+
       if (String(activity.user_id) !== String(userId)) {
         localShowMessage(
-          "Vous ne pouvez pas supprimer les activités d'autres utilisateurs.",
+          "Vous ne pouvez pas supprimer les activités d'autres utilisateurs. Veuillez contacter un administrateur.",
           "error"
         );
         return;
@@ -657,7 +753,7 @@ export default function CraBoard({
       confirmDeleteActivity(activity);
     },
     [
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       activities,
       localShowMessage,
       paidLeaveTypeId,
@@ -704,8 +800,9 @@ export default function CraBoard({
       );
 
       if (readOnly) {
+        // Vérifie la prop globale readOnly en premier
         localShowMessage(
-          "La modification d'activité est désactivée en mode lecture seule.",
+          "La modification d'activité est désactivée en mode lecture seule. Vous ne pouvez pas ajouter ou modifier d'activités.",
           "info"
         );
         return;
@@ -726,10 +823,7 @@ export default function CraBoard({
 
       if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
         const activity = existingActivitiesForDay[0];
-        const isActivityStatusEditable = ["draft", "rejected"].includes(
-          activity.status
-        );
-
+        // Vérifier les flags d'éditabilité spécifiques
         const isCRAActivityType =
           String(activity.type_activite) !== String(paidLeaveTypeId);
         const isPaidLeaveActivityType =
@@ -750,16 +844,18 @@ export default function CraBoard({
           return;
         }
 
-        if (!isActivityStatusEditable) {
+        // Re-vérifier le statut de l'activité elle-même (doit être brouillon ou rejeté pour être modifiable)
+        if (!["draft", "rejected"].includes(activity.status)) {
           localShowMessage(
             `Activité verrouillée : statut '${activity.status}'. Modification impossible.`,
             "info"
           );
           return;
         }
+
         if (String(activity.user_id) !== String(userId)) {
           localShowMessage(
-            "Vous ne pouvez pas modifier les activités d'autres utilisateurs.",
+            "Vous ne pouvez pas modifier les activités d'autres utilisateurs. Veuillez contacter un administrateur.",
             "error"
           );
           return;
@@ -776,17 +872,18 @@ export default function CraBoard({
           )} (édition)`
         );
       } else {
-        // Vérifier la limite de 1 jour avant d'ouvrir la modale pour un NOUVEL ajout
         if (totalTimeForDay >= 1) {
           localShowMessage(
-            "Vous avez déjà atteint la limite maximale de 1 jour pour cette date. Veuillez modifier une activité existante ou en supprimer une pour en ajouter une nouvelle.",
+            "Vous avez déjà atteint la limite de 1 jour pour cette date. Veuillez modifier une activité existante ou en supprimer une pour ajouter une nouvelle.",
             "warning"
           );
           return;
         }
+        // Vérifier si N'IMPORTE QUEL type d'activité peut être ajouté
+        // Si les deux sont non éditables, on bloque l'ajout de nouvelles activités.
         if (!isCraEditable && !isPaidLeaveEditable) {
           localShowMessage(
-            "Impossible d'ajouter des activités. Les rapports CRA et de congés payés sont déjà en attente de révision, validés ou finalisés.",
+            "Impossible d'ajouter des activités. Les rapports CRA et de congés payés sont verrouillés.",
             "info"
           );
           return;
@@ -806,7 +903,7 @@ export default function CraBoard({
     [
       localShowMessage,
       activitiesByDay,
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       paidLeaveTypeId,
       isCraEditable,
       isPaidLeaveEditable,
@@ -846,8 +943,9 @@ export default function CraBoard({
       );
 
       if (readOnly) {
+        // Vérifie la prop globale readOnly en premier
         localShowMessage(
-          "La modification d'activité est désactivée en mode lecture seule.",
+          "La modification d'activité est désactivée en mode lecture seule. Vous ne pouvez pas modifier ou supprimer d'activités.",
           "info"
         );
         return;
@@ -861,7 +959,7 @@ export default function CraBoard({
           `[CraBoard - DEBUG] handleActivityClick: L'activité ID ${activity.id} non trouvée dans l'état actuel, annulation de l'ouverture du formulaire.`
         );
         localShowMessage(
-          "L'activité n'existe plus ou a été supprimée.",
+          "L'activité n'existe plus ou a été supprimée. Veuillez rafraîchir la page.",
           "error"
         );
         setEditingActivity(null);
@@ -870,15 +968,12 @@ export default function CraBoard({
 
       if (String(currentActivity.user_id) !== String(userId)) {
         localShowMessage(
-          "Vous ne pouvez pas modifier ou supprimer les activités d'autres utilisateurs.",
+          "Vous ne pouvez pas modifier ou supprimer les activités d'autres utilisateurs. Veuillez contacter un administrateur.",
           "error"
         );
         return;
       }
-      const isActivityStatusEditable = ["draft", "rejected"].includes(
-        currentActivity.status
-      );
-
+      // Vérifier les flags d'éditabilité spécifiques
       const isCRAActivityType =
         String(currentActivity.type_activite) !== String(paidLeaveTypeId);
       const isPaidLeaveActivityType =
@@ -886,22 +981,23 @@ export default function CraBoard({
 
       if (isCRAActivityType && !isCraEditable) {
         localShowMessage(
-          `Activité CRA verrouillée : le rapport est au statut '${craReportStatus}'. Modification ou suppression impossible.`,
+          `Activité CRA verrouillée : le rapport est au statut '${craReportStatus}'. Modification impossible.`,
           "info"
         );
         return;
       }
       if (isPaidLeaveActivityType && !isPaidLeaveEditable) {
         localShowMessage(
-          `Activité de congés payés verrouillée : le rapport est au statut '${paidLeaveReportStatus}'. Modification ou suppression impossible.`,
+          `Activité de congés payés verrouillée : le rapport est au statut '${paidLeaveReportStatus}'. Modification impossible.`,
           "info"
         );
         return;
       }
 
-      if (!isActivityStatusEditable) {
+      // Re-vérifier le statut de l'activité elle-même
+      if (!["draft", "rejected"].includes(currentActivity.status)) {
         localShowMessage(
-          `Activité verrouillée : statut '${currentActivity.status}'. Modification ou suppression impossible.`,
+          `Activité verrouillée : statut '${currentActivity.status}'. Modification impossible.`,
           "info"
         );
         return;
@@ -916,7 +1012,7 @@ export default function CraBoard({
           currentActivity.date_activite
         );
         localShowMessage(
-          "Erreur : Date d'activité existante invalide. Impossible de modifier.",
+          "Erreur : Date d'activité existante invalide. Impossible de modifier. Veuillez contacter le support.",
           "error"
         );
         return;
@@ -932,7 +1028,7 @@ export default function CraBoard({
     [
       localShowMessage,
       userId,
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       paidLeaveTypeId,
       isCraEditable,
       isPaidLeaveEditable,
@@ -960,7 +1056,7 @@ export default function CraBoard({
       // Si le mode multi-sélection est actif, empêcher le glisser-déposer individuel
       if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
         localShowMessage(
-          "Le glisser-déposer d'activité est désactivé en mode de sélection multiple.",
+          "Le glisser-déposer d'activité est désactivé en mode de sélection multiple. Veuillez changer de mode.",
           "info"
         );
         e.preventDefault();
@@ -971,32 +1067,53 @@ export default function CraBoard({
       setTempSelectedDays([]);
       setDragStartDayForSelection(null);
 
+      // Vérifier l'éditabilité avant de permettre le drag
+      const isCRAActivityType =
+        String(activity.type_activite) !== String(paidLeaveTypeId);
+      const isPaidLeaveActivityType =
+        String(activity.type_activite) === String(paidLeaveTypeId);
+
       if (
-        !readOnly &&
-        ["draft", "rejected"].includes(activity.status) &&
-        String(activity.user_id) === String(userId)
+        readOnly || // Si la prop globale readOnly est vraie
+        (isCRAActivityType && !isCraEditable) || // Ou si c'est une activité CRA et le CRA n'est pas éditable
+        (isPaidLeaveActivityType && !isPaidLeaveEditable) || // Ou si c'est une activité Congé Payé et le Congé Payé n'est pas éditable
+        String(activity.user_id) !== String(userId) // Ou si l'activité n'appartient pas à l'utilisateur
       ) {
-        setDraggedActivity(activity);
-        setIsDraggingActivity(true);
-        e.dataTransfer.setData("activityId", activity.id);
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.dropEffect = "move";
-        console.log("Glisser-déposer démarré pour l'activité:", activity.id);
-      } else {
         e.preventDefault();
         localShowMessage(
-          "Impossible de glisser-déposer cette activité.",
+          "Impossible de glisser-déposer cette activité. Le calendrier est verrouillé ou vous n'avez pas les permissions.",
           "info"
         );
+        return;
       }
+
+      // Re-vérifier le statut de l'activité elle-même (doit être brouillon ou rejeté pour être déplaçable)
+      if (!["draft", "rejected"].includes(activity.status)) {
+        e.preventDefault();
+        localShowMessage(
+          `Activité verrouillée : statut '${activity.status}'. Déplacement impossible.`,
+          "info"
+        );
+        return;
+      }
+
+      setDraggedActivity(activity);
+      setIsDraggingActivity(true);
+      e.dataTransfer.setData("activityId", activity.id);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.dropEffect = "move";
+      console.log("Glisser-déposer démarré pour l'activité:", activity.id);
     },
     [
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       userId,
       localShowMessage,
       setIsDraggingMultiSelect,
       multiSelectType,
       setTempSelectedDays,
+      paidLeaveTypeId,
+      isCraEditable,
+      isPaidLeaveEditable,
     ]
   );
 
@@ -1022,6 +1139,20 @@ export default function CraBoard({
 
         let isDropAllowed = false;
 
+        // Vérifier l'éditabilité du rapport pour le type d'activité glissée
+        const isCRAActivityType =
+          String(draggedActivity.type_activite) !== String(paidLeaveTypeId);
+
+        if (
+          readOnly || // Si la prop globale readOnly est vraie
+          (isCRAActivityType && !isCraEditable) || // Ou si c'est une activité CRA et le CRA n'est pas éditable
+          (isDraggedActivityPaidLeave && !isPaidLeaveEditable) // Ou si c'est une activité Congé Payé et le Congé Payé n'est pas éditable
+        ) {
+          setIsValidDropTarget(false);
+          e.dataTransfer.dropEffect = "none";
+          return;
+        }
+
         if (isTargetNonWorkingDay) {
           isDropAllowed =
             isDraggedActivityPaidLeave &&
@@ -1044,6 +1175,9 @@ export default function CraBoard({
       paidLeaveTypeId,
       currentMonth,
       multiSelectType,
+      readOnly, // Utilise la prop globale readOnly
+      isCraEditable,
+      isPaidLeaveEditable,
     ]
   );
 
@@ -1074,24 +1208,42 @@ export default function CraBoard({
       );
 
       if (!activityToMove) {
-        localShowMessage("Activité à déplacer non trouvée.", "error");
+        localShowMessage(
+          "Activité à déplacer non trouvée. Veuillez réessayer.",
+          "error"
+        );
+        return;
+      }
+
+      const isCRAActivityType =
+        String(activityToMove.type_activite) !== String(paidLeaveTypeId);
+      const isPaidLeaveActivityType =
+        String(activityToMove.type_activite) === String(paidLeaveTypeId);
+
+      if (
+        readOnly || // Si la prop globale readOnly est vraie
+        (isCRAActivityType && !isCraEditable) || // Ou si c'est une activité CRA et le CRA n'est pas éditable
+        (isPaidLeaveActivityType && !isPaidLeaveEditable) // Ou si c'est une activité Congé Payé et le Congé Payé n'est pas éditable
+      ) {
+        localShowMessage(
+          "Impossible de déplacer cette activité. Le calendrier est verrouillé ou vous n'avez pas les permissions.",
+          "info"
+        );
         return;
       }
 
       const isTargetNonWorkingDay = isNonWorkingDay(targetDay);
-      const isDraggedActivityPaidLeave =
-        String(activityToMove.type_activite) === String(paidLeaveTypeId);
 
       let newOverrideNonWorkingDay = activityToMove.override_non_working_day;
 
       let isDropAllowed = false;
       if (isTargetNonWorkingDay) {
         isDropAllowed =
-          isDraggedActivityPaidLeave && activityToMove.override_non_working_day;
+          isPaidLeaveActivityType && activityToMove.override_non_working_day;
       } else {
         isDropAllowed = true;
         if (
-          isDraggedActivityPaidLeave &&
+          isPaidLeaveActivityType &&
           activityToMove.override_non_working_day
         ) {
           newOverrideNonWorkingDay = false;
@@ -1100,37 +1252,26 @@ export default function CraBoard({
 
       if (!isSameMonth(targetDay, currentMonth)) {
         localShowMessage(
-          "Impossible de déplacer l'activité ici (mois incorrect).",
+          "Impossible de déplacer l'activité ici car le mois est incorrect. Veuillez la déposer dans le mois affiché.",
           "warning"
         );
         return;
       }
 
-      const isCRAActivityType = !isDraggedActivityPaidLeave;
-      if (isCRAActivityType && !isCraEditable) {
-        localShowMessage(
-          "Impossible de déplacer cette activité CRA. Le rapport est verrouillé.",
-          "info"
-        );
-        return;
-      }
-      if (isDraggedActivityPaidLeave && !isPaidLeaveEditable) {
-        localShowMessage(
-          "Impossible de déplacer ce congé. Le rapport de congés est verrouillé.",
-          "info"
-        );
-        return;
-      }
+      // Re-vérifier le statut de l'activité elle-même (doit être brouillon ou rejeté pour être déplaçable)
       if (!["draft", "rejected"].includes(activityToMove.status)) {
         localShowMessage(
-          "Impossible de déplacer cette activité. Son statut ne le permet pas.",
+          "Impossible de déplacer cette activité. Son statut ne le permet pas (doit être 'brouillon' ou 'rejeté').",
           "info"
         );
         return;
       }
 
       if (isSameDay(new Date(activityToMove.date_activite), targetDay)) {
-        localShowMessage("L'activité est déjà à cette date.", "info");
+        localShowMessage(
+          "L'activité est déjà à cette date. Aucun déplacement nécessaire.",
+          "info"
+        );
         return;
       }
 
@@ -1165,17 +1306,20 @@ export default function CraBoard({
         };
         await onUpdateActivity(activityToMove.id, updatedActivityData);
         localShowMessage("Activité déplacée avec succès !", "success");
+        if (!readOnly && fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
       } else {
         if (isTargetNonWorkingDay) {
           if (
-            isDraggedActivityPaidLeave &&
+            isPaidLeaveActivityType &&
             !activityToMove.override_non_working_day
           ) {
             localShowMessage(
-              "Ce congé ne peut pas être déplacé vers un week-end ou un jour férié sans dérogation.",
+              "Ce congé ne peut pas être déplacé vers un week-end ou un jour férié sans dérogation. Veuillez activer la dérogation.",
               "warning"
             );
-          } else if (!isDraggedActivityPaidLeave) {
+          } else if (!isCRAActivityType) {
             localShowMessage(
               "Impossible de déplacer une activité normale vers un week-end ou un jour férié.",
               "warning"
@@ -1195,6 +1339,7 @@ export default function CraBoard({
       isPaidLeaveEditable,
       multiSelectType,
       activitiesByDay,
+      readOnly, // Utilise la prop globale readOnly
     ]
   );
 
@@ -1206,22 +1351,27 @@ export default function CraBoard({
    */
   const handleMouseDownMultiSelect = useCallback(
     (e, day) => {
-      // Le mode multi-sélection est toujours actif ('activity' ou 'paid_leave')
-      // Empêcher la sélection multiple si le mode lecture seule est actif, ou si un glisser-déposer/suppression est en cours
+      // Bloquer si la prop globale readOnly est vraie, ou si un glisser-déposer/suppression est en cours
       if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
-        console.log(
-          "[CraBoard - handleMouseDownMultiSelect] Bloqué par le mode lecture seule, glisser-déposer ou suppression en cours."
+        localShowMessage(
+          "Sélection multiple désactivée. Le calendrier est en lecture seule ou une opération est en cours.",
+          "info"
         );
         return;
       }
-      // Empêcher la sélection multiple si aucun des rapports n'est modifiable
-      if (!isCraEditable && !isPaidLeaveEditable) {
+
+      // Vérifier l'éditabilité spécifique basée sur le mode de sélection multiple actuel
+      if (multiSelectType === "activity" && !isCraEditable) {
         localShowMessage(
-          "Impossible de sélectionner des jours, les rapports sont verrouillés.",
+          "Impossible de démarrer une sélection multiple d'activité. Le rapport CRA est verrouillé.",
           "info"
         );
-        console.log(
-          "[CraBoard - handleMouseDownMultiSelect] Bloqué par des rapports non éditables."
+        return;
+      }
+      if (multiSelectType === "paid_leave" && !isPaidLeaveEditable) {
+        localShowMessage(
+          "Impossible de démarrer une sélection multiple de congés payés. Le rapport de congés payés est verrouillé.",
+          "info"
         );
         return;
       }
@@ -1229,7 +1379,7 @@ export default function CraBoard({
       // Autoriser le démarrage de la sélection multiple UNIQUEMENT si le jour est un jour ouvré (sauf si c'est le mode congé payé)
       if (multiSelectType === "activity" && isNonWorkingDay(day)) {
         localShowMessage(
-          "Impossible de démarrer une sélection multiple d'activité sur un week-end ou jour férié.",
+          "Impossible de démarrer une sélection multiple d'activité sur un week-end ou jour férié. Changez de mode ou choisissez un jour ouvré.",
           "info"
         );
         console.log(
@@ -1268,7 +1418,7 @@ export default function CraBoard({
       }
     },
     [
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       isDraggingActivity,
       isDeletingActivityFlag,
       isCraEditable,
@@ -1293,7 +1443,7 @@ export default function CraBoard({
       if (!isDraggingMultiSelect || !dragStartDayForSelection) {
         return;
       }
-      // Empêcher la sélection multiple si le mode lecture seule est actif, ou si un glisser-déposer/suppression est en cours
+      // Empêcher la sélection multiple si la prop globale readOnly est vraie, ou si un glisser-déposer/suppression est en cours
       if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
         return;
       }
@@ -1316,29 +1466,28 @@ export default function CraBoard({
       const newTempSelectedDays = daysInMonth
         .slice(start, end + 1)
         .filter((d) => {
-          const isDaySelectable = isAnyReportEditable;
+          // Vérifier si le type de rapport spécifique est éditable pour ce mode
+          const isCurrentModeEditable =
+            multiSelectType === "paid_leave"
+              ? isPaidLeaveEditable
+              : isCraEditable;
+
+          if (!isCurrentModeEditable) {
+            return false; // Si le mode actuel n'est pas éditable, ne pas sélectionner
+          }
+
+          const dayKey = format(d, "yyyy-MM-dd");
+          const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
+          const existingTimeOnDay = existingActivitiesOnDay.reduce(
+            (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
+            0
+          );
+
           if (multiSelectType === "paid_leave") {
-            // Pour les congés payés, nous permettons la sélection sur n'importe quel jour,
-            // mais nous vérifions si le jour est déjà plein.
-            const dayKey = format(d, "yyyy-MM-dd");
-            const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
-            const existingTimeOnDay = existingActivitiesOnDay.reduce(
-              (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-              0
-            );
-            return isDaySelectable && existingTimeOnDay < 1; // Permettre si < 1 jour
+            return existingTimeOnDay < 1; // Permettre si < 1 jour
           } else {
             // 'activity' mode
-            // Pour les activités, nous vérifions si le jour est ouvré ET s'il n'est pas plein.
-            const dayKey = format(d, "yyyy-MM-dd");
-            const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
-            const existingTimeOnDay = existingActivitiesOnDay.reduce(
-              (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-              0
-            );
-            return (
-              !isNonWorkingDay(d) && isDaySelectable && existingTimeOnDay < 1
-            ); // Permettre si < 1 jour
+            return !isNonWorkingDay(d) && existingTimeOnDay < 1; // Permettre si ouvré et < 1 jour
           }
         });
 
@@ -1348,14 +1497,15 @@ export default function CraBoard({
       isDraggingMultiSelect,
       dragStartDayForSelection,
       daysInMonth,
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       isDraggingActivity,
       isDeletingActivityFlag,
       isNonWorkingDay,
-      isAnyReportEditable,
       multiSelectType,
       setTempSelectedDays,
       activitiesByDay,
+      isPaidLeaveEditable, // Ajouté pour la vérification d'éditabilité du mode
+      isCraEditable, // Ajouté pour la vérification d'éditabilité du mode
     ]
   );
 
@@ -1369,8 +1519,27 @@ export default function CraBoard({
       setIsDraggingMultiSelect(false);
       setDragStartDayForSelection(null);
 
+      // Bloquer si la prop globale readOnly est vraie
+      if (readOnly) {
+        localShowMessage(
+          "Sélection multiple désactivée. Le calendrier est en lecture seule.",
+          "info"
+        );
+        setTempSelectedDays([]); // Effacer la sélection temporaire
+        return;
+      }
+
       if (tempSelectedDays.length > 0) {
         if (multiSelectType === "paid_leave") {
+          if (!isPaidLeaveEditable) {
+            // Re-vérification finale
+            localShowMessage(
+              "Impossible d'ajouter des congés payés. Le rapport de congés est verrouillé.",
+              "info"
+            );
+            setTempSelectedDays([]);
+            return;
+          }
           const paidLeaveActivityData = {
             name: "Congé Payé",
             temps_passe: 1, // Pour les congés en multi-sélection, on ajoute 1 jour
@@ -1432,13 +1601,25 @@ export default function CraBoard({
               errorCount > 0 ? "warning" : "success"
             );
           } else if (errorCount > 0) {
-            localShowMessage("Échec de l'ajout des congés payés.", "error");
+            localShowMessage(
+              "Échec de l'ajout des congés payés. Veuillez vérifier les jours sélectionnés.",
+              "error"
+            );
           }
           if (fetchActivitiesForMonth) {
             fetchActivitiesForMonth(currentMonth);
           }
           setTempSelectedDays([]);
         } else if (multiSelectType === "activity") {
+          if (!isCraEditable) {
+            // Re-vérification finale
+            localShowMessage(
+              "Impossible d'ajouter des activités CRA. Le rapport CRA est verrouillé.",
+              "info"
+            );
+            setTempSelectedDays([]);
+            return;
+          }
           // Pour les activités en multi-sélection, on ouvre la modale avec les jours pré-sélectionnés
           setEditingActivity(null);
           setSelectedDate(null);
@@ -1466,21 +1647,30 @@ export default function CraBoard({
     setIsModalOpen,
     setTempSelectedDays,
     activitiesByDay,
+    isPaidLeaveEditable,
+    isCraEditable,
+    readOnly, // Utilise la prop globale readOnly
   ]);
 
   // Définir confirmResetMonth EN PREMIER
   const confirmResetMonth = useCallback(async () => {
     if (readOnly) {
+      // Vérifie la prop globale readOnly en premier
       localShowMessage(
-        "Opération de réinitialisation désactivée en mode lecture seule.",
+        "Opération de réinitialisation désactivée en mode lecture seule. Vous ne pouvez pas réinitialiser le mois.",
         "info"
       );
       return;
     }
     const activitiesToReset = activitiesForCurrentMonth.filter(
       (activity) =>
-        activity.status === "draft" || activity.status === "rejected"
+        (activity.status === "draft" || activity.status === "rejected") &&
+        ((String(activity.type_activite) !== String(paidLeaveTypeId) &&
+          isCraEditable) ||
+          (String(activity.type_activite) === String(paidLeaveTypeId) &&
+            isPaidLeaveEditable))
     );
+
     if (activitiesToReset.length === 0) {
       localShowMessage(
         `Aucune activité brouillon ou rejetée à réinitialiser pour ${
@@ -1526,27 +1716,30 @@ export default function CraBoard({
     localShowMessage,
     currentMonth,
     fetchActivitiesForMonth,
-    readOnly,
+    readOnly, // Utilise la prop globale readOnly
+    paidLeaveTypeId,
+    isCraEditable,
+    isPaidLeaveEditable,
     setIsDeletingActivityFlag,
   ]);
 
   // Définir requestResetMonth EN SECOND, après confirmResetMonth
   const requestResetMonth = useCallback(() => {
     if (readOnly) {
+      // Vérifie la prop globale readOnly en premier
       localShowMessage(
         "Opération de réinitialisation désactivée en mode lecture seule.",
         "info"
       );
       return;
     }
+    // Vérifier si au moins un des rapports est en statut non-éditable pour la réinitialisation
     if (
-      ["validated", "pending_review", "finalized"].includes(craReportStatus) ||
-      ["validated", "pending_review", "finalized"].includes(
-        paidLeaveReportStatus
-      )
+      !isCraEditable &&
+      !isPaidLeaveEditable // Si AUCUN n'est éditable, alors on bloque
     ) {
       localShowMessage(
-        "Impossible de réinitialiser le mois. Un rapport (CRA ou Congé) est déjà validé, en attente de révision ou finalisé. Seul un administrateur peut annuler ces statuts.",
+        "Impossible de réinitialiser le mois. Les rapports CRA et de congés payés sont déjà validés, en attente de révision ou finalisés. Seul un administrateur peut annuler ces statuts.",
         "info"
       );
       return;
@@ -1554,16 +1747,17 @@ export default function CraBoard({
     // Appelle directement confirmResetMonth sans confirmation
     confirmResetMonth();
   }, [
-    craReportStatus,
-    paidLeaveReportStatus,
+    isCraEditable,
+    isPaidLeaveEditable,
     localShowMessage,
-    readOnly,
+    readOnly, // Utilise la prop globale readOnly
     confirmResetMonth,
   ]);
 
   const sendActivities = useCallback(
     async (activitiesToSubmit, reportType) => {
       if (readOnly) {
+        // Vérifie la prop globale readOnly en premier
         localShowMessage(
           `L'opération de soumission pour les ${
             reportType === "cra" ? "CRAs" : "Congés"
@@ -1608,7 +1802,11 @@ export default function CraBoard({
           r.report_type === reportType
       );
 
-      if (existingReport && existingReport.status !== "rejected") {
+      // Permettre la soumission si le rapport est 'draft' ou 'rejected'
+      if (
+        existingReport &&
+        !["draft", "rejected"].includes(existingReport.status)
+      ) {
         localShowMessage(
           `Un rapport "${reportType}" est déjà au statut "${existingReport.status}". Impossible de soumettre à nouveau.`,
           "warning"
@@ -1660,13 +1858,13 @@ export default function CraBoard({
           error
         );
         localShowMessage(
-          `Échec de la soumission du rapport ${reportType} : ${error.message}`,
+          `Échec de la soumission du rapport ${reportType} : ${error.message}. Veuillez réessayer.`,
           "error"
         );
       }
     },
     [
-      readOnly,
+      readOnly, // Utilise la prop globale readOnly
       localShowMessage,
       isCraEditable,
       isPaidLeaveEditable,
@@ -1744,9 +1942,23 @@ export default function CraBoard({
 
   // Fonction pour basculer entre les modes de sélection multiple (uniquement 'activity' et 'paid_leave')
   const cycleMultiSelectMode = useCallback(() => {
-    if (readOnly) return;
+    // Le bouton de changement de mode est désactivé si la prop globale readOnly est vraie.
+    if (readOnly) {
+      localShowMessage(
+        "Le changement de mode de sélection est désactivé lorsque le calendrier est en lecture seule.",
+        "info"
+      );
+      return;
+    }
+
     setMultiSelectType((prevType) => {
       const newType = prevType === "activity" ? "paid_leave" : "activity";
+      localShowMessage(
+        `Mode de sélection multiple: ${
+          newType === "activity" ? "Activité" : "Congés Payés"
+        } (cliquez pour basculer)`,
+        "info"
+      );
       console.log(
         "[CraBoard] cycleMultiSelectMode a été appelée. Nouveau mode:",
         newType
@@ -1760,97 +1972,15 @@ export default function CraBoard({
     setIsDraggingMultiSelect(false);
     setDragStartDayForSelection(null);
   }, [
-    readOnly,
+    readOnly, // Utilise la prop globale readOnly
     setTempSelectedDays,
     setIsModalOpen,
     setEditingActivity,
     setSelectedDate,
     setIsDraggingMultiSelect,
     setDragStartDayForSelection,
+    localShowMessage,
   ]);
-
-  // --- 5. Effets secondaires (useEffect) ---
-
-  useEffect(() => {
-    if (
-      propCurrentMonth instanceof Date &&
-      isValid(propCurrentMonth) &&
-      !isSameMonth(currentMonth, propCurrentMonth)
-    ) {
-      setCurrentMonth(propCurrentMonth);
-    }
-    if (isValid(currentMonth)) {
-      fetchPublicHolidays(currentMonth.getFullYear());
-    }
-  }, [propCurrentMonth, currentMonth, fetchPublicHolidays]);
-
-  useEffect(() => {
-    const handleDragEnd = () => {
-      setIsDraggingActivity(false);
-      setDraggedActivity(null);
-      setIsValidDropTarget(false);
-    };
-
-    const handleMouseUpGlobal = (e) => {
-      if (isDraggingMultiSelect) {
-        handleMouseUpMultiSelect();
-      }
-    };
-
-    document.addEventListener("dragend", handleDragEnd);
-    document.addEventListener("mouseup", handleMouseUpGlobal);
-    return () => {
-      document.removeEventListener("dragend", handleDragEnd);
-      document.removeEventListener("mouseup", handleMouseUpGlobal);
-    };
-  }, [handleMouseUpMultiSelect, isDraggingMultiSelect]);
-
-  useEffect(() => {
-    if (
-      !readOnly &&
-      fetchActivitiesForMonth &&
-      typeof fetchActivitiesForMonth === "function"
-    ) {
-      console.log(
-        "[CraBoard] useEffect: Appel de fetchActivitiesForMonth pour",
-        isValid(currentMonth)
-          ? format(currentMonth, "MMMM yyyy")
-          : "Date invalide"
-      );
-      fetchActivitiesForMonth(currentMonth);
-    }
-  }, [currentMonth, fetchActivitiesForMonth, readOnly]);
-
-  const totalWorkingDaysInMonth = useMemo(() => {
-    if (!isValid(currentMonth)) return 0;
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
-    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-    return days.filter(
-      (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
-    ).length;
-  }, [currentMonth, isPublicHoliday]);
-
-  const totalActivitiesTimeInMonth = useMemo(() => {
-    return activitiesForCurrentMonth.reduce(
-      (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
-      0
-    );
-  }, [activitiesForCurrentMonth]);
-
-  const timeDifference = useMemo(() => {
-    return (totalActivitiesTimeInMonth - totalWorkingDaysInMonth).toFixed(2);
-  }, [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]);
-
-  const hasRejectedReport = useMemo(() => {
-    return monthlyReports?.some(
-      (r) =>
-        String(r.user_id) === String(userId) &&
-        r.month === currentMonth.getMonth() + 1 &&
-        r.year === currentMonth.getFullYear() &&
-        r.status === "rejected"
-    );
-  }, [monthlyReports, userId, currentMonth]);
 
   const goToPreviousMonth = useCallback(() => {
     setCurrentMonth((prevMonth) => {
@@ -1894,24 +2024,98 @@ export default function CraBoard({
     setShowMonthlyReportPreview(false);
   }, []);
 
-  // --- Rendu du composant ---
-  if (!isValid(currentMonth)) {
-    return (
-      <div className="flex justify-center items-center h-64 text-red-600">
-        Erreur : Date de mois invalide.
-      </div>
-    );
-  }
+  // --- Effets secondaires (useEffect) ---
 
-  console.log(
-    "[CraBoard - RENDER] Type de cycleMultiSelectMode:",
-    typeof cycleMultiSelectMode
-  );
+  useEffect(() => {
+    if (
+      propCurrentMonth instanceof Date &&
+      isValid(propCurrentMonth) &&
+      !isSameMonth(currentMonth, propCurrentMonth)
+    ) {
+      setCurrentMonth(startOfMonth(propCurrentMonth));
+    }
+    if (isValid(currentMonth)) {
+      fetchPublicHolidays(currentMonth.getFullYear());
+    }
+  }, [propCurrentMonth, currentMonth, fetchPublicHolidays]);
+
+  useEffect(() => {
+    // This function is defined inside useEffect because it's only used here
+    // and depends on state variables that might change.
+    const handleDragEnd = () => {
+      setIsDraggingActivity(false);
+      setDraggedActivity(null);
+      setIsValidDropTarget(false);
+    };
+
+    const handleMouseUpGlobal = (e) => {
+      if (isDraggingMultiSelect) {
+        handleMouseUpMultiSelect();
+      }
+    };
+
+    // Add event listeners to the document for global drag/mouse up events
+    document.addEventListener("dragend", handleDragEnd);
+    document.addEventListener("mouseup", handleMouseUpGlobal);
+    // Cleanup function to remove event listeners when the component unmounts
+    return () => {
+      document.removeEventListener("dragend", handleDragEnd);
+      document.removeEventListener("mouseup", handleMouseUpGlobal);
+    };
+  }, [handleMouseUpMultiSelect, isDraggingMultiSelect]); // Dependencies for this useEffect
+
+  useEffect(() => {
+    if (
+      !readOnly && // Utilise la prop globale readOnly ici
+      fetchActivitiesForMonth &&
+      typeof fetchActivitiesForMonth === "function"
+    ) {
+      console.log(
+        "[CraBoard] useEffect: Appel de fetchActivitiesForMonth pour",
+        isValid(currentMonth)
+          ? format(currentMonth, "MMMM yyyy")
+          : "Date invalide"
+      );
+      fetchActivitiesForMonth(currentMonth);
+    }
+  }, [currentMonth, fetchActivitiesForMonth, readOnly]); // Dépendance 'readOnly' ajoutée
+
+  const totalWorkingDaysInMonth = useMemo(() => {
+    if (!isValid(currentMonth)) return 0;
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    // Assurez-vous que le résultat est toujours un nombre
+    return (
+      days.filter(
+        (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
+      ).length || 0
+    ); // Ajout de || 0
+  }, [currentMonth, isPublicHoliday]);
+
+  const totalActivitiesTimeInMonth = useMemo(() => {
+    // Assurez-vous que le résultat est toujours un nombre
+    return (
+      activitiesForCurrentMonth.reduce(
+        (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+        0
+      ) || 0
+    ); // Ajout de || 0
+  }, [activitiesForCurrentMonth]);
+
+  const timeDifference = useMemo(() => {
+    // Assurez-vous que les opérandes sont des nombres avant le calcul
+    const diff =
+      (totalActivitiesTimeInMonth || 0) - (totalWorkingDaysInMonth || 0);
+    return diff.toFixed(2);
+  }, [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]);
 
   return (
     <div
-      className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8"
       ref={craBoardRef}
+      className="flex flex-col h-full bg-white rounded-lg shadow-md p-4"
+      // Removed onMouseUp={handleDragEndActivity} and onMouseLeave={handleDragEndActivity}
+      // as the global event listeners in useEffect handle this.
     >
       <style>
         {`
@@ -1934,34 +2138,63 @@ export default function CraBoard({
           }
         `}
       </style>
-
       <h2 className="text-3xl font-extrabold text-gray-900 mb-6 text-center">
         Votre Calendrier CRA -{" "}
         {format(currentMonth, "MMMM yyyy", { locale: fr })}
       </h2>
 
+      {/* Bandeau de lecture seule */}
       {readOnly && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 mb-6 rounded-md">
-          <p className="font-semibold">Mode Lecture Seule :</p>
-          <p>
-            Ce calendrier est en mode lecture seule. Vous ne pouvez pas créer,
-            modifier ou supprimer des activités.
-          </p>
-          {hasRejectedReport && rejectionReason && (
-            <p className="mt-2 font-medium text-red-700">
-              Raison du rejet : {rejectionReason}
-            </p>
-          )}
+        <div
+          className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded relative mb-4"
+          role="alert"
+        >
+          <strong className="font-bold">Mode Lecture Seule:</strong>
+          <span className="block sm:inline ml-2">
+            Vous visualisez un CRA en lecture seule. Aucune modification n'est
+            possible.
+          </span>
+        </div>
+      )}
+      {/* Ce bandeau s'affiche si le calendrier n'est PAS globalement en lecture seule (par la prop `readOnly`),
+          MAIS qu'au moins un des rapports est validé ou en attente de révision. */}
+      {!readOnly &&
+        (["validated", "pending_review"].includes(craReportStatus) ||
+          ["validated", "pending_review"].includes(paidLeaveReportStatus)) && (
+          <div
+            className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative mb-4"
+            role="alert"
+          >
+            <strong className="font-bold">Rapport Verrouillé:</strong>
+            <span className="block sm:inline ml-2">
+              Le rapport est au statut "
+              {overallReportStatus === "validated" ? "Validé" : "En attente"}"
+              pour ce mois. Certaines modifications peuvent être restreintes.
+            </span>
+          </div>
+        )}
+      {overallReportStatus === "refused" && (
+        <div
+          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"
+          role="alert"
+        >
+          <strong className="font-bold">Rapport Refusé:</strong>
+          <span className="block sm:inline ml-2">
+            Le rapport de ce mois a été refusé. Raison: "
+            {overallRejectionReason || "Non spécifiée"}". Veuillez corriger et
+            soumettre à nouveau.
+          </span>
         </div>
       )}
 
-      {/* Contrôles de navigation du calendrier */}
+      {/* En-tête du calendrier */}
       <CraControls
         currentMonth={currentMonth}
         userFirstName={userFirstName}
         craReportStatus={craReportStatus}
         paidLeaveReportStatus={paidLeaveReportStatus}
-        readOnly={readOnly}
+        isCraEditable={isCraEditable} // Pass specific CRA editability
+        isPaidLeaveEditable={isPaidLeaveEditable} // Pass specific Paid Leave editability
         goToPreviousMonth={goToPreviousMonth}
         goToNextMonth={goToNextMonth}
         handleToggleSummaryReport={handleToggleSummaryReport}
@@ -1985,22 +2218,105 @@ export default function CraBoard({
         }
         multiSelectType={multiSelectType}
         onCycleMultiSelectMode={cycleMultiSelectMode}
+        isAnyReportEditable={isAnyReportEditable} // Passer le flag global d'éditabilité
+        readOnly={readOnly} // Pass the global readOnly status for month navigation buttons and multi-select toggle
       />
 
       {/* Affichage des statuts de rapport pour le mois actuel */}
-      {!readOnly && (
-        <CraSummary
-          craReport={craReport}
-          paidLeaveReport={paidLeaveReport}
-          isCraEditable={isCraEditable}
-          isPaidLeaveEditable={isPaidLeaveEditable}
-          onSendMonthlyReport={sendActivities} // Passe directement sendActivities
-          rejectionReason={rejectionReason}
-          totalWorkingDaysInMonth={totalWorkingDaysInMonth}
-          totalActivitiesTimeInMonth={totalActivitiesTimeInMonth}
-          timeDifference={timeDifference}
-        />
-      )}
+      {/* Le CraSummary doit être affiché même en lecture seule pour voir les totaux */}
+      <CraSummary
+        craReport={craReport}
+        paidLeaveReport={paidLeaveReport}
+        isCraEditable={isCraEditable}
+        isPaidLeaveEditable={isPaidLeaveEditable}
+        onSendMonthlyReport={sendActivities} // Passe directement sendActivities
+        rejectionReason={overallRejectionReason} // Utiliser la raison de rejet globale
+        totalWorkingDaysInMonth={totalWorkingDaysInMonth}
+        totalActivitiesTimeInMonth={totalActivitiesTimeInMonth}
+        timeDifference={timeDifference}
+      />
+
+      {/* Section pour afficher les statuts des rapports CRA et Congés Payés */}
+      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+        <h3 className="text-lg font-semibold text-blue-800 mb-2">
+          Statut des Rapports Mensuels
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Statut du rapport CRA */}
+          <div className="bg-white p-3 rounded-md shadow-sm border border-gray-200">
+            <p className="font-medium text-gray-700">Rapport CRA :</p>
+            {craReportStatus === "validated" && (
+              <p className="text-green-600 font-semibold">Validé ✅</p>
+            )}
+            {craReportStatus === "pending_review" && (
+              <p className="text-yellow-600 font-semibold">
+                En attente de révision ⏳
+              </p>
+            )}
+            {craReportStatus === "rejected" && (
+              <div className="text-red-600 font-semibold">
+                <p>
+                  Refusé ❌
+                  {craReport?.rejection_reason && ( // Utilise craReport.rejection_reason
+                    <span className="text-sm font-normal text-red-700 ml-2">
+                      (Raison : {craReport.rejection_reason})
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+            {craReportStatus === "finalized" && (
+              <p className="text-purple-600 font-semibold">Finalisé ✔️</p>
+            )}
+            {craReportStatus === "empty" && (
+              <p className="text-gray-500 italic">
+                Aucun rapport CRA pour ce mois.
+              </p>
+            )}
+            {craReportStatus === "draft" && (
+              <p className="text-blue-500 italic">Rapport CRA en brouillon.</p>
+            )}
+          </div>
+
+          {/* Statut du rapport Congés Payés */}
+          <div className="bg-white p-3 rounded-md shadow-sm border border-gray-200">
+            <p className="font-medium text-gray-700">Rapport Congés Payés :</p>
+            {paidLeaveReportStatus === "validated" && (
+              <p className="text-green-600 font-semibold">Validé ✅</p>
+            )}
+            {paidLeaveReportStatus === "pending_review" && (
+              <p className="text-yellow-600 font-semibold">
+                En attente de révision ⏳
+              </p>
+            )}
+            {paidLeaveReportStatus === "rejected" && (
+              <div className="text-red-600 font-semibold">
+                <p>
+                  Refusé ❌
+                  {paidLeaveReport?.rejection_reason && ( // Utilise paidLeaveReport.rejection_reason
+                    <span className="text-sm font-normal text-red-700 ml-2">
+                      (Raison : {paidLeaveReport.rejection_reason})
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+            {paidLeaveReportStatus === "finalized" && (
+              <p className="text-purple-600 font-semibold">Finalisé ✔️</p>
+            )}
+            {paidLeaveReportStatus === "empty" && (
+              <p className="text-gray-500 italic">
+                Aucun rapport de congés payés pour ce mois.
+              </p>
+            )}
+            {paidLeaveReportStatus === "draft" && (
+              <p className="text-blue-500 italic">
+                Rapport congés payés en brouillon.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Modale d'activité (rendue conditionnellement) */}
       {isModalOpen && (
@@ -2013,7 +2329,7 @@ export default function CraBoard({
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           showMessage={localShowMessage}
-          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)}
+          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)} // Utilise la prop globale readOnly ou si aucun rapport n'est éditable
           paidLeaveTypeId={paidLeaveTypeId}
           selectedDaysForMultiAdd={tempSelectedDays}
           isNonWorkingDay={isNonWorkingDay}
@@ -2034,7 +2350,7 @@ export default function CraBoard({
         onMouseDown={handleMouseDownMultiSelect}
         onMouseEnter={handleMouseEnterMultiSelect}
         onMouseUp={handleMouseUpMultiSelect}
-        readOnly={readOnly}
+        readOnly={readOnly} // Passe la prop globale readOnly
         isCraEditable={isCraEditable}
         isPaidLeaveEditable={isPaidLeaveEditable}
         requestDeleteFromCalendar={requestDeleteFromCalendar} // Appelle directement la suppression
@@ -2077,7 +2393,8 @@ export default function CraBoard({
           clientDefinitions={clientDefinitions}
           showMessage={localShowMessage}
           onOpenMonthlyReportPreview={handleOpenMonthlyReportPreview}
-          readOnly={readOnly}
+          readOnly={readOnly} // Utilise la prop globale readOnly ici
+          isPublicHoliday={isPublicHoliday}
         />
       )}
     </div>

@@ -10,7 +10,7 @@ export default function CraControls({
   userFirstName,
   craReportStatus,
   paidLeaveReportStatus,
-  readOnly,
+  readOnly, // Cette prop est la lecture seule globale du calendrier (passée depuis CraBoard)
   goToPreviousMonth,
   goToNextMonth,
   handleToggleSummaryReport,
@@ -22,45 +22,54 @@ export default function CraControls({
   paidLeaveDraftsCount,
   multiSelectType, // 'activity' ou 'paid_leave'
   onCycleMultiSelectMode,
+  isCraEditable, // Spécifique à l'éditabilité du rapport CRA
+  isPaidLeaveEditable, // Spécifique à l'éditabilité du rapport Congé Payé
 }) {
   let statusBadge = null;
   let badgeClass = "ml-3 text-sm font-bold px-2 py-1 rounded-full";
 
-  if (craReportStatus === "rejected" || paidLeaveReportStatus === "rejected") {
+  // Déterminer le statut global pour le badge
+  const overallReportStatus = (() => {
+    if (
+      craReportStatus === "validated" ||
+      paidLeaveReportStatus === "validated"
+    )
+      return "validated";
+    if (
+      craReportStatus === "pending_review" ||
+      paidLeaveReportStatus === "pending_review"
+    )
+      return "pending_review";
+    if (craReportStatus === "rejected" || paidLeaveReportStatus === "rejected")
+      return "rejected";
+    if (craReportStatus === "draft" || paidLeaveReportStatus === "draft")
+      return "draft";
+    return "empty";
+  })();
+
+  if (overallReportStatus === "rejected") {
     statusBadge = (
       <span className={`${badgeClass} text-red-700 bg-red-100`}>REJETÉ</span>
     );
-  } else if (
-    craReportStatus === "validated" ||
-    paidLeaveReportStatus === "validated"
-  ) {
+  } else if (overallReportStatus === "validated") {
     statusBadge = (
       <span className={`${badgeClass} text-green-700 bg-green-100`}>
         VALIDÉ
       </span>
     );
-  } else if (
-    craReportStatus === "pending_review" ||
-    paidLeaveReportStatus === "pending_review"
-  ) {
+  } else if (overallReportStatus === "pending_review") {
     statusBadge = (
       <span className={`${badgeClass} text-blue-700 bg-blue-100`}>
         ENVOYÉ (EN ATTENTE DE RÉVISION)
       </span>
     );
-  } else if (craReportStatus === "mixed" || paidLeaveReportStatus === "mixed") {
-    statusBadge = (
-      <span className={`${badgeClass} text-purple-700 bg-purple-100`}>
-        PARTIEL
-      </span>
-    );
-  } else if (craReportStatus === "draft" || paidLeaveReportStatus === "draft") {
-    statusBadge = null;
+  } else if (overallReportStatus === "draft") {
+    statusBadge = null; // Pas de badge pour le statut brouillon
   } else {
-    statusBadge = null;
+    statusBadge = null; // Pas de badge pour le statut vide
   }
 
-  // MODIFIÉ: Logique du bouton pour basculer entre les deux modes
+  // Logique du bouton pour basculer entre les deux modes
   let buttonText = "";
   let buttonClass = "";
 
@@ -71,7 +80,6 @@ export default function CraControls({
     buttonText = "Passer en mode Activité";
     buttonClass = "bg-yellow-600 text-white hover:bg-yellow-700";
   } else {
-    // Cas de repli si multiSelectType n'est ni 'activity' ni 'paid_leave' (ne devrait pas arriver avec l'initialisation)
     buttonText = "Activer Sélection Multiple";
     buttonClass = "bg-gray-200 text-gray-700 hover:bg-gray-300";
   }
@@ -86,6 +94,21 @@ export default function CraControls({
       );
     }
   };
+
+  // Déterminer l'état des boutons basé sur la prop globale `readOnly`
+  // Le bouton de mode multi-sélection est désactivé si `readOnly` est vrai.
+  const isMultiSelectToggleDisabled = readOnly;
+
+  // Le bouton de réinitialisation est désactivé si `readOnly` est vrai (calendrier verrouillé)
+  // OU si AUCUN des rapports n'est éditable (c'est-à-dire, les deux sont validés/en attente).
+  const isResetButtonDisabled =
+    readOnly || (!isCraEditable && !isPaidLeaveEditable);
+
+  // Les boutons d'envoi sont désactivés si `readOnly` est vrai (calendrier verrouillé)
+  // OU si le rapport spécifique n'est pas éditable OU s'il n'y a pas d'activités à envoyer.
+  const isSendCRADisabled = readOnly || !isCraEditable || craDraftsCount === 0;
+  const isSendPaidLeavesDisabled =
+    readOnly || !isPaidLeaveEditable || paidLeaveDraftsCount === 0;
 
   return (
     <>
@@ -148,101 +171,68 @@ export default function CraControls({
         </button>
       </div>
 
-      {!readOnly && (
-        <div className="flex justify-center space-x-4 mb-8 flex-wrap gap-2">
-          {/* Bouton de mode de sélection multiple */}
-          <button
-            onClick={handleClickCycleMode}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300 ${buttonClass}`}
-            title="Cliquez pour changer le mode de sélection multiple des jours"
-            disabled={readOnly}
-          >
-            {buttonText}
-          </button>
+      {/* Action Buttons - Always rendered, but individual buttons disabled based on specific conditions */}
+      <div className="flex justify-center space-x-4 mb-8 flex-wrap gap-2">
+        {/* Bouton de mode de sélection multiple - Désactivé si readOnly est vrai */}
+        <button
+          onClick={handleClickCycleMode}
+          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300 ${buttonClass} ${
+            isMultiSelectToggleDisabled ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+          title="Cliquez pour changer le mode de sélection multiple des jours"
+          disabled={isMultiSelectToggleDisabled}
+        >
+          {buttonText}
+        </button>
 
-          <button
-            onClick={handleToggleSummaryReport}
-            className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
-          >
-            {showSummaryReport ? "Masquer le rapport" : "Afficher le rapport"}
-          </button>
+        <button
+          onClick={handleToggleSummaryReport}
+          className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300"
+        >
+          {showSummaryReport ? "Masquer le rapport" : "Afficher le rapport"}
+        </button>
 
-          {/* Buttons for CRAs (work activities) - DIRECT SEND */}
-          <button
-            onClick={requestSendCRA}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-              ${
-                craDraftsCount === 0 ||
-                readOnly ||
-                ["pending_review", "validated", "rejected"].includes(
-                  craReportStatus
-                )
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-purple-600 text-white hover:bg-purple-700"
-              }`}
-            disabled={
-              craDraftsCount === 0 ||
-              readOnly ||
-              ["pending_review", "validated", "rejected"].includes(
-                craReportStatus
-              )
-            }
-          >
-            Envoyer les CRAs
-          </button>
+        {/* Buttons for CRAs (work activities) - DIRECT SEND */}
+        <button
+          onClick={requestSendCRA}
+          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+            ${
+              isSendCRADisabled
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-purple-600 text-white hover:bg-purple-700"
+            }`}
+          disabled={isSendCRADisabled}
+        >
+          Envoyer les CRAs ({craDraftsCount})
+        </button>
 
-          {/* Buttons for Paid Leaves - DIRECT SEND */}
-          <button
-            onClick={requestSendPaidLeaves}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-              ${
-                paidLeaveDraftsCount === 0 ||
-                readOnly ||
-                ["pending_review", "validated", "rejected"].includes(
-                  paidLeaveReportStatus
-                )
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-teal-600 text-white hover:bg-teal-700"
-              }`}
-            disabled={
-              paidLeaveDraftsCount === 0 ||
-              readOnly ||
-              ["pending_review", "validated", "rejected"].includes(
-                paidLeaveReportStatus
-              )
-            }
-          >
-            Envoyer les congés
-          </button>
+        {/* Buttons for Paid Leaves - DIRECT SEND */}
+        <button
+          onClick={requestSendPaidLeaves}
+          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+            ${
+              isSendPaidLeavesDisabled
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-teal-600 text-white hover:bg-teal-700"
+            }`}
+          disabled={isSendPaidLeavesDisabled}
+        >
+          Envoyer les congés ({paidLeaveDraftsCount})
+        </button>
 
-          <button
-            onClick={requestResetMonth}
-            className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
-              ${
-                readOnly ||
-                ["validated", "rejected", "pending_review"].includes(
-                  craReportStatus
-                ) ||
-                ["validated", "rejected", "pending_review"].includes(
-                  paidLeaveReportStatus
-                )
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-orange-600 text-white hover:bg-orange-700"
-              }`}
-            disabled={
-              readOnly ||
-              ["validated", "rejected", "pending_review"].includes(
-                craReportStatus
-              ) ||
-              ["validated", "rejected", "pending_review"].includes(
-                paidLeaveReportStatus
-              )
-            }
-          >
-            Réinitialiser le mois
-          </button>
-        </div>
-      )}
+        <button
+          onClick={requestResetMonth}
+          className={`px-6 py-3 font-semibold rounded-lg shadow-md transition duration-300
+            ${
+              isResetButtonDisabled
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-orange-600 text-white hover:bg-orange-700"
+            }`}
+          disabled={isResetButtonDisabled}
+        >
+          Réinitialiser le mois
+        </button>
+      </div>
     </>
   );
 }
