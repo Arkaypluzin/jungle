@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import NdfDetailTable from "@/components/NDF/NdfDetailTable";
 import NdfKiloTable from "@/components/NDF/NDF_kilometrique/NdfKiloTable";
+import AddNdfDetailModal from "@/components/NDF/NDF_ACTIONS/AddNdfDetailModal";
 import AddNdfKiloModal from "@/components/NDF/NDF_kilometrique/AddNdfKiloModal";
 
 export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }) {
@@ -24,8 +25,23 @@ export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }
         if (tab === "kilo") reloadKiloRows();
     }, [ndfId, tab]);
 
+    // *** LES DEUX BOUTONS ENSEMBLE ***
     return (
         <div>
+            <div className="flex gap-4 mb-4">
+                <AddNdfDetailModal
+                    ndfId={ndfId}
+                    ndfStatut={ndfStatut}
+                    parentNdfMonth={month}
+                    parentNdfYear={year}
+                />
+                <AddNdfKiloModal
+                    ndfId={ndfId}
+                    ndfStatut={ndfStatut}
+                    onAdded={reloadKiloRows}
+                />
+            </div>
+
             <div className="flex gap-1 mb-6">
                 <button
                     className={`px-5 py-2 rounded-t-lg font-medium border-b-2 ${tab === "ndf"
