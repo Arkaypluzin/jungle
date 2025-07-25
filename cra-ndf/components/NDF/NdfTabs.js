@@ -4,6 +4,7 @@ import NdfDetailTable from "@/components/NDF/NdfDetailTable";
 import NdfKiloTable from "@/components/NDF/NDF_kilometrique/NdfKiloTable";
 import AddNdfDetailModal from "@/components/NDF/NDF_ACTIONS/AddNdfDetailModal";
 import AddNdfKiloModal from "@/components/NDF/NDF_kilometrique/AddNdfKiloModal";
+import DeclareNdfButton from "@/components/NDF/NDF_ACTIONS/DeclareNdfButton";
 
 export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }) {
     const [tab, setTab] = useState("ndf");
@@ -25,21 +26,23 @@ export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }
         if (tab === "kilo") reloadKiloRows();
     }, [ndfId, tab]);
 
-    // *** LES DEUX BOUTONS ENSEMBLE ***
     return (
         <div>
-            <div className="flex gap-4 mb-4">
-                <AddNdfDetailModal
-                    ndfId={ndfId}
-                    ndfStatut={ndfStatut}
-                    parentNdfMonth={month}
-                    parentNdfYear={year}
-                />
-                <AddNdfKiloModal
-                    ndfId={ndfId}
-                    ndfStatut={ndfStatut}
-                    onAdded={reloadKiloRows}
-                />
+            <div className="flex items-center justify-between mb-4 gap-4">
+                <div className="flex gap-2">
+                    <AddNdfDetailModal
+                        ndfId={ndfId}
+                        ndfStatut={ndfStatut}
+                        parentNdfMonth={month}
+                        parentNdfYear={year}
+                    />
+                    <AddNdfKiloModal
+                        ndfId={ndfId}
+                        ndfStatut={ndfStatut}
+                        onAdded={reloadKiloRows}
+                    />
+                </div>
+                <DeclareNdfButton ndfId={ndfId} currentStatut={ndfStatut} />
             </div>
 
             <div className="flex gap-1 mb-6">

@@ -41,9 +41,6 @@ export default async function NdfDetailsPage({ params }) {
                     </div>
                 </div>
             )}
-            <div className="flex items-center justify-between mb-6 gap-4">
-                <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
-            </div>
             <NdfTabs
                 details={details}
                 ndfId={ndfId}
