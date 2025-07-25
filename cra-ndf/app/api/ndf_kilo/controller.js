@@ -26,7 +26,7 @@ export async function getNdfKiloByIdController(uuid) {
 }
 
 export async function createNdfKiloController(data) {
-    if (!data.id_ndf || !data.date_debut || !data.depart || !data.arrivee || !data.distance) {
+    if (!data.id_ndf || !data.date_debut || !data.depart || !data.arrivee || !data.type_vehicule || !data.cv || !data.distance) {
         return NextResponse.json({ message: "Champs requis manquants." }, { status: 400 });
     }
     try {

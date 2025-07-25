@@ -2,10 +2,10 @@ import { auth } from "@/auth";
 import { getAllDetailsByNdf } from "@/app/api/ndf_details/model";
 import { getNdfById } from "@/app/api/ndf/model";
 import BtnRetour from "@/components/BtnRetour";
-import AddNdfDetailModal from "@/components/AddNdfDetailModal";
-import DeclareNdfButton from "@/components/DeclareNdfButton";
-import NdfTabs from "@/components/NdfTabs";
-import AddNdfKiloModal from "@/components/AddNdfKiloModal";
+import AddNdfDetailModal from "@/components/NDF/NDF_ACTIONS/AddNdfDetailModal";
+import DeclareNdfButton from "@/components/NDF/NDF_ACTIONS/DeclareNdfButton";
+import NdfTabs from "@/components/NDF/NdfTabs";
+import AddNdfKiloModal from "@/components/NDF/NDF_kilometrique/AddNdfKiloModal";
 
 export default async function NdfDetailsPage({ params }) {
     const { ndfId } = await params;
@@ -41,13 +41,6 @@ export default async function NdfDetailsPage({ params }) {
                     </div>
                 </div>
             )}
-            <div className="flex items-center justify-between mb-6 gap-4">
-                <div className="flex gap-4">
-                    <AddNdfDetailModal ndfId={ndfId} ndfStatut={ndf.statut} parentNdfMonth={ndf.month} parentNdfYear={ndf.year} />
-                    <AddNdfKiloModal ndfId={ndfId} ndfStatut={ndf.statut} />
-                </div>
-                <DeclareNdfButton ndfId={ndfId} currentStatut={ndf.statut} />
-            </div>
             <NdfTabs
                 details={details}
                 ndfId={ndfId}

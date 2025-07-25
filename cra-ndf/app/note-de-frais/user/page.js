@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import ClientUserNdf from "@/components/ClientUserNdf";
+import ClientUserNdf from "@/components/NDF/clients/ClientUserNdf";
 
 export default async function UserNdfPage() {
     const session = await auth();
