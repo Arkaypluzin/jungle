@@ -56,20 +56,13 @@ export default function NdfTabs({ details, ndfId, ndfStatut, month, year, name }
                     name={name}
                 />
             ) : (
-                <>
-                    <AddNdfKiloModal
-                        ndfId={ndfId}
-                        ndfStatut={ndfStatut}
-                        onAdded={reloadKiloRows}
-                    />
-                    <NdfKiloTable
-                        ndfId={ndfId}
-                        ndfStatut={ndfStatut}
-                        rows={kiloRows}
-                        loading={loadingKiloRows}
-                        reloadRows={reloadKiloRows}
-                    />
-                </>
+                <NdfKiloTable
+                    ndfId={ndfId}
+                    ndfStatut={ndfStatut}
+                    rows={kiloRows}
+                    loading={loadingKiloRows}
+                    reloadRows={reloadKiloRows}
+                />
             )}
         </div>
     );
