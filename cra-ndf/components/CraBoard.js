@@ -108,7 +108,17 @@ export default function CraBoard({
 
   const [multiSelectType, setMultiSelectType] = useState("activity");
 
+  // NOUVEAU: État pour gérer le verrouillage de la sélection de jour unique
+  const [isSingleDaySelectionLocked, setIsSingleDaySelectionLocked] =
+    useState(false);
+
   const craBoardRef = useRef(null);
+  // NOUVEAU REF: Pour suivre si le bouton de la souris est enfoncé sur un jour du calendrier
+  const isMouseDownOnCalendarDayRef = useRef(false);
+  // NOUVEAU REF: Pour stocker les coordonnées du clic initial pour la détection de drag
+  const mouseDownCoordsRef = useRef({ x: 0, y: 0 });
+  // Seuil en pixels pour détecter un drag (vs un simple clic)
+  const DRAG_THRESHOLD = 5;
 
   // Utilise la prop showMessage si fournie, sinon logue simplement
   const localShowMessage =
@@ -178,7 +188,9 @@ export default function CraBoard({
     setIsModalOpen(false);
     setEditingActivity(null);
     setSelectedDate(new Date());
-    setTempSelectedDays([]);
+    setTempSelectedDays([]); // <-- C'est ici que tempSelectedDays est réinitialisé après la fermeture de la modale
+    // NOUVEAU: Réinitialiser le verrouillage de la sélection de jour unique
+    setIsSingleDaySelectionLocked(false);
   }, []);
 
   // --- Valeurs mémorisées (useMemo) ---
@@ -732,7 +744,7 @@ export default function CraBoard({
         return;
       }
 
-      // Re-vérifier le statut de l'activité elle-même
+      // Re-vérifier le statut de l'activité elle-même (doit être brouillon ou rejeté pour être supprimable)
       if (!["draft", "rejected"].includes(activity.status)) {
         localShowMessage(
           `Activité verrouillée : statut '${activity.status}'. Suppression impossible.`,
@@ -778,7 +790,7 @@ export default function CraBoard({
       if (
         isDraggingActivity ||
         isDeletingActivityFlag ||
-        isDraggingMultiSelect
+        isDraggingMultiSelect // Ajouté pour le contrôle
       ) {
         console.log(
           "[CraBoard - DEBUG] handleDayClick: Ignoré en raison d'un glisser-déposer/suppression en cours."
@@ -863,8 +875,10 @@ export default function CraBoard({
 
         setSelectedDate(dayDate);
         setEditingActivity(activity);
-        setTempSelectedDays([]);
+        setTempSelectedDays([]); // S'assurer qu'il n'y a pas de jours temporaires pour un clic simple
         setIsModalOpen(true);
+        // NOUVEAU: Verrouiller la sélection de jour unique
+        setIsSingleDaySelectionLocked(true);
         console.log(
           `[CraBoard - DEBUG] handleDayClick: Formulaire ouvert pour le jour: ${format(
             dayDate,
@@ -890,8 +904,10 @@ export default function CraBoard({
         }
         setSelectedDate(dayDate);
         setEditingActivity(null);
-        setTempSelectedDays([]);
+        setTempSelectedDays([]); // S'assurer qu'il n'y a pas de jours temporaires pour un clic simple
         setIsModalOpen(true);
+        // NOUVEAU: Verrouiller la sélection de jour unique
+        setIsSingleDaySelectionLocked(true);
         console.log(
           `[CraBoard - DEBUG] handleDayClick: Formulaire ouvert pour le jour: ${format(
             dayDate,
@@ -911,12 +927,13 @@ export default function CraBoard({
       paidLeaveReportStatus,
       isDeletingActivityFlag,
       isDraggingActivity,
-      isDraggingMultiSelect,
+      isDraggingMultiSelect, // Ajouté pour le contrôle
       userId,
       setSelectedDate,
       setEditingActivity,
       setTempSelectedDays,
       setIsModalOpen,
+      setIsSingleDaySelectionLocked, // Ajouté comme dépendance
     ]
   );
 
@@ -931,10 +948,11 @@ export default function CraBoard({
       if (
         isDeletingActivityFlag ||
         isDraggingActivity ||
-        isDraggingMultiSelect
+        isDraggingMultiSelect ||
+        isSingleDaySelectionLocked // NOUVEAU: Ignorer si le mode de sélection unique est verrouillé
       ) {
         console.log(
-          "[CraBoard - DEBUG] handleActivityClick: Ignoré en raison d'un glisser-déposer/suppression en cours."
+          "[CraBoard - DEBUG] handleActivityClick: Ignoré en raison d'un glisser-déposer/suppression/verrouillage en cours."
         );
         return;
       }
@@ -968,7 +986,7 @@ export default function CraBoard({
 
       if (String(currentActivity.user_id) !== String(userId)) {
         localShowMessage(
-          "Vous ne pouvez pas modifier ou supprimer les activités d'autres utilisateurs. Veuillez contacter un administrateur.",
+          "Vous ne pouvez pas modifier les activités d'autres utilisateurs. Veuillez contacter un administrateur.",
           "error"
         );
         return;
@@ -1021,6 +1039,8 @@ export default function CraBoard({
       setEditingActivity(currentActivity);
       setTempSelectedDays([]);
       setIsModalOpen(true);
+      // NOUVEAU: Verrouiller la sélection de jour unique si on édite une activité existante
+      setIsSingleDaySelectionLocked(true);
       console.log(
         `[CraBoard - DEBUG] handleActivityClick: Formulaire ouvert pour l'activité ID: ${currentActivity.id}`
       );
@@ -1038,10 +1058,12 @@ export default function CraBoard({
       isDeletingActivityFlag,
       isDraggingActivity,
       isDraggingMultiSelect,
+      isSingleDaySelectionLocked, // Ajouté comme dépendance
       setSelectedDate,
       setEditingActivity,
       setTempSelectedDays,
       setIsModalOpen,
+      setIsSingleDaySelectionLocked, // Ajouté comme dépendance
     ]
   );
 
@@ -1053,6 +1075,16 @@ export default function CraBoard({
    */
   const handleDragStartActivity = useCallback(
     (e, activity) => {
+      // NOUVEAU: Bloquer si le mode de sélection de jour unique est verrouillé
+      if (isSingleDaySelectionLocked) {
+        e.preventDefault();
+        localShowMessage(
+          "Impossible de glisser-déposer. Le calendrier est en mode de sélection de jour unique. Fermez la modale pour déverrouiller.",
+          "info"
+        );
+        return;
+      }
+
       // Si le mode multi-sélection est actif, empêcher le glisser-déposer individuel
       if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
         localShowMessage(
@@ -1114,6 +1146,7 @@ export default function CraBoard({
       paidLeaveTypeId,
       isCraEditable,
       isPaidLeaveEditable,
+      isSingleDaySelectionLocked, // Ajouté comme dépendance
     ]
   );
 
@@ -1125,6 +1158,12 @@ export default function CraBoard({
    */
   const handleDragOverDay = useCallback(
     (e, day) => {
+      // NOUVEAU: Bloquer si le mode de sélection de jour unique est verrouillé
+      if (isSingleDaySelectionLocked) {
+        e.preventDefault();
+        return;
+      }
+
       // Ce gestionnaire ne doit être actif que pour le glisser-déposer d'activité individuelle
       if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
         e.preventDefault();
@@ -1146,7 +1185,7 @@ export default function CraBoard({
         if (
           readOnly || // Si la prop globale readOnly est vraie
           (isCRAActivityType && !isCraEditable) || // Ou si c'est une activité CRA et le CRA n'est pas éditable
-          (isDraggedActivityPaidLeave && !isPaidLeaveEditable) // Ou si c'est une activité Congé Payé et le Congé Payé n'est pas éditable
+          (isPaidLeaveActivityType && !isPaidLeaveEditable) // Ou si c'est une activité Congé Payé et le Congé Payé n'est pas éditable
         ) {
           setIsValidDropTarget(false);
           e.dataTransfer.dropEffect = "none";
@@ -1178,6 +1217,7 @@ export default function CraBoard({
       readOnly, // Utilise la prop globale readOnly
       isCraEditable,
       isPaidLeaveEditable,
+      isSingleDaySelectionLocked, // Ajouté comme dépendance
     ]
   );
 
@@ -1189,6 +1229,12 @@ export default function CraBoard({
    */
   const handleDropActivity = useCallback(
     async (e, targetDay) => {
+      // NOUVEAU: Bloquer si le mode de sélection de jour unique est verrouillé
+      if (isSingleDaySelectionLocked) {
+        e.preventDefault();
+        return;
+      }
+
       // Ce gestionnaire ne doit être actif que pour le glisser-déposer d'activité individuelle
       if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
         e.preventDefault();
@@ -1340,6 +1386,7 @@ export default function CraBoard({
       multiSelectType,
       activitiesByDay,
       readOnly, // Utilise la prop globale readOnly
+      isSingleDaySelectionLocked, // Ajouté comme dépendance
     ]
   );
 
@@ -1351,6 +1398,15 @@ export default function CraBoard({
    */
   const handleMouseDownMultiSelect = useCallback(
     (e, day) => {
+      // NOUVEAU: Bloquer si le mode de sélection de jour unique est verrouillé
+      if (isSingleDaySelectionLocked) {
+        localShowMessage(
+          "Impossible de démarrer une sélection multiple. Le calendrier est en mode de sélection de jour unique. Fermez la modale pour déverrouiller.",
+          "info"
+        );
+        return;
+      }
+
       // Bloquer si la prop globale readOnly est vraie, ou si un glisser-déposer/suppression est en cours
       if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
         localShowMessage(
@@ -1409,11 +1465,14 @@ export default function CraBoard({
 
       // Si le bouton gauche de la souris est enfoncé
       if (e.button === 0) {
-        setIsDraggingMultiSelect(true);
+        isMouseDownOnCalendarDayRef.current = true; // Marque que la souris est enfoncée sur un jour
+        mouseDownCoordsRef.current = { x: e.clientX, y: e.clientY }; // Stocke les coordonnées
         setDragStartDayForSelection(day);
-        setTempSelectedDays([day]);
+        setTempSelectedDays([day]); // Commence avec le jour cliqué
+        // NE PAS définir setIsDraggingMultiSelect(true) ici immédiatement.
+        // Cela sera fait par handleGlobalMouseMove si un drag est détecté.
         console.log(
-          "[CraBoard - handleMouseDownMultiSelect] Sélection multi-jours démarrée."
+          "[CraBoard - handleMouseDownMultiSelect] Potentielle sélection multi-jours démarrée."
         );
       }
     },
@@ -1425,10 +1484,11 @@ export default function CraBoard({
       isPaidLeaveEditable,
       isNonWorkingDay,
       localShowMessage,
-      setIsDraggingMultiSelect,
       multiSelectType,
       setTempSelectedDays,
       activitiesByDay,
+      isSingleDaySelectionLocked, // Ajouté comme dépendance
+      setDragStartDayForSelection, // Ajouté comme dépendance
     ]
   );
 
@@ -1439,8 +1499,19 @@ export default function CraBoard({
    */
   const handleMouseEnterMultiSelect = useCallback(
     (day) => {
-      // Continuer la sélection multiple uniquement si en mode glisser-déposer et qu'un jour de début est défini
-      if (!isDraggingMultiSelect || !dragStartDayForSelection) {
+      // NOUVEAU: Bloquer si le mode de sélection de jour unique est verrouillé
+      if (isSingleDaySelectionLocked) {
+        return;
+      }
+
+      // Continuer la sélection multiple UNIQUEMENT si le bouton de la souris est enfoncé sur un jour
+      // ET qu'un drag a officiellement commencé (isDraggingMultiSelect est true)
+      // ET qu'un jour de début de sélection est défini.
+      if (
+        !isMouseDownOnCalendarDayRef.current ||
+        !isDraggingMultiSelect ||
+        !dragStartDayForSelection
+      ) {
         return;
       }
       // Empêcher la sélection multiple si la prop globale readOnly est vraie, ou si un glisser-déposer/suppression est en cours
@@ -1494,7 +1565,8 @@ export default function CraBoard({
       setTempSelectedDays(newTempSelectedDays);
     },
     [
-      isDraggingMultiSelect,
+      isMouseDownOnCalendarDayRef, // Nouvelle dépendance
+      isDraggingMultiSelect, // Nouvelle dépendance
       dragStartDayForSelection,
       daysInMonth,
       readOnly, // Utilise la prop globale readOnly
@@ -1506,134 +1578,134 @@ export default function CraBoard({
       activitiesByDay,
       isPaidLeaveEditable, // Ajouté pour la vérification d'éditabilité du mode
       isCraEditable, // Ajouté pour la vérification d'éditabilité du mode
+      isSingleDaySelectionLocked, // Ajouté comme dépendance
     ]
   );
 
   /**
    * Gère la fin de la sélection multi-jours (relâchement de la souris).
    * Déclenche l'action appropriée en fonction de `multiSelectType`.
-   * Cette fonction est TOUJOURS active si multiSelectType est 'activity' ou 'paid_leave'.
+   * Cette fonction est appelée par handleGlobalMouseUp UNIQUEMENT si un drag a été confirmé.
    */
   const handleMouseUpMultiSelect = useCallback(async () => {
-    if (isDraggingMultiSelect) {
-      setIsDraggingMultiSelect(false);
-      setDragStartDayForSelection(null);
+    // NOUVEAU: Si le mode de sélection de jour unique est verrouillé, ne rien faire ici
+    if (isSingleDaySelectionLocked) {
+      return;
+    }
 
-      // Bloquer si la prop globale readOnly est vraie
-      if (readOnly) {
-        localShowMessage(
-          "Sélection multiple désactivée. Le calendrier est en lecture seule.",
-          "info"
-        );
-        setTempSelectedDays([]); // Effacer la sélection temporaire
-        return;
-      }
+    // Bloquer si la prop globale readOnly est vraie (vérification redondante mais sécuritaire)
+    if (readOnly) {
+      localShowMessage(
+        "Opération désactivée. Le calendrier est en lecture seule.",
+        "info"
+      );
+      setTempSelectedDays([]); // Effacer la sélection temporaire
+      return;
+    }
 
-      if (tempSelectedDays.length > 0) {
-        if (multiSelectType === "paid_leave") {
-          if (!isPaidLeaveEditable) {
-            // Re-vérification finale
+    if (tempSelectedDays.length > 0) {
+      if (multiSelectType === "paid_leave") {
+        if (!isPaidLeaveEditable) {
+          // Re-vérification finale
+          localShowMessage(
+            "Impossible d'ajouter des congés payés. Le rapport de congés est verrouillé.",
+            "info"
+          );
+          setTempSelectedDays([]);
+          return;
+        }
+        const paidLeaveActivityData = {
+          name: "Congé Payé",
+          temps_passe: 1, // Pour les congés en multi-sélection, on ajoute 1 jour
+          description_activite: "Congé Payé automatique",
+          type_activite: paidLeaveTypeId,
+          client_id: "",
+          override_non_working_day: false,
+          status: "draft",
+        };
+
+        let successCount = 0;
+        let errorCount = 0;
+        for (const day of tempSelectedDays) {
+          // Re-vérification de la limite de 1 jour par jour
+          const dayKey = format(day, "yyyy-MM-dd");
+          const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
+          const existingTimeOnDay = existingActivitiesOnDay.reduce(
+            (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
+            0
+          );
+
+          if (existingTimeOnDay + paidLeaveActivityData.temps_passe > 1) {
             localShowMessage(
-              "Impossible d'ajouter des congés payés. Le rapport de congés est verrouillé.",
-              "info"
-            );
-            setTempSelectedDays([]);
-            return;
-          }
-          const paidLeaveActivityData = {
-            name: "Congé Payé",
-            temps_passe: 1, // Pour les congés en multi-sélection, on ajoute 1 jour
-            description_activite: "Congé Payé automatique",
-            type_activite: paidLeaveTypeId,
-            client_id: "",
-            override_non_working_day: false,
-            status: "draft",
-          };
-
-          let successCount = 0;
-          let errorCount = 0;
-          for (const day of tempSelectedDays) {
-            // Re-vérification de la limite de 1 jour par jour
-            const dayKey = format(day, "yyyy-MM-dd");
-            const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
-            const existingTimeOnDay = existingActivitiesOnDay.reduce(
-              (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-              0
-            );
-
-            if (existingTimeOnDay + paidLeaveActivityData.temps_passe > 1) {
-              localShowMessage(
-                `Impossible d'ajouter un congé payé au ${format(
-                  day,
-                  "dd/MM/yyyy"
-                )}. Ce jour a déjà 1 jour d'activités.`,
-                "error"
-              );
-              errorCount++;
-              continue;
-            }
-
-            try {
-              await onAddActivity({
-                ...paidLeaveActivityData,
-                user_id: userId,
-                date_activite: format(day, "yyyy-MM-dd"),
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              successCount++;
-            } catch (error) {
-              console.error(
-                `Erreur lors de l'ajout du congé payé pour le jour ${format(
-                  day,
-                  "yyyy-MM-dd"
-                )}:`,
-                error
-              );
-              errorCount++;
-            }
-          }
-          if (successCount > 0) {
-            localShowMessage(
-              `Ajout de ${successCount} congés payés réussi ! ${
-                errorCount > 0 ? `(${errorCount} échecs)` : ""
-              }`,
-              errorCount > 0 ? "warning" : "success"
-            );
-          } else if (errorCount > 0) {
-            localShowMessage(
-              "Échec de l'ajout des congés payés. Veuillez vérifier les jours sélectionnés.",
+              `Impossible d'ajouter un congé payé au ${format(
+                day,
+                "dd/MM/yyyy"
+              )}. Ce jour a déjà 1 jour d'activités.`,
               "error"
             );
+            errorCount++;
+            continue;
           }
-          if (fetchActivitiesForMonth) {
-            fetchActivitiesForMonth(currentMonth);
-          }
-          setTempSelectedDays([]);
-        } else if (multiSelectType === "activity") {
-          if (!isCraEditable) {
-            // Re-vérification finale
-            localShowMessage(
-              "Impossible d'ajouter des activités CRA. Le rapport CRA est verrouillé.",
-              "info"
+
+          try {
+            await onAddActivity({
+              ...paidLeaveActivityData,
+              user_id: userId,
+              date_activite: format(day, "yyyy-MM-dd"),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            successCount++;
+          } catch (error) {
+            console.error(
+              `Erreur lors de l'ajout du congé payé pour le jour ${format(
+                day,
+                "yyyy-MM-dd"
+              )}:`,
+              error
             );
-            setTempSelectedDays([]);
-            return;
+            errorCount++;
           }
-          // Pour les activités en multi-sélection, on ouvre la modale avec les jours pré-sélectionnés
-          setEditingActivity(null);
-          setSelectedDate(null);
-          setIsModalOpen(true);
-          // tempSelectedDays est effacé par handleCloseActivityModal après la soumission/annulation
         }
-      } else {
-        console.log(
-          "[CraBoard - handleMouseUpMultiSelect] Aucune sélection multi-jours à finaliser."
-        );
+        if (successCount > 0) {
+          localShowMessage(
+            `Ajout de ${successCount} congés payés réussi ! ${
+              errorCount > 0 ? `(${errorCount} échecs)` : ""
+            }`,
+            errorCount > 0 ? "warning" : "success"
+          );
+        } else if (errorCount > 0) {
+          localShowMessage(
+            "Échec de l'ajout des congés payés. Veuillez vérifier les jours sélectionnés.",
+            "error"
+          );
+        }
+        if (fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
+        setTempSelectedDays([]); // <-- Garder ici pour le cas paid_leave
+      } else if (multiSelectType === "activity") {
+        if (!isCraEditable) {
+          // Re-vérification finale
+          localShowMessage(
+            "Impossible d'ajouter des activités CRA. Le rapport CRA est verrouillé.",
+            "info"
+          );
+          setTempSelectedDays([]);
+          return;
+        }
+        // Pour les activités en multi-sélection, on ouvre la modale avec les jours pré-sélectionnés
+        setEditingActivity(null);
+        setSelectedDate(null); // La date sera gérée par les tempSelectedDays
+        setIsModalOpen(true);
+        // tempSelectedDays n'est PAS effacé ici, il est utilisé par la modale et sera effacé par handleCloseActivityModal
       }
+    } else {
+      console.log(
+        "[CraBoard - handleMouseUpMultiSelect] Aucune sélection multi-jours à finaliser."
+      );
     }
   }, [
-    isDraggingMultiSelect,
     tempSelectedDays,
     multiSelectType,
     paidLeaveTypeId,
@@ -1645,11 +1717,12 @@ export default function CraBoard({
     setEditingActivity,
     setSelectedDate,
     setIsModalOpen,
-    setTempSelectedDays,
+    setTempSelectedDays, // Ajouté comme dépendance car il est appelé ici
     activitiesByDay,
     isPaidLeaveEditable,
     isCraEditable,
     readOnly, // Utilise la prop globale readOnly
+    isSingleDaySelectionLocked, // Ajouté comme dépendance
   ]);
 
   // Définir confirmResetMonth EN PREMIER
@@ -1950,6 +2023,14 @@ export default function CraBoard({
       );
       return;
     }
+    // NOUVEAU: Si le mode de sélection de jour unique est verrouillé, ne pas changer de mode
+    if (isSingleDaySelectionLocked) {
+      localShowMessage(
+        "Impossible de changer de mode de sélection. Le calendrier est en mode de sélection de jour unique. Fermez la modale pour déverrouiller.",
+        "info"
+      );
+      return;
+    }
 
     setMultiSelectType((prevType) => {
       const newType = prevType === "activity" ? "paid_leave" : "activity";
@@ -1980,6 +2061,7 @@ export default function CraBoard({
     setIsDraggingMultiSelect,
     setDragStartDayForSelection,
     localShowMessage,
+    isSingleDaySelectionLocked, // Ajouté comme dépendance
   ]);
 
   const goToPreviousMonth = useCallback(() => {
@@ -2040,29 +2122,93 @@ export default function CraBoard({
   }, [propCurrentMonth, currentMonth, fetchPublicHolidays]);
 
   useEffect(() => {
-    // This function is defined inside useEffect because it's only used here
-    // and depends on state variables that might change.
     const handleDragEnd = () => {
       setIsDraggingActivity(false);
       setDraggedActivity(null);
       setIsValidDropTarget(false);
     };
 
-    const handleMouseUpGlobal = (e) => {
-      if (isDraggingMultiSelect) {
-        handleMouseUpMultiSelect();
+    const handleGlobalMouseMove = (e) => {
+      // Si le mode de sélection de jour unique est verrouillé, ignorer les mouvements pour la multi-sélection
+      if (isSingleDaySelectionLocked) {
+        return;
+      }
+
+      // Si le bouton de la souris est enfoncé sur un jour et qu'on n'est pas déjà en mode drag
+      if (
+        isMouseDownOnCalendarDayRef.current &&
+        dragStartDayForSelection &&
+        !isDraggingMultiSelect
+      ) {
+        const distance = Math.sqrt(
+          Math.pow(e.clientX - mouseDownCoordsRef.current.x, 2) +
+            Math.pow(e.clientY - mouseDownCoordsRef.current.y, 2)
+        );
+
+        // Si le mouvement dépasse le seuil, activer le mode drag
+        if (distance > DRAG_THRESHOLD) {
+          setIsDraggingMultiSelect(true);
+          // CraCalendar's onMouseEnter will now react to isDraggingMultiSelect being true
+          // and update tempSelectedDays as the mouse moves over day cells.
+        }
       }
     };
 
-    // Add event listeners to the document for global drag/mouse up events
+    const handleGlobalMouseUp = (e) => {
+      // Réinitialiser le ref isMouseDownOnCalendarDayRef à la fin de tout événement mouseup global
+      isMouseDownOnCalendarDayRef.current = false;
+      // Toujours réinitialiser l'état de drag de la multi-sélection à la fin de mouseup
+      setIsDraggingMultiSelect(false);
+      setDragStartDayForSelection(null);
+
+      // Si le mode de sélection de jour unique est verrouillé, ne pas traiter les événements de multi-sélection
+      if (isSingleDaySelectionLocked) {
+        // Nettoyer les états de sélection multiple au cas où (sécurité)
+        // tempSelectedDays est déjà géré par handleCloseActivityModal
+        return;
+      }
+
+      // Calculer la distance de déplacement pour différencier clic et drag
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - mouseDownCoordsRef.current.x, 2) +
+          Math.pow(e.clientY - mouseDownCoordsRef.current.y, 2)
+      );
+
+      // Déterminer si c'était un drag ou un clic
+      // Si isDraggingMultiSelect était vrai avant ce mouseUp, ou si la distance dépasse le seuil
+      if (distance > DRAG_THRESHOLD) {
+        // C'était un drag confirmé (ou un clic qui a bougé au-delà du seuil)
+        handleMouseUpMultiSelect(); // Traiter la multi-sélection
+      } else if (dragStartDayForSelection) {
+        // C'était un simple clic sur une cellule de jour (mouvement inférieur au seuil)
+        // Appeler handleDayClick avec le jour initialement cliqué
+        handleDayClick(dragStartDayForSelection, e);
+      }
+
+      // tempSelectedDays n'est PAS réinitialisé ici, il est géré par handleCloseActivityModal ou handleMouseUpMultiSelect
+    };
+
     document.addEventListener("dragend", handleDragEnd);
-    document.addEventListener("mouseup", handleMouseUpGlobal);
-    // Cleanup function to remove event listeners when the component unmounts
+    document.addEventListener("mouseup", handleGlobalMouseUp);
+    document.addEventListener("mousemove", handleGlobalMouseMove); // Ajout du listener global de mouvement
+
     return () => {
       document.removeEventListener("dragend", handleDragEnd);
-      document.removeEventListener("mouseup", handleMouseUpGlobal);
+      document.removeEventListener("mouseup", handleGlobalMouseUp);
+      document.removeEventListener("mousemove", handleGlobalMouseMove); // Nettoyage du listener
     };
-  }, [handleMouseUpMultiSelect, isDraggingMultiSelect]); // Dependencies for this useEffect
+  }, [
+    handleMouseUpMultiSelect,
+    handleDayClick, // Ajouté comme dépendance car il est appelé ici
+    isDraggingMultiSelect, // isDraggingMultiSelect est une dépendance car nous la lisons ici.
+    isMouseDownOnCalendarDayRef,
+    mouseDownCoordsRef,
+    dragStartDayForSelection,
+    setIsDraggingMultiSelect, // Ajouté comme dépendance car nous la mettons à jour ici.
+    setDragStartDayForSelection, // Ajouté comme dépendance car nous la mettons à jour ici.
+    DRAG_THRESHOLD, // Ajouté comme dépendance
+    isSingleDaySelectionLocked, // Ajouté comme dépendance
+  ]); // Dépendances mises à jour
 
   useEffect(() => {
     if (
@@ -2344,12 +2490,12 @@ export default function CraBoard({
         activityTypeDefinitions={activityTypeDefinitions}
         clientDefinitions={clientDefinitions}
         isPublicHoliday={isPublicHoliday}
-        onDayClick={handleDayClick}
+        onDayClick={handleDayClick} // Passé pour les clics simples (appelé par handleGlobalMouseUp)
         onActivityClick={handleActivityClick}
         tempSelectedDays={tempSelectedDays}
-        onMouseDown={handleMouseDownMultiSelect}
-        onMouseEnter={handleMouseEnterMultiSelect}
-        onMouseUp={handleMouseUpMultiSelect}
+        onMouseDown={handleMouseDownMultiSelect} // Commencer la détection de drag
+        onMouseEnter={handleMouseEnterMultiSelect} // Étendre la sélection si en mode drag
+        // onMouseUp est géré globalement
         readOnly={readOnly} // Passe la prop globale readOnly
         isCraEditable={isCraEditable}
         isPaidLeaveEditable={isPaidLeaveEditable}
@@ -2366,6 +2512,7 @@ export default function CraBoard({
         multiSelectType={multiSelectType}
         isDragging={isDraggingMultiSelect}
         paidLeaveTypeId={paidLeaveTypeId}
+        isSingleDaySelectionLocked={isSingleDaySelectionLocked} // NOUVEAU: Passer l'état au calendrier
       />
 
       {/* Modale de prévisualisation du rapport mensuel */}
