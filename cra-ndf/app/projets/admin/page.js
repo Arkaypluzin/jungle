@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import BtnRetour from "@/components/BtnRetour";
+import { PlusCircle, Edit2, Trash2, Loader2 } from "lucide-react";
 
 export default function ProjetAdminPage() {
     const [projets, setProjets] = useState([]);
@@ -126,197 +127,214 @@ export default function ProjetAdminPage() {
         setEditFormLoading(false);
     }
 
+    // --- UI ---
     return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
-            <div className="flex justify-between items-center mb-4">
-                <h1 className="text-2xl font-bold">Liste des projets</h1>
-                <BtnRetour fallback="/dashboard/admin" />
-            </div>
+        <div className="min-h-screen flex flex-col items-center bg-gray-50 py-12">
+            <div className="max-w-4xl mx-auto px-4 py-10">
+                {/* HEADER */}
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mb-8">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900 mb-1">
+                            Gestion des projets
+                        </h1>
+                        <div className="text-gray-500 text-sm">Admin | Ajouter, modifier, supprimer vos projets</div>
+                    </div>
+                    <BtnRetour fallback="/dashboard/admin" />
+                </div>
 
-            <div className="flex mb-8">
-                <button
-                    onClick={() => setModalOpen(true)}
-                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
-                >
-                    + Nouveau projet
-                </button>
-            </div>
+                {/* BARRE D'ACTIONS */}
+                <div className="flex items-center justify-between gap-3 mb-8 sticky top-2 bg-white/95 z-10 rounded-xl shadow-sm px-3 py-2">
+                    <span className="font-medium text-lg text-gray-700">Projets ({projets.length})</span>
+                    <button
+                        onClick={() => setModalOpen(true)}
+                        className="flex items-center gap-2 bg-green-600 text-white px-5 py-2 rounded-lg shadow hover:bg-green-700 transition-all font-semibold"
+                    >
+                        <PlusCircle className="w-5 h-5" />
+                        Nouveau projet
+                    </button>
+                </div>
 
-            {loading ? (
-                <p>Chargement...</p>
-            ) : error ? (
-                <p className="text-red-500">{error}</p>
-            ) : projets.length === 0 ? (
-                <p>Aucun projet trouvé.</p>
-            ) : (
-                <table className="w-full border rounded-lg shadow">
-                    <thead className="bg-gray-100 text-black">
-                        <tr>
-                            <th className="py-3 px-4 text-left">Nom du projet</th>
-                            <th className="py-3 px-4 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {projets.map((projet) => (
-                            <tr
-                                key={projet.id || projet.uuid}
-                                className="border-b"
+                {/* LISTE */}
+                <div className="bg-white rounded-2xl shadow-lg border px-2 py-3 sm:px-6 sm:py-6 min-h-[300px] transition-all">
+                    {loading ? (
+                        <div className="flex justify-center items-center h-40">
+                            <Loader2 className="animate-spin w-8 h-8 text-blue-400" />
+                            <span className="ml-3 text-blue-500">Chargement des projets…</span>
+                        </div>
+                    ) : error ? (
+                        <p className="text-red-500 py-10 text-center">{error}</p>
+                    ) : projets.length === 0 ? (
+                        <p className="text-gray-400 text-lg py-10 text-center">Aucun projet trouvé.</p>
+                    ) : (
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            {projets.map((projet) => (
+                                <div
+                                    key={projet.id || projet.uuid}
+                                    className="bg-gradient-to-br from-blue-50 to-white border rounded-xl shadow-sm p-6 flex flex-col justify-between group hover:shadow-xl transition-all"
+                                >
+                                    <div>
+                                        <div className="font-semibold text-xl text-gray-800 mb-2 group-hover:text-blue-700 transition">
+                                            {projet.nom}
+                                        </div>
+                                        <div className="text-gray-400 text-xs">
+                                            ID: <span className="font-mono">{projet.id || projet.uuid}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-6">
+                                        <button
+                                            onClick={() => openEditModal(projet)}
+                                            className="flex-1 flex items-center justify-center gap-1 px-4 py-2 rounded-md bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-100 font-medium shadow-sm transition-all"
+                                        >
+                                            <Edit2 className="w-5 h-5" /> Modifier
+                                        </button>
+                                        <button
+                                            onClick={() => openDeleteModal(projet)}
+                                            className="flex-1 flex items-center justify-center gap-1 px-4 py-2 rounded-md bg-red-50 hover:bg-red-600 hover:text-white text-red-700 border border-red-100 font-medium shadow-sm transition-all"
+                                        >
+                                            <Trash2 className="w-5 h-5" /> Supprimer
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* MODALS */}
+                {/* Ajout */}
+                {modalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative animate-fadeIn">
+                            <button
+                                onClick={() => { setModalOpen(false); setFormError(""); setNomProjet(""); }}
+                                className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+                                aria-label="Fermer"
                             >
-                                <td className="py-3 px-4">{projet.nom}</td>
-                                <td className="py-3 px-4 flex justify-center gap-2">
+                                ✕
+                            </button>
+                            <h2 className="text-2xl font-bold mb-4 text-blue-700">Nouveau projet</h2>
+                            <form onSubmit={handleCreateProjet} className="space-y-5">
+                                <div>
+                                    <label className="block mb-1 font-medium text-gray-700">Nom du projet</label>
+                                    <input
+                                        type="text"
+                                        value={nomProjet}
+                                        onChange={e => setNomProjet(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        placeholder="Nom du projet"
+                                        required
+                                    />
+                                </div>
+                                {formError && <div className="text-red-500 text-sm">{formError}</div>}
+                                <div className="flex justify-end gap-2 pt-4 border-t">
                                     <button
-                                        onClick={() => openEditModal(projet)}
-                                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                        type="button"
+                                        onClick={() => { setModalOpen(false); setFormError(""); setNomProjet(""); }}
+                                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                        disabled={formLoading}
                                     >
-                                        Edit
+                                        Annuler
                                     </button>
                                     <button
-                                        onClick={() => openDeleteModal(projet)}
-                                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                                        type="submit"
+                                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                                        disabled={formLoading}
                                     >
-                                        Delete
+                                        {formLoading ? "Création..." : "Créer"}
                                     </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            )}
-
-            {modalOpen && (
-                <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50 text-black">
-                    <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full relative">
-                        <button
-                            onClick={() => { setModalOpen(false); setFormError(""); setNomProjet(""); }}
-                            className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-                            aria-label="Fermer"
-                        >
-                            ✕
-                        </button>
-                        <h2 className="text-xl font-bold mb-6">Nouveau projet</h2>
-                        <form onSubmit={handleCreateProjet} className="space-y-4">
-                            <div>
-                                <label className="block mb-2 font-medium text-gray-700">
-                                    Nom du projet
-                                </label>
-                                <input
-                                    type="text"
-                                    value={nomProjet}
-                                    onChange={e => setNomProjet(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                    placeholder="Nom du projet"
-                                    required
-                                />
-                            </div>
-                            {formError && <div className="text-red-500 text-sm">{formError}</div>}
-                            <div className="flex justify-end mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => { setModalOpen(false); setFormError(""); setNomProjet(""); }}
-                                    className="mr-4 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                    disabled={formLoading}
-                                >
-                                    Annuler
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                                    disabled={formLoading}
-                                >
-                                    {formLoading ? "Création..." : "Créer"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {editModalOpen && (
-                <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50 text-black">
-                    <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full relative">
-                        <button
-                            onClick={() => { setEditModalOpen(false); setEditFormError(""); setEditProjet(null); setEditNomProjet(""); }}
-                            className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-                            aria-label="Fermer"
-                        >
-                            ✕
-                        </button>
-                        <h2 className="text-xl font-bold mb-6">Modifier le projet</h2>
-                        <form onSubmit={handleEditProjet} className="space-y-4">
-                            <div>
-                                <label className="block mb-2 font-medium text-gray-700">
-                                    Nom du projet
-                                </label>
-                                <input
-                                    type="text"
-                                    value={editNomProjet}
-                                    onChange={e => setEditNomProjet(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                    placeholder="Nom du projet"
-                                    required
-                                />
-                            </div>
-                            {editFormError && <div className="text-red-500 text-sm">{editFormError}</div>}
-                            <div className="flex justify-end mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => { setEditModalOpen(false); setEditFormError(""); setEditProjet(null); setEditNomProjet(""); }}
-                                    className="mr-4 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                    disabled={editFormLoading}
-                                >
-                                    Annuler
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                    disabled={editFormLoading}
-                                >
-                                    {editFormLoading ? "Modification..." : "Enregistrer"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {deleteModalOpen && deleteProjet && (
-                <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50 text-black">
-                    <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full relative">
-                        <button
-                            onClick={() => { setDeleteModalOpen(false); setDeleteProjet(null); setDeleteError(""); }}
-                            className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-                            aria-label="Fermer"
-                        >
-                            ✕
-                        </button>
-                        <h2 className="text-xl font-bold mb-6 text-red-600">Confirmer la suppression</h2>
-                        <p className="mb-6">
-                            Êtes-vous sûr de vouloir supprimer le projet <b>{deleteProjet.nom}</b> ?
-                            <br />
-                            Cette action est <span className="text-red-500 font-bold">irréversible</span>.
-                        </p>
-                        {deleteError && <div className="text-red-500 text-sm mb-2">{deleteError}</div>}
-                        <div className="flex justify-end gap-4 mt-6">
-                            <button
-                                type="button"
-                                onClick={() => { setDeleteModalOpen(false); setDeleteProjet(null); setDeleteError(""); }}
-                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                disabled={deleteLoading}
-                            >
-                                Annuler
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleDeleteConfirmed}
-                                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-                                disabled={deleteLoading}
-                            >
-                                {deleteLoading ? "Suppression..." : "Supprimer"}
-                            </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* Edition */}
+                {editModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative animate-fadeIn">
+                            <button
+                                onClick={() => { setEditModalOpen(false); setEditFormError(""); setEditProjet(null); setEditNomProjet(""); }}
+                                className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+                                aria-label="Fermer"
+                            >
+                                ✕
+                            </button>
+                            <h2 className="text-2xl font-bold mb-4 text-blue-700">Modifier le projet</h2>
+                            <form onSubmit={handleEditProjet} className="space-y-5">
+                                <div>
+                                    <label className="block mb-1 font-medium text-gray-700">Nom du projet</label>
+                                    <input
+                                        type="text"
+                                        value={editNomProjet}
+                                        onChange={e => setEditNomProjet(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        placeholder="Nom du projet"
+                                        required
+                                    />
+                                </div>
+                                {editFormError && <div className="text-red-500 text-sm">{editFormError}</div>}
+                                <div className="flex justify-end gap-2 pt-4 border-t">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setEditModalOpen(false); setEditFormError(""); setEditProjet(null); setEditNomProjet(""); }}
+                                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                        disabled={editFormLoading}
+                                    >
+                                        Annuler
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                        disabled={editFormLoading}
+                                    >
+                                        {editFormLoading ? "Modification..." : "Enregistrer"}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Suppression */}
+                {deleteModalOpen && deleteProjet && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative animate-fadeIn">
+                            <button
+                                onClick={() => { setDeleteModalOpen(false); setDeleteProjet(null); setDeleteError(""); }}
+                                className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+                                aria-label="Fermer"
+                            >
+                                ✕
+                            </button>
+                            <h2 className="text-2xl font-bold mb-4 text-red-700">Confirmer la suppression</h2>
+                            <p className="mb-6">
+                                Êtes-vous sûr de vouloir supprimer le projet <b>{deleteProjet.nom}</b> ?
+                                <br />
+                                <span className="text-red-500 font-bold">Cette action est irréversible.</span>
+                            </p>
+                            {deleteError && <div className="text-red-500 text-sm mb-2">{deleteError}</div>}
+                            <div className="flex justify-end gap-2 pt-4 border-t">
+                                <button
+                                    type="button"
+                                    onClick={() => { setDeleteModalOpen(false); setDeleteProjet(null); setDeleteError(""); }}
+                                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                    disabled={deleteLoading}
+                                >
+                                    Annuler
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteConfirmed}
+                                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                                    disabled={deleteLoading}
+                                >
+                                    {deleteLoading ? "Suppression..." : "Supprimer"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
