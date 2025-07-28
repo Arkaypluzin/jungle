@@ -2302,23 +2302,7 @@ export default function CraBoard({
           </span>
         </div>
       )}
-      {/* Ce bandeau s'affiche si le calendrier n'est PAS globalement en lecture seule (par la prop `readOnly`),
-          MAIS qu'au moins un des rapports est validé ou en attente de révision. */}
-      {!readOnly &&
-        (["validated", "pending_review"].includes(craReportStatus) ||
-          ["validated", "pending_review"].includes(paidLeaveReportStatus)) && (
-          <div
-            className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative mb-4"
-            role="alert"
-          >
-            <strong className="font-bold">Rapport Verrouillé:</strong>
-            <span className="block sm:inline ml-2">
-              Le rapport est au statut "
-              {overallReportStatus === "validated" ? "Validé" : "En attente"}"
-              pour ce mois. Certaines modifications peuvent être restreintes.
-            </span>
-          </div>
-        )}
+
       {overallReportStatus === "refused" && (
         <div
           className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"
