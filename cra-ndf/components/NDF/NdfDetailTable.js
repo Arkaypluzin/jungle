@@ -323,15 +323,12 @@ export default function NdfDetailTable({
 
   // A placer tout en haut
   function getTvaArray(tva, montant) {
-    // Si déjà array, c'est le format [{ taux, valeur_tva }]
     if (Array.isArray(tva)) return tva;
-    // Si c'est un string genre "10%" ou "10% / 20%"
     if (typeof tva === "string" && tva.includes("/")) {
-      // On parse chaque taux et on calcule la tva brute
       const montantNum = parseFloat(montant) || 0;
       return tva.split("/").map(t => {
         const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-        const valeur_tva = Math.ceil(montantNum * tauxNum) / 100; // arrondi simple
+        const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
         return { taux: tauxNum, valeur_tva };
       });
     }
@@ -352,12 +349,10 @@ export default function NdfDetailTable({
     return "";
   }
 
-  // Calcul TTC avec array
   function getTTCLineRounded(montant, tvaArr) {
     const base = parseFloat(montant) || 0;
     if (!tvaArr || (Array.isArray(tvaArr) && tvaArr.length === 0)) return base;
     let arr = Array.isArray(tvaArr) ? tvaArr : getTvaArray(tvaArr, montant);
-    // la somme des tva, arrondi au centime
     const totalTva = arr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
     return Math.round((base + totalTva) * 100) / 100;
   }
@@ -451,13 +446,11 @@ export default function NdfDetailTable({
 
   const totalTVA = useMemo(() => {
     return filteredDetails.reduce((acc, d) => {
-      // Somme de toutes les tva sur chaque ligne
       let tvaArr = Array.isArray(d.tva) ? d.tva : getTvaArray(d.tva, d.montant);
       const totalLigne = tvaArr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
       return acc + totalLigne;
     }, 0);
   }, [filteredDetails]);
-
 
   function resetFilters() {
     setNature("");
@@ -470,58 +463,58 @@ export default function NdfDetailTable({
     setFilterModal(false);
   }
 
-  if (!initialDetails?.length) {
-    return (
-      <p className="text-center text-gray-600 py-8">
-        Aucun détail pour cette note de frais.
-      </p>
-    );
-  }
+  // --- Ici, plus de early return qui cache le tableau ---
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
-      {filteredDetails.length > 0 && (
-        <div className="overflow-x-auto rounded-lg shadow-sm border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg shadow-sm border border-gray-200">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Date
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Nature
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Description
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Client
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Projet
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Moyen de paiement
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Montant HT
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                TVA
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Montant TTC
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Justificatif
+              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-100">
+            {filteredDetails.length === 0 ? (
               <tr>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Nature
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Description
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Client
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Projet
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Moyen de paiement
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Montant HT
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  TVA
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Montant TTC
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Justificatif
-                </th>
-                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Actions
-                </th>
+                <td colSpan={11} className="py-8 text-center text-gray-400">
+                  Aucune dépense pour cette note de frais.
+                </td>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {filteredDetails.map((detail) => (
+            ) : (
+              filteredDetails.map((detail) => (
                 <React.Fragment key={detail.uuid}>
                   <tr className="hover:bg-gray-50 transition-colors duration-150">
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
@@ -625,42 +618,43 @@ export default function NdfDetailTable({
                     </tr>
                   )}
                 </React.Fragment>
-              ))}
-            </tbody>
-            <tfoot className="bg-gray-100 border-t-2 border-gray-300">
-              <tr>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                  Total HT
-                </td>
-                <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                  {totalHT.toFixed(2)}€
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
-                  Total TVA
-                </td>
-                <td colSpan={8} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
-                  {totalTVA.toFixed(2)}€
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                  Total TTC
-                </td>
-                <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                  {totalTTC.toFixed(2)}€
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={11} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
-                  Nombre total de lignes de note de frais : {filteredDetails.length}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+              ))
+            )}
+          </tbody>
+          <tfoot className="bg-gray-100 border-t-2 border-gray-300">
+            <tr>
+              <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                Total HT
+              </td>
+              <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                {totalHT.toFixed(2)}€
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                Total TVA
+              </td>
+              <td colSpan={8} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
+                {totalTVA.toFixed(2)}€
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                Total TTC
+              </td>
+              <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                {totalTTC.toFixed(2)}€
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={11} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+                Nombre total de lignes de note de frais : {filteredDetails.length}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
       <div className="mt-8 text-center">
         <button
           onClick={exportToPDF}
@@ -671,7 +665,7 @@ export default function NdfDetailTable({
               : "Exporter le tableau en PDF"
           }
           className={`inline-flex items-center px-8 py-3 rounded-lg font-semibold transition-colors duration-200 shadow-md
-                        ${ndfStatut === "Provisoire"
+            ${ndfStatut === "Provisoire"
               ? "bg-gray-300 text-gray-600 cursor-not-allowed opacity-75"
               : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             }`}
@@ -692,8 +686,7 @@ export default function NdfDetailTable({
         </button>
         {ndfStatut === "Provisoire" && (
           <p className="text-sm text-gray-500 mt-2 italic">
-            Le statut doit être autre que Provisoire pour permettre l’export
-            PDF.
+            Le statut doit être autre que Provisoire pour permettre l’export PDF.
           </p>
         )}
       </div>
