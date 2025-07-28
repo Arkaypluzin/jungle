@@ -1,4 +1,3 @@
-// app/api/ndf_kilo/multi/route.js
 import { createNdfKiloController } from "../controller";
 
 export async function POST(req) {
@@ -8,7 +7,6 @@ export async function POST(req) {
     }
     const results = [];
     for (const data of dataArr) {
-        // on envoie une par une (tu peux paralléliser)
         const res = await createNdfKiloController(data);
         results.push(res);
     }
