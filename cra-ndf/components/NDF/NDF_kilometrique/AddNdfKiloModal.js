@@ -77,7 +77,7 @@ function isDateInvalid(dateDebut, dateFin) {
     return new Date(dateDebut) > new Date(dateFin);
 }
 
-export default function AddNdfKiloModal({ ndfId, onAdded }) {
+export default function AddNdfKiloModal({ ndfId, ndfStatut = "Provisoire", onAdded }) {
     const [open, setOpen] = useState(false);
     const [form, setForm] = useState({
         date_debut: "",
@@ -182,12 +182,14 @@ export default function AddNdfKiloModal({ ndfId, onAdded }) {
 
     return (
         <>
-            <button
-                className="px-4 py-2 bg-green-600 text-white rounded-md font-semibold shadow hover:bg-green-700"
-                onClick={() => setOpen(true)}
-            >
-                + Ajouter ligne kilométrique
-            </button>
+            {ndfStatut === "Provisoire" && (
+                <button
+                    className="px-4 py-2 bg-green-600 text-white rounded-md font-semibold shadow hover:bg-green-700"
+                    onClick={() => setOpen(true)}
+                >
+                    + Ajouter ligne kilométrique
+                </button>
+            )}
             {open && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                     <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg relative max-h-[95vh] overflow-y-auto text-gray-900">
