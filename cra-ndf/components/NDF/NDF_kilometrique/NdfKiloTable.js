@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const TRAJET_TYPES = [
     { label: "Aller", value: 1 },
@@ -89,6 +91,85 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
     const [editLoading, setEditLoading] = useState(false);
     const [editError, setEditError] = useState("");
     const [deleteTarget, setDeleteTarget] = useState(null);
+
+    function exportKiloPDF() {
+        const doc = new jsPDF({ orientation: "landscape" });
+
+        const title = "Note de frais - Kilométriques";
+        doc.setFontSize(20);
+        doc.setTextColor(20, 20, 20);
+        doc.text(title, 14, 20);
+
+        autoTable(doc, {
+            startY: 30,
+            head: [[
+                "Date début",
+                "Date fin",
+                "Départ",
+                "Arrivée",
+                "Véhicule",
+                "Chevaux Fiscaux",
+                "km",
+                "Trajet",
+                "Motif",
+                "Total km",
+                "Indemnités (€)"
+            ]],
+            body: rows.map(row => [
+                toYYYYMMDD(row.date_debut),
+                toYYYYMMDD(row.date_fin),
+                row.depart,
+                row.arrivee,
+                row.type_vehicule === "moto" ? "Moto" : row.type_vehicule === "voiture" ? "Voiture" : "",
+                row.type_vehicule === "moto"
+                    ? (row.cv === "1" ? "1 CV"
+                        : row.cv === "2-3-4-5" ? "2, 3, 4 ou 5 CV"
+                            : row.cv === "plus5" ? "Plus de 5 CV"
+                                : "")
+                    : row.type_vehicule === "voiture"
+                        ? (row.cv === "3-" ? "3 CV et moins"
+                            : row.cv === "4" ? "4 CV"
+                                : row.cv === "5" ? "5 CV"
+                                    : row.cv === "6" ? "6 CV"
+                                        : row.cv === "7+" ? "7 CV et plus"
+                                            : "")
+                        : "",
+                row.distance,
+                TRAJET_TYPES.find(t => t.value === row.type_trajet)?.label,
+                row.motif,
+                parseFloat(row.total_euro).toFixed(2),
+                calcIndemnite(row.type_vehicule, row.cv, row.total_euro)
+            ]),
+            styles: { fontSize: 9, cellPadding: 2.5 },
+            headStyles: { fillColor: [30, 144, 255], textColor: 255, fontStyle: "bold", halign: "center" },
+            alternateRowStyles: { fillColor: [240, 248, 255] },
+            margin: { left: 10, right: 10 },
+        });
+
+        autoTable(doc, {
+            body: [
+                [
+                    { content: "Total km", colSpan: 9, styles: { halign: "right", fontStyle: "bold", fontSize: 11 } },
+                    { content: totalEuro().toFixed(2) + " km", styles: { fontStyle: "bold", halign: "center" } },
+                    { content: "" }
+                ],
+                [
+                    { content: "Total indemnités", colSpan: 9, styles: { halign: "right", fontStyle: "bold", fontSize: 11 } },
+                    { content: totalIndemnites().toFixed(2) + " €", styles: { fontStyle: "bold", halign: "center" } },
+                    { content: "" }
+                ],
+                [
+                    { content: `Nombre total de lignes kilométriques : ${rows.length}`, colSpan: 11, styles: { halign: "center", fontStyle: "italic", fontSize: 10 } }
+                ]
+            ],
+            theme: "plain",
+            startY: doc.lastAutoTable.finalY + 10,
+            margin: { left: 10, right: 10 },
+            styles: { fontSize: 10, cellPadding: 3, textColor: [0, 0, 0] }
+        });
+
+        doc.save(`note-frais_kilometriques.pdf`);
+    }
 
     function handleEdit(row) {
         setEditRow(row);
@@ -202,7 +283,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 border">
                     <thead className="bg-gray-50">
-                        {/* ... en-tête inchangé ... */}
                         <tr>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date début</th>
                             <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date fin</th>
@@ -232,7 +312,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                         ) : (
                             rows.map(row => (
                                 <tr key={row.uuid} className="hover:bg-gray-50 text-gray-900">
-                                    {/* ... mêmes colonnes qu’avant ... */}
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_debut)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_fin)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{row.depart}</td>
@@ -329,7 +408,42 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                     </tfoot>
                 </table>
             </div>
-            {/* --- Modal Edition --- */}
+            <div className="mt-8 text-center">
+                <div className="mt-8 flex flex-col items-center justify-center">
+                    <button
+                        onClick={exportKiloPDF}
+                        disabled={ndfStatut === "Provisoire"}
+                        title={ndfStatut === "Provisoire"
+                            ? "Impossible d'exporter une note de frais kilométrique au statut Provisoire."
+                            : "Exporter le tableau kilométrique en PDF"}
+                        className={`inline-flex items-center px-8 py-3 rounded-lg font-semibold transition-colors duration-200 shadow-md
+            ${ndfStatut === "Provisoire"
+                                ? "bg-gray-300 text-gray-600 cursor-not-allowed opacity-75"
+                                : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                            }`}
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5 mr-3"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                        >
+                            <path
+                                fillRule="evenodd"
+                                d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                                clipRule="evenodd"
+                            />
+                        </svg>
+                        Exporter le tableau kilométrique en PDF
+                    </button>
+                    {ndfStatut === "Provisoire" && (
+                        <p className="text-sm text-gray-500 mt-4 italic text-center">
+                            Le statut doit être autre que Provisoire pour permettre l’export PDF.
+                        </p>
+                    )}
+                </div>
+            </div>
+            
             {editRow && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                     <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto text-gray-900">
