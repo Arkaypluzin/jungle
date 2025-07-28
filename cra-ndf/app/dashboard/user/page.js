@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import Link from "next/link";
+import { User, ClipboardList, FileText, LogOut } from "lucide-react";
 
 export default async function UserDashboard() {
   const session = await auth();
@@ -10,32 +11,56 @@ export default async function UserDashboard() {
     return redirect("/dashboard/admin");
   }
 
+  const cards = [
+    {
+      href: "/profile",
+      icon: <User className="w-8 h-8 text-green-600 mb-2" />,
+      label: "Profil",
+      description: "Voir et modifier mon profil"
+    },
+    {
+      href: "/cra-manager",
+      icon: <ClipboardList className="w-8 h-8 text-purple-600 mb-2" />,
+      label: "Gérer CRA",
+      description: "Remplir et consulter mes CRA"
+    },
+    {
+      href: "/note-de-frais",
+      icon: <FileText className="w-8 h-8 text-blue-600 mb-2" />,
+      label: "Mes notes de frais",
+      description: "Consulter et déposer mes notes"
+    }
+  ];
+
   return (
-    <div className="p-10 text-center">
-      <h1 className="text-2xl font-bold">User Dashboard</h1>
-      <p>Bienvenue {session.user.name}</p>
+    <div className="min-h-screen flex flex-col items-center bg-gray-50 py-12">
+      <div className="w-full max-w-2xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2 text-center">Tableau de bord Utilisateur</h1>
+        <p className="text-gray-600 text-center mb-8">
+          Bienvenue <span className="font-semibold">{session.user.name}</span>
+        </p>
 
-      <div className="flex justify-center gap-4 mt-6">
-        <Link
-          href="/profile"
-          className="bg-green-700 text-white px-4 py-2 rounded-md hover:opacity-80"
-        >
-          Profile
-        </Link>
-        <LogoutButton />
-        <Link
-          href="/cra-manager"
-          className="bg-purple-700 text-white px-4 py-2 rounded-md hover:opacity-80"
-        >
-          Gérer CRA
-        </Link>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+          {cards.map((card) => (
+            <Link
+              key={card.href}
+              href={card.href}
+              className="bg-white rounded-xl shadow-md hover:shadow-xl border p-6 flex flex-col items-center transition group"
+            >
+              {card.icon}
+              <span className="text-lg font-semibold mb-1 text-gray-900 group-hover:text-primary">{card.label}</span>
+              <span className="text-sm text-gray-500 text-center">{card.description}</span>
+            </Link>
+          ))}
+        </div>
 
-        <Link
-          href="/note-de-frais"
-          className="bg-blue-700 text-white px-4 py-2 rounded-md hover:opacity-80"
-        >
-          Mes notes de frais
-        </Link>
+        <div className="flex justify-center">
+          <LogoutButton>
+            <div className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition">
+              <LogOut className="w-5 h-5" /> Déconnexion
+            </div>
+          </LogoutButton>
+        </div>
       </div>
     </div>
   );
