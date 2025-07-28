@@ -40,9 +40,9 @@ export default function RefuseNdfButton({ ndfId, onRefused }) {
                         <div className="flex gap-2 justify-end">
                             <button className="px-4 py-2" onClick={() => setOpen(false)}>Annuler</button>
                             <button
-                                className="px-4 py-2 bg-red-600 text-white rounded"
+                                className={`px-4 py-2 bg-red-600 text-white rounded ${!comment.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 onClick={handleRefuse}
-                                disabled={loading}
+                                disabled={!comment.trim() || loading}
                             >
                                 {loading ? "Envoi..." : "Refuser"}
                             </button>
