@@ -220,7 +220,7 @@ export default function ProjetAdminPage() {
                                         type="text"
                                         value={nomProjet}
                                         onChange={e => setNomProjet(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300 text-black"
                                         placeholder="Nom du projet"
                                         required
                                     />
@@ -267,7 +267,7 @@ export default function ProjetAdminPage() {
                                         type="text"
                                         value={editNomProjet}
                                         onChange={e => setEditNomProjet(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        className="w-full text-black px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
                                         placeholder="Nom du projet"
                                         required
                                     />
@@ -307,7 +307,7 @@ export default function ProjetAdminPage() {
                                 ✕
                             </button>
                             <h2 className="text-2xl font-bold mb-4 text-red-700">Confirmer la suppression</h2>
-                            <p className="mb-6">
+                            <p className="mb-6 text-black">
                                 Êtes-vous sûr de vouloir supprimer le projet <b>{deleteProjet.nom}</b> ?
                                 <br />
                                 <span className="text-red-500 font-bold">Cette action est irréversible.</span>
