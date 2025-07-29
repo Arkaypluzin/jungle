@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { X, Plus, Trash } from "lucide-react";
 
+// Constantes utilitaires
 const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
 const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
 const MULTI_TVA_OPTIONS = ["0", "5.5", "10", "20"];
@@ -15,13 +16,8 @@ const MONTHS_MAP = {
 };
 
 function getDefaultForm(minDate, maxDate) {
-  // Date actuelle en YYYY-MM-DD
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
-
+  const todayStr = new Date().toISOString().split("T")[0];
   let dateStr = todayStr;
-
-  // bornes min/max définies ? on contraint
   if (minDate && todayStr < minDate) dateStr = minDate;
   if (maxDate && todayStr > maxDate) dateStr = maxDate;
   if (!minDate && !maxDate) dateStr = todayStr;
@@ -55,7 +51,7 @@ export default function AddNdfDetailModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Dates min/max globales
+  // Bornes min/max
   const monthIndex = parentNdfMonth ? MONTHS_MAP[parentNdfMonth] : null;
   const yearValue = parentNdfYear || new Date().getFullYear();
   const minDate = useMemo(() => {
@@ -67,19 +63,17 @@ export default function AddNdfDetailModal({
     return "";
   }, [monthIndex, yearValue]);
 
-  // Initialisation data clients/projets
+  // Récup clients/projets
   useEffect(() => {
     if (open) {
-      fetch("/api/client").then(res => res.json()).then(data => setClients(Array.isArray(data) ? data : []));
-      fetch("/api/projets").then(res => res.json()).then(data => setProjets(Array.isArray(data) ? data : []));
+      fetch("/api/client").then(res => res.json()).then(setClients).catch(() => setClients([]));
+      fetch("/api/projets").then(res => res.json()).then(setProjets).catch(() => setProjets([]));
     }
   }, [open]);
 
-  // Initialisation d'une ligne si on ouvre
+  // Init détail à l'ouverture
   useEffect(() => {
-    if (open && details.length === 0) {
-      setDetails([getDefaultForm(minDate, maxDate)]);
-    }
+    if (open && details.length === 0) setDetails([getDefaultForm(minDate, maxDate)]);
   }, [open, details.length, minDate, maxDate]);
 
   function resetAll() {
@@ -87,67 +81,47 @@ export default function AddNdfDetailModal({
     setError("");
   }
 
-  // Gestion d'une ligne de dépense
+  // Gestion des champs et multi-lignes
   function handleFieldChange(idx, field, value) {
-    setDetails(prev =>
-      prev.map((d, i) =>
-        i === idx ? { ...d, [field]: value } : d
-      )
-    );
+    setDetails(prev => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
   }
   function handleMultiTauxChange(idx, tauxIdx, field, value) {
-    setDetails(prev =>
-      prev.map((d, i) => {
-        if (i !== idx) return d;
-        const multiTaux = d.multiTaux.map((mt, mi) =>
-          mi === tauxIdx ? { ...mt, [field]: value } : mt
-        );
-        return { ...d, multiTaux };
-      })
-    );
+    setDetails(prev => prev.map((d, i) => {
+      if (i !== idx) return d;
+      const multiTaux = d.multiTaux.map((mt, mi) =>
+        mi === tauxIdx ? { ...mt, [field]: value } : mt
+      );
+      return { ...d, multiTaux };
+    }));
   }
   function addMultiTauxField(idx) {
-    setDetails(prev =>
-      prev.map((d, i) =>
-        i === idx && d.multiTaux.length < 3
-          ? { ...d, multiTaux: [...d.multiTaux, { taux: "", montant: "" }] }
-          : d
-      )
-    );
+    setDetails(prev => prev.map((d, i) =>
+      i === idx && d.multiTaux.length < 3
+        ? { ...d, multiTaux: [...d.multiTaux, { taux: "", montant: "" }] }
+        : d
+    ));
   }
   function removeMultiTauxField(idx, tauxIdx) {
-    setDetails(prev =>
-      prev.map((d, i) =>
-        i === idx && d.multiTaux.length > 1
-          ? { ...d, multiTaux: d.multiTaux.filter((_, mi) => mi !== tauxIdx) }
-          : d
-      )
-    );
+    setDetails(prev => prev.map((d, i) =>
+      i === idx && d.multiTaux.length > 1
+        ? { ...d, multiTaux: d.multiTaux.filter((_, mi) => mi !== tauxIdx) }
+        : d
+    ));
   }
   function handleAddInvite(idx, val) {
-    setDetails(prev =>
-      prev.map((d, i) =>
-        i === idx && val.trim()
-          ? { ...d, inviter: [...d.inviter, val.trim()], invite: "" }
-          : d
-      )
-    );
+    setDetails(prev => prev.map((d, i) =>
+      i === idx && val.trim()
+        ? { ...d, inviter: [...d.inviter, val.trim()], invite: "" }
+        : d
+    ));
   }
   function handleRemoveInvite(idx, inviteIdx) {
-    setDetails(prev =>
-      prev.map((d, i) =>
-        i === idx
-          ? { ...d, inviter: d.inviter.filter((_, j) => j !== inviteIdx) }
-          : d
-      )
-    );
+    setDetails(prev => prev.map((d, i) =>
+      i === idx ? { ...d, inviter: d.inviter.filter((_, j) => j !== inviteIdx) } : d
+    ));
   }
   function handleFileChange(idx, file) {
-    setDetails(prev =>
-      prev.map((d, i) =>
-        i === idx ? { ...d, imgFile: file } : d
-      )
-    );
+    setDetails(prev => prev.map((d, i) => i === idx ? { ...d, imgFile: file } : d));
   }
   function addForm() {
     if (details.length < 5) setDetails([...details, getDefaultForm(minDate, maxDate)]);
@@ -156,21 +130,17 @@ export default function AddNdfDetailModal({
     if (details.length > 1) setDetails(details.filter((_, i) => i !== idx));
   }
 
-  // Upload pour une image individuelle
+  // Upload image individuelle
   async function uploadImage(imgFile) {
     if (!imgFile) return null;
     const formData = new FormData();
     formData.append("file", imgFile);
     const res = await fetch("/api/upload", { method: "POST", body: formData });
-    if (!res.ok) {
-      const errorData = await res.json();
-      throw new Error(errorData.error || "Erreur lors de l'upload de l'image.");
-    }
-    const data = await res.json();
-    return data.url;
+    if (!res.ok) throw new Error((await res.json()).error || "Erreur lors de l'upload.");
+    return (await res.json()).url;
   }
 
-  // Calculs automatiques de HT/TVA par ligne (même logique qu'avant, isolé pour chaque ligne)
+  // Calculs auto
   function autoFillDetail(d) {
     const tvaMono = (() => {
       if (d.tva === "autre taux" && d.autreTaux)
@@ -179,15 +149,12 @@ export default function AddNdfDetailModal({
         return parseFloat(d.tva.replace("%", "").replace(",", ".")) || 0;
       return 0;
     })();
-
-    // Montant HT auto
     let montant = d.montant;
     if (d.tva !== "multi-taux" && d.valeurTTC && tvaMono) {
       const ttcNum = parseFloat(d.valeurTTC.toString().replace(",", "."));
       const htNum = ttcNum / (1 + tvaMono / 100);
       montant = isNaN(htNum) ? "" : htNum.toFixed(2);
     }
-    // Valeur TVA auto
     let valeurTvaMono = "";
     if (d.tva !== "multi-taux" && montant && tvaMono) {
       const montantNum = parseFloat(montant) || 0;
@@ -199,7 +166,6 @@ export default function AddNdfDetailModal({
       if (third >= 5) arrondi = (intPart + 1) / 100;
       valeurTvaMono = arrondi.toFixed(2);
     }
-    // Pour multi-taux
     let totalHTMulti = 0;
     let totalTVA = 0;
     if (d.tva === "multi-taux") {
@@ -219,15 +185,26 @@ export default function AddNdfDetailModal({
     return { ...d, montant, valeurTvaMono, totalHTMulti, totalTVA };
   }
 
-  // Ajout multi
+  // Soumission multi-lignes avec contrôle strict sur la date
   async function handleMultiSubmit(e) {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      // Validation basique
       if (ndfStatut !== "Provisoire") throw new Error("Impossible d’ajouter une dépense sur une note de frais non provisoire.");
       for (const d of details) {
+        // Contrôle strict date
+        if (d.dateStr) {
+          const date = new Date(d.dateStr);
+          if (
+            date.getMonth() !== monthIndex ||
+            date.getFullYear() !== Number(yearValue)
+          ) {
+            throw new Error(
+              "La date choisie doit obligatoirement appartenir au mois et à l'année de la note de frais."
+            );
+          }
+        }
         if (!d.selectedClient) throw new Error("Veuillez sélectionner un client.");
         if (!d.selectedProjet) throw new Error("Veuillez sélectionner un projet.");
         if (!d.dateStr) throw new Error("Veuillez remplir la date.");
@@ -255,15 +232,12 @@ export default function AddNdfDetailModal({
         }
       }
 
-      // Upload images en parallèle
+      // Upload images
       const imgs = await Promise.all(
-        details.map(async (d) => {
-          if (d.imgFile) return await uploadImage(d.imgFile);
-          return null;
-        })
+        details.map(async (d) => (d.imgFile ? await uploadImage(d.imgFile) : null))
       );
 
-      // Prépare data
+      // Préparation data pour API
       const rowsToSend = details.map((d, idx) => {
         const auto = autoFillDetail(d);
         let tvaValue = d.tva;
@@ -295,7 +269,6 @@ export default function AddNdfDetailModal({
         return body;
       });
 
-      // Appel à l’API multi
       const res = await fetch("/api/ndf_details/multi", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -315,7 +288,7 @@ export default function AddNdfDetailModal({
     }
   }
 
-  // --------- UI ----------
+  // ---------- UI ----------
   return (
     <>
       {ndfStatut === "Provisoire" && (
@@ -357,7 +330,6 @@ export default function AddNdfDetailModal({
                         onClick={() => removeForm(idx)}
                       ><Trash size={18} /></button>
                     )}
-                    {/* ... ci-dessous: tous les champs habituels, juste préfixés de d. */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Date :</label>
@@ -382,59 +354,55 @@ export default function AddNdfDetailModal({
                         </select>
                       </div>
                     </div>
-
                     {d.nature === "repas" && (
-                      <>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Type de repas :</label>
-                            <select
-                              className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white"
-                              value={d.typeRepas}
-                              onChange={e => handleFieldChange(idx, "typeRepas", e.target.value)}
-                            >
-                              {TYPE_REPAS.map(tp => <option key={tp} value={tp}>{tp}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Invité(s) :</label>
-                            <div className="flex gap-2 mb-2">
-                              <input
-                                type="text"
-                                className="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white"
-                                value={d.invite}
-                                onChange={e => handleFieldChange(idx, "invite", e.target.value)}
-                                placeholder="Nom de l'invité"
-                                onKeyDown={e => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    handleAddInvite(idx, d.invite);
-                                  }
-                                }}
-                              />
-                              <button type="button" className="p-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
-                                onClick={() => handleAddInvite(idx, d.invite)} tabIndex={0} title="Ajouter l'invité">
-                                <Plus size={18} />
-                              </button>
-                            </div>
-                            {d.inviter.length > 0 && (
-                              <ul className="pl-2 space-y-1">
-                                {d.inviter.map((nom, invIdx) => (
-                                  <li key={invIdx} className="flex items-center gap-2 text-sm text-gray-800">
-                                    <span className="flex-1">{nom}</span>
-                                    <button type="button" className="text-red-600 hover:bg-red-100 rounded-full p-1"
-                                      onClick={() => handleRemoveInvite(idx, invIdx)} title="Retirer">
-                                      <Trash size={14} />
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Type de repas :</label>
+                          <select
+                            className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white"
+                            value={d.typeRepas}
+                            onChange={e => handleFieldChange(idx, "typeRepas", e.target.value)}
+                          >
+                            {TYPE_REPAS.map(tp => <option key={tp} value={tp}>{tp}</option>)}
+                          </select>
                         </div>
-                      </>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Invité(s) :</label>
+                          <div className="flex gap-2 mb-2">
+                            <input
+                              type="text"
+                              className="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white"
+                              value={d.invite}
+                              onChange={e => handleFieldChange(idx, "invite", e.target.value)}
+                              placeholder="Nom de l'invité"
+                              onKeyDown={e => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleAddInvite(idx, d.invite);
+                                }
+                              }}
+                            />
+                            <button type="button" className="p-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
+                              onClick={() => handleAddInvite(idx, d.invite)} tabIndex={0} title="Ajouter l'invité">
+                              <Plus size={18} />
+                            </button>
+                          </div>
+                          {d.inviter.length > 0 && (
+                            <ul className="pl-2 space-y-1">
+                              {d.inviter.map((nom, invIdx) => (
+                                <li key={invIdx} className="flex items-center gap-2 text-sm text-gray-800">
+                                  <span className="flex-1">{nom}</span>
+                                  <button type="button" className="text-red-600 hover:bg-red-100 rounded-full p-1"
+                                    onClick={() => handleRemoveInvite(idx, invIdx)} title="Retirer">
+                                    <Trash size={14} />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
                     )}
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Moyen de paiement :</label>
@@ -456,7 +424,6 @@ export default function AddNdfDetailModal({
                         />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Valeur TTC (€) :</label>
@@ -485,7 +452,6 @@ export default function AddNdfDetailModal({
                         </select>
                       </div>
                     </div>
-
                     {d.tva === "autre taux" && (
                       <input
                         type="text"
@@ -496,7 +462,6 @@ export default function AddNdfDetailModal({
                         onChange={e => handleFieldChange(idx, "autreTaux", e.target.value)}
                       />
                     )}
-
                     {d.tva === "multi-taux" && (
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -574,7 +539,6 @@ export default function AddNdfDetailModal({
                         </div>
                       </div>
                     )}
-
                     {d.tva !== "multi-taux" && (
                       <div className="flex gap-4 items-end mt-2">
                         <div className="flex-1">
@@ -604,7 +568,6 @@ export default function AddNdfDetailModal({
                         </div>
                       </div>
                     )}
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Client :</label>
