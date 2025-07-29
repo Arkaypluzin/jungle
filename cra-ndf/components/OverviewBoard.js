@@ -20,6 +20,7 @@ import {
   addDays,
   subDays,
   parseISO,
+  isWithinInterval, // Ajout pour le filtre par date
 } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -35,6 +36,10 @@ export default function OverviewBoard({
   const [currentViewStart, setCurrentViewStart] = useState(new Date()); // Début du mois/semaine/jour courant
   const [viewMode, setViewMode] = useState("month"); // 'month', 'week', 'day'
   const [publicHolidays, setPublicHolidays] = useState([]);
+
+  // NOUVEAUX ÉTATS POUR LE FILTRE PAR DATE
+  const [filterStartDate, setFilterStartDate] = useState(""); // Chaîne 'yyyy-MM-dd'
+  const [filterEndDate, setFilterEndDate] = useState(""); // Chaîne 'yyyy-MM-dd'
 
   const paidLeaveTypeId = useMemo(() => {
     const type = activityTypeDefinitions.find(
@@ -107,7 +112,6 @@ export default function OverviewBoard({
   const fetchActivitiesForRange = useCallback(
     async (startDate, endDate) => {
       try {
-        // Maintenant, cette API devrait retourner les activités avec les champs userName et userAzureAdId populés
         const activitiesData = await fetchAndParse(
           `/api/cra_activities?startDate=${format(
             startDate,
@@ -253,27 +257,50 @@ export default function OverviewBoard({
   const activitiesByDayAndUser = useMemo(() => {
     const data = new Map(); // Map<userId, Map<dateKey, Array<activity>>>
 
+    // Filtrer les activités par la plage de dates si les filtres sont définis
+    const filteredActivities = allActivities.filter(activity => {
+      if (!filterStartDate && !filterEndDate) {
+        return true; // Pas de filtre appliqué
+      }
+
+      const activityDate = activity.date_activite;
+      if (!isValid(activityDate)) {
+        return false; // Ignorer les activités avec date invalide
+      }
+
+      let passesFilter = true;
+      if (filterStartDate) {
+        const start = parseISO(filterStartDate);
+        if (isValid(start) && isBefore(activityDate, start)) {
+          passesFilter = false;
+        }
+      }
+      if (filterEndDate) {
+        const end = parseISO(filterEndDate);
+        if (isValid(end) && isBefore(end, activityDate)) { // Note: isBefore(end, activityDate) means activityDate is *after* end
+          passesFilter = false;
+        }
+      }
+      return passesFilter;
+    });
+
+
     allUsers.forEach((user) => {
       data.set(user.id, new Map()); // Initialize map for each user, where user.id is azureAdUserId
     });
 
-    allActivities.forEach((activity) => {
+    filteredActivities.forEach((activity) => { // Utilise filteredActivities ici
       // Utilise userAzureAdId si populé, sinon user_id (qui devrait être l'azureAdUserId)
       const userIdToMap = activity.userAzureAdId || activity.user_id;
       if (isValid(activity.date_activite) && userIdToMap) {
         const dateKey = format(activity.date_activite, "yyyy-MM-dd");
         if (!data.has(userIdToMap)) {
-          // Si une activité a un user_id/userAzureAdId qui n'est pas dans allUsers,
-          // on peut choisir de l'ignorer ou de l'ajouter temporairement.
-          // Pour une vue d'ensemble, il est préférable que allUsers soit la source canonique.
           console.warn(
             `OverviewBoard: Activité pour ID utilisateur non listé dans /api/cras_users: ${userIdToMap}`
           );
-          // data.set(userIdToMap, new Map()); // Décommenter si vous voulez inclure les utilisateurs non trouvés
         }
         const userActivities = data.get(userIdToMap);
         if (userActivities) {
-          // S'assurer que l'utilisateur existe dans la map
           if (!userActivities.has(dateKey)) {
             userActivities.set(dateKey, []);
           }
@@ -282,7 +309,7 @@ export default function OverviewBoard({
       }
     });
     return data;
-  }, [allActivities, allUsers]);
+  }, [allActivities, allUsers, filterStartDate, filterEndDate]); // Ajout des dépendances de filtre
 
   const navigateView = useCallback(
     (direction) => {
@@ -357,6 +384,32 @@ export default function OverviewBoard({
             Mois
           </button>
         </div>
+      </div>
+
+      {/* NOUVELLE SECTION DE FILTRE PAR DATE */}
+      <div className="flex flex-col sm:flex-row justify-center items-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4 p-4 bg-gray-50 rounded-lg shadow-inner">
+        <label htmlFor="filterStartDate" className="font-semibold text-gray-700">Filtrer du :</label>
+        <input
+          type="date"
+          id="filterStartDate"
+          value={filterStartDate}
+          onChange={(e) => setFilterStartDate(e.target.value)}
+          className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+        />
+        <label htmlFor="filterEndDate" className="font-semibold text-gray-700">au :</label>
+        <input
+          type="date"
+          id="filterEndDate"
+          value={filterEndDate}
+          onChange={(e) => setFilterEndDate(e.target.value)}
+          className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+        />
+        <button
+          onClick={() => { setFilterStartDate(""); setFilterEndDate(""); }}
+          className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200"
+        >
+          Réinitialiser Filtre
+        </button>
       </div>
 
       <div className="flex justify-between items-center mb-6">
@@ -499,7 +552,7 @@ export default function OverviewBoard({
                             ? client.nom_client
                             : "N/A";
 
-                          let activityColorClass = "bg-blue-200 text-blue-800";
+                          let activityColorClass = "bg-blue-200 text-blue-800"; // Couleur par défaut pour les activités non-congés
                           let activityStatusIcon = "";
                           let activityTitle = "";
 
@@ -507,18 +560,21 @@ export default function OverviewBoard({
                             String(activity.type_activite) ===
                             String(paidLeaveTypeId)
                           ) {
-                            activityColorClass = "bg-lime-200 text-lime-800"; // Default for paid leave
+                            // Logique de couleur spécifique pour les congés payés selon le statut
                             if (activity.status === "pending_review") {
-                              activityColorClass =
-                                "bg-yellow-200 text-yellow-800";
-                              activityStatusIcon = "⏳"; // En attente
+                              activityColorClass = "bg-yellow-200 text-yellow-800"; // Jaune pour en attente
+                              activityStatusIcon = "⏳";
                               activityTitle = "Congé en attente";
                             } else if (activity.status === "validated") {
-                              activityColorClass =
-                                "bg-green-200 text-green-800";
-                              activityStatusIcon = "✅"; // Validé
+                              activityColorClass = "bg-green-200 text-green-800"; // Vert pour validé
+                              activityStatusIcon = "✅";
                               activityTitle = "Congé validé";
+                            } else if (activity.status === "rejected") {
+                              activityColorClass = "bg-red-200 text-red-800"; // Rouge pour refusé
+                              activityStatusIcon = "❌";
+                              activityTitle = "Congé refusé";
                             } else {
+                              activityColorClass = "bg-lime-200 text-lime-800"; // Vert clair par défaut pour congé payé (draft, etc.)
                               activityTitle = "Congé Payé";
                             }
                           } else if (
