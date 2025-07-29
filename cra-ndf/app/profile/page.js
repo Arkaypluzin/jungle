@@ -2,37 +2,56 @@ import { auth } from "@/auth";
 import LogoutButton from "@/components/LogoutButton";
 import BtnRetour from "@/components/BtnRetour";
 import Image from "next/image";
+import { User } from "lucide-react"; // pour l’icône fallback
 
-// import { getServerSession } from "next-auth/next"
+export default async function Profile() {
+  const session = await auth();
+  const initials = session?.user?.name
+    ? session.user.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+    : "";
 
-async function Profile() {
-    const session = await auth();
-    return (
-        <div className="flex items-center justify-center min-h-[90vh]">
-            <div className="p-5  shadow-2xl rounded-md min-w-[30%] max-w-[50%] flex gap-5 flex-col items-center">
-                {session?.user?.image ? (
-                    <Image
-                        width={100}
-                        height={100}
-                        alt={session?.user?.name || ""}
-                        src={session?.user?.image || ""}
-                        className="w-20 h-20 rounded-full border border-yellow-500 shadow-md"
-                    />
-                ) : (
-                    <div className="w-20 h-20 rounded-full border border-yellow-500 shadow-md bg-green-600 flex items-center justify-center">
-                        {session?.user?.name?.charAt(0).toUpperCase()}
-                        {session?.user?.name?.split(" ")[1]?.charAt(0).toUpperCase()}
-                    </div>
-                )}
-                <div className="text-center text-sm">
-                    <p>{session?.user?.name}</p>
-                    <p>{session?.user?.email}</p>
-                </div>
-                <LogoutButton />
-                <BtnRetour fallback="/dashboard" />
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12">
+      <div className="bg-white rounded-3xl shadow-2xl px-8 py-10 flex flex-col items-center w-full max-w-md relative">
+        {/* Avatar */}
+        <div className="mb-4">
+          {session?.user?.image ? (
+            <Image
+              width={96}
+              height={96}
+              alt={session?.user?.name || ""}
+              src={session?.user?.image}
+              className="rounded-full border-4 border-yellow-400 shadow-md object-cover w-24 h-24"
+              priority
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-300 via-green-300 to-blue-200 border-4 border-yellow-400 shadow-md flex items-center justify-center">
+              {initials ? (
+                <span className="text-3xl font-bold text-gray-800">{initials}</span>
+              ) : (
+                <User className="w-12 h-12 text-gray-400" />
+              )}
             </div>
+          )}
         </div>
-    );
+        {/* Infos utilisateur */}
+        <div className="text-center w-full mb-5">
+          <h2 className="text-2xl font-bold text-gray-800">{session?.user?.name}</h2>
+          <div className="mt-1 text-gray-500 text-sm">{session?.user?.email}</div>
+          <div className="w-16 border-b-2 border-gray-200 mx-auto mt-3 mb-1"></div>
+          {/* Rôle éventuel */}
+          {session?.user?.roles && session.user.roles.length > 0 && (
+            <div className="mt-1 text-xs text-gray-400">
+              {session.user.roles.join(", ")}
+            </div>
+          )}
+        </div>
+        {/* Actions */}
+        <div className="flex flex-col gap-3 w-full mt-3">
+          <LogoutButton />
+          <BtnRetour fallback="/dashboard" />
+        </div>
+      </div>
+    </div>
+  );
 }
-
-export default Profile;
