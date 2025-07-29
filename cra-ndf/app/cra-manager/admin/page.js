@@ -5,10 +5,10 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import CraBoard from "@/components/CraBoard"; // L'admin peut aussi gérer son propre CRA
+import CraBoard from "@/components/CraBoard";
 import UnifiedManager from "@/components/UnifiedManager";
 import ReceivedCras from "@/components/ReceivedCras";
-import CraHistory from "@/components/CraHistory"; // L'admin peut aussi voir son historique
+import CraHistory from "@/components/CraHistory";
 import OverviewBoard from "@/components/OverviewBoard";
 import DetailedCraReportModal from "@/components/cra/DetailedCraReportModal";
 import {
@@ -23,7 +23,6 @@ import {
 import { fr } from "date-fns/locale";
 import ConfirmationModal from "@/components/ConfirmationModal";
 
-// Composant ToastMessage simplifié et inclus directement
 const ToastMessage = ({ message, type, isVisible, onClose }) => {
   if (!isVisible) return null;
 
@@ -61,20 +60,19 @@ export default function AdminCRAPage() {
     setToastMessage({ message, type, isVisible: true });
     setTimeout(() => {
       setToastMessage((prev) => ({ ...prev, isVisible: false }));
-    }, 5000); // Masquer après 5 secondes
+    }, 5000);
   }, []);
 
   const hideMessage = useCallback(() => {
     setToastMessage((prev) => ({ ...prev, isVisible: false }));
   }, []);
 
-  // Les admins ont accès à tous les onglets, mais peuvent commencer sur un onglet admin par défaut
-  const [activeTab, setActiveTab] = useState("overview"); // Onglet par défaut pour l'admin
-  const [craActivities, setCraActivities] = useState([]); // Activités de l'utilisateur courant (l'admin lui-même)
+  const [activeTab, setActiveTab] = useState("overview");
+  const [craActivities, setCraActivities] = useState([]);
   const [clientDefinitions, setClientDefinitions] = useState([]);
   const [activityTypeDefinitions, setActivityTypeDefinitions] = useState([]);
   const [loadingAppData, setLoadingAppData] = useState(true);
-  const [monthlyReports, setMonthlyReports] = useState([]); // Rapports envoyés par l'admin
+  const [monthlyReports, setMonthlyReports] = useState([]);
 
   const [error, setError] = useState(null);
 
@@ -90,13 +88,6 @@ export default function AdminCRAPage() {
     status === "authenticated"
       ? session?.user?.name || "Administrateur Inconnu"
       : "Chargement...";
-
-  console.log(
-    "AdminCRAPage: >>> currentUserName from session (IMPORTANT):",
-    currentUserName,
-    "Status:",
-    status
-  );
 
   const currentUserRole = session?.user?.roles?.[0] || "user";
 
@@ -178,23 +169,18 @@ export default function AdminCRAPage() {
             } else if (activity.date_activite) {
               dateObj = new Date(activity.date_activite);
             }
+            const dureeJoursValue = parseFloat(activity.duree_jours || activity.temps_passe);
+            console.log(`AdminCRAPage: Activity ID ${activity.id} - original duree_jours: ${activity.duree_jours}, parsed: ${dureeJoursValue}`);
             return {
               ...activity,
               date_activite: isValid(dateObj) ? dateObj : null,
+              duree_jours: isNaN(dureeJoursValue) ? 0 : dureeJoursValue,
             };
           })
           .filter((activity) => activity.date_activite !== null);
 
-        console.log(
-          "AdminCRAPage: Données d'activités CRA reçues (après API transformation et lookup):",
-          JSON.stringify(processedActivities, null, 2)
-        );
+        console.log("AdminCRAPage: Processed activities for month:", format(monthToFetch, "yyyy-MM"), processedActivities);
         setCraActivities(processedActivities);
-        console.log(
-          "AdminCRAPage: >>> Activités CRA chargées (fetchCraActivitiesForMonth):",
-          processedActivities.length,
-          "activités. État craActivities mis à jour."
-        );
         return processedActivities;
       } catch (err) {
         console.error(
@@ -215,26 +201,7 @@ export default function AdminCRAPage() {
   const fetchClients = useCallback(async () => {
     try {
       const clientsData = await fetchAndParse("/api/client", "clients");
-      console.log(
-        "AdminCRAPage: Données brutes des clients reçues (après API transformation):",
-        JSON.stringify(clientsData, null, 2)
-      );
-
-      clientsData.slice(0, 5).forEach((client, index) => {
-        console.log(
-          `AdminCRAPage: Client ${index} ID:`,
-          client.id,
-          "Nom:",
-          client.nom_client
-        );
-      });
-
       setClientDefinitions(clientsData);
-      console.log(
-        "AdminCRAPage: >>> Définitions de clients chargées:",
-        clientsData.length,
-        "clients. État clientDefinitions mis à jour."
-      );
       return clientsData;
     } catch (err) {
       console.error(
@@ -253,24 +220,7 @@ export default function AdminCRAPage() {
         "/api/activity_type",
         "types d'activité"
       );
-      console.log(
-        "AdminCRAPage: Données brutes des types d'activité reçues (après API transformation):",
-        JSON.stringify(activityTypesData, null, 2)
-      );
       setActivityTypeDefinitions(activityTypesData);
-      console.log(
-        "AdminCRAPage: >>> Définitions de types d'activité chargées:",
-        activityTypesData.length,
-        "types. État activityTypeDefinitions mis à jour."
-      );
-      activityTypesData.slice(0, 5).forEach((type, index) => {
-        console.log(
-          `AdminCRAPage: Type d'activité ${index} ID:`,
-          type.id,
-          "Nom:",
-          type.name
-        );
-      });
       return activityTypesData;
     } catch (err) {
       console.error(
@@ -304,7 +254,8 @@ export default function AdminCRAPage() {
       }
       const data = await response.json();
       setMonthlyReports(data.data || []);
-    } catch (err) {
+    }
+    catch (err) {
       console.error(
         "AdminCRAPage: Erreur lors de la récupération des rapports mensuels de l'utilisateur:",
         err
@@ -318,12 +269,6 @@ export default function AdminCRAPage() {
   }, [currentUserId, showMessage]);
 
   useEffect(() => {
-    console.log(
-      "AdminCRAPage: useEffect principal déclenché. Status:",
-      status,
-      "UserId:",
-      currentUserId
-    );
     if (status === "loading") {
       setLoadingAppData(true);
       return;
@@ -339,7 +284,6 @@ export default function AdminCRAPage() {
             fetchActivityTypes(),
             fetchMonthlyReportsForUser(),
           ]);
-          // Seulement charger les activités de l'utilisateur si on est sur l'onglet craManager
           if (activeTab === "craManager") {
             await fetchCraActivitiesForMonth(currentDisplayedMonth);
           }
@@ -375,8 +319,8 @@ export default function AdminCRAPage() {
     showMessage,
     currentDisplayedMonth,
     activeTab,
-    currentUserRole, // Ajouté pour la redirection
-    router, // Ajouté pour la redirection
+    currentUserRole,
+    router,
   ]);
 
   const handleAddCraActivity = useCallback(
@@ -395,11 +339,8 @@ export default function AdminCRAPage() {
           date_activite: activityData.date_activite
             ? format(activityData.date_activite, "yyyy-MM-dd")
             : null,
+          duree_jours: parseFloat(activityData.duree_jours) || 0, // Ensure it's a number on add
         };
-        console.log(
-          "AdminCRAPage: handleAddCraActivity - Payload envoyé:",
-          JSON.stringify(payload, null, 2)
-        );
         const response = await fetch("/api/cra_activities", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -408,10 +349,6 @@ export default function AdminCRAPage() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          console.error(
-            "AdminCRAPage: Erreur API lors de la création de l'activité:",
-            errorData
-          );
           throw new Error(
             errorData.message ||
               `Erreur serveur: ${response.statusText}` ||
@@ -419,10 +356,6 @@ export default function AdminCRAPage() {
           );
         }
         const newActivity = await response.json();
-        console.log(
-          "AdminCRAPage: Activité CRA créée avec succès (réponse API brute):",
-          newActivity
-        );
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
         await fetchMonthlyReportsForUser();
         showMessage("Activité ajoutée avec succès !", "success");
@@ -464,11 +397,8 @@ export default function AdminCRAPage() {
           date_activite: activityData.date_activite
             ? format(activityData.date_activite, "yyyy-MM-dd")
             : null,
+          duree_jours: parseFloat(activityData.duree_jours) || 0, // Ensure it's a number on update
         };
-        console.log(
-          "AdminCRAPage: handleUpdateCraActivity - Payload envoyé:",
-          JSON.stringify(payload, null, 2)
-        );
         const response = await fetch(`/api/cra_activities/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -477,10 +407,6 @@ export default function AdminCRAPage() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          console.error(
-            "AdminCRAPage: Erreur API lors de la mise à jour de l'activité:",
-            errorData
-          );
           throw new Error(
             errorData.message ||
               `Erreur serveur: ${response.statusText}` ||
@@ -488,10 +414,6 @@ export default function AdminCRAPage() {
           );
         }
         const updatedActivity = await response.json();
-        console.log(
-          "AdminCRAPage: Activité CRA mise à jour avec succès (réponse API brute):",
-          updatedActivity
-        );
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
         await fetchMonthlyReportsForUser();
         showMessage("Activité mise à jour avec succès !", "success");
@@ -527,9 +449,6 @@ export default function AdminCRAPage() {
         throw new Error("Utilisateur non authentifié ou ID non disponible.");
       }
       try {
-        console.log(
-          `AdminCRAPage: handleDeleteActivity - Tentative de suppression de l'ID: ${id}`
-        );
         const response = await fetch(`/api/cra_activities/${id}`, {
           method: "DELETE",
         });
@@ -558,10 +477,6 @@ export default function AdminCRAPage() {
           } else {
             errorData.message = await response.text();
           }
-          console.error(
-            "AdminCRAPage: Erreur API lors de la suppression de l'activité:",
-            errorData
-          );
           throw new Error(
             errorData.message ||
               `Erreur serveur: ${response.statusText}` ||
@@ -592,22 +507,26 @@ export default function AdminCRAPage() {
         throw new Error("Utilisateur non authentifié ou ID non disponible.");
       }
       try {
-        console.log(
-          "AdminCRAPage: handleSendMonthlyReport - Payload envoyé:",
-          JSON.stringify(reportData, null, 2)
-        );
+        // Ensure activities is an array before mapping
+        const activitiesToSend = Array.isArray(reportData.activities)
+          ? reportData.activities.map(act => ({
+              ...act,
+              duree_jours: parseFloat(act.duree_jours) || 0 // Ensure numeric
+            }))
+          : []; // Default to empty array if not an array
+
+        const payload = {
+          ...reportData,
+          activities: activitiesToSend,
+        };
         const response = await fetch("/api/monthly_cra_reports", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reportData),
+          body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          console.error(
-            "AdminCRAPage: Erreur API lors de l'envoi du rapport mensuel:",
-            errorData
-          );
           throw new Error(
             errorData.message ||
               `Erreur serveur: ${response.statusText}` ||
@@ -616,11 +535,6 @@ export default function AdminCRAPage() {
         }
 
         const result = await response.json();
-        console.log(
-          "AdminCRAPage: Rapport mensuel envoyé avec succès:",
-          result
-        );
-
         await fetchCraActivitiesForMonth(currentDisplayedMonth);
         await fetchMonthlyReportsForUser();
         showMessage(
@@ -661,9 +575,6 @@ export default function AdminCRAPage() {
       }
 
       try {
-        console.log(
-          `AdminCRAPage: Suppression du rapport mensuel ID: ${report.id}`
-        );
         const reportResponse = await fetch(
           `/api/monthly_cra_reports/${report.id}`,
           {
@@ -676,8 +587,9 @@ export default function AdminCRAPage() {
             "Rapport mensuel et activités associées supprimés avec succès !",
             "success"
           );
-          await fetchCraActivitiesForMonth(currentDisplayedMonth); // Rafraîchit les activités de l'admin
-          await fetchMonthlyReportsForUser(); // Rafraîchit les rapports de l'admin
+          await fetchCraActivitiesForMonth(currentDisplayedMonth);
+          await fetchMonthlyReportsForUser();
+          return;
         } else if (!reportResponse.ok) {
           const contentType = reportResponse.headers.get("content-type");
           let errorData = {};
@@ -686,10 +598,6 @@ export default function AdminCRAPage() {
           } else {
             errorData.message = await reportResponse.text();
           }
-          console.error(
-            "AdminCRAPage: Erreur API lors de la suppression du rapport mensuel:",
-            errorData
-          );
           throw new Error(
             errorData.message ||
               `Erreur serveur: ${reportResponse.statusText}` ||
@@ -728,25 +636,14 @@ export default function AdminCRAPage() {
   const handleAddClient = useCallback(
     async (clientData) => {
       try {
-        console.log(
-          "AdminCRAPage: handleAddClient - Données à envoyer (avant fetch):",
-          JSON.stringify(clientData, null, 2)
-        );
         const res = await fetch("/api/client", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(clientData),
         });
 
-        console.log(
-          `AdminCRAPage: handleAddClient - Réponse API statut: ${res.status}`
-        );
         if (!res.ok) {
           const errorData = await res.json();
-          console.error(
-            "AdminCRAPage: handleAddClient - Erreur API:",
-            errorData
-          );
           throw new Error(
             errorData.message || `Erreur serveur: ${res.statusText}`
           );
@@ -769,17 +666,10 @@ export default function AdminCRAPage() {
 
   const handleUpdateClient = useCallback(
     async (id, clientData) => {
-      console.log(
-        `AdminCRAPage: handleUpdateClient - ID reçu: ${id}, Données:`,
-        clientData
-      );
       if (!id) {
         showMessage(
           "Erreur: ID du client manquant pour la mise à jour.",
           "error"
-        );
-        console.error(
-          "AdminCRAPage: ID du client est undefined lors de la mise à jour."
         );
         return;
       }
@@ -819,14 +709,10 @@ export default function AdminCRAPage() {
 
   const handleDeleteClient = useCallback(
     async (id) => {
-      console.log(`AdminCRAPage: handleDeleteClient - ID reçu: ${id}`);
       if (!id) {
         showMessage(
           "Erreur: ID du client manquant pour la suppression.",
           "error"
-        );
-        console.error(
-          "AdminCRAPage: ID du client est undefined lors de la suppression."
         );
         return;
       }
@@ -899,10 +785,6 @@ export default function AdminCRAPage() {
   const handleUpdateActivityType = useCallback(
     async (id, typeData) => {
       try {
-        console.log(
-          `AdminCRAPage: handleUpdateActivityType - ID: ${id}, Données:`,
-          typeData
-        );
         const res = await fetch(`/api/activity_type/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -990,11 +872,11 @@ export default function AdminCRAPage() {
   const handleShowDetailedReport = useCallback(() => {
     // Calculer les totaux pour le mois affiché
     const totalActivitiesTime = craActivities.reduce(
-      (sum, activity) => sum + activity.duree_jours,
+      (sum, activity) => sum + (parseFloat(activity.duree_jours) || 0), // Assurez-vous que duree_jours est un nombre
       0
     );
 
-    // Calculer les jours ouvrés du mois
+    // Calculer les jours ouvrés du mois (nombre de jours du lundi au vendredi)
     const start = startOfMonth(currentDisplayedMonth);
     const end = endOfMonth(currentDisplayedMonth);
     const allDaysInMonth = eachDayOfInterval({ start, end });
@@ -1003,16 +885,48 @@ export default function AdminCRAPage() {
       return dayOfWeek >= 1 && dayOfWeek <= 5; // Lundi (1) à Vendredi (5)
     }).length;
 
+    // Nouvelle métrique: Jours ouvrés travaillés (somme des duree_jours pour les activités sur jours ouvrés)
+    const totalWorkingDaysActivitiesTime = craActivities.reduce((sum, activity) => {
+      const dateObj = isValid(activity.date_activite) ? activity.date_activite : parseISO(activity.date_activite);
+      if (isValid(dateObj)) {
+        const dayOfWeek = getDay(dateObj);
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lundi à Vendredi
+          return sum + (parseFloat(activity.duree_jours) || 0);
+        }
+      }
+      return sum;
+    }, 0);
+
+    // Nouvelle métrique: Total des jours de congés payés dans le mois
+    const totalPaidLeaveDaysInMonth = craActivities.reduce((sum, activity) => {
+      if (activity.report_type === "Congé Payé") {
+        return sum + (parseFloat(activity.duree_jours) || 0);
+      }
+      return sum;
+    }, 0);
+
+
     const timeDifferenceValue = (
       totalActivitiesTime - totalWorkingDays
     ).toFixed(2);
+
+    console.log("AdminCRAPage: Data for Detailed Report Modal:");
+    console.log("  craActivities (before passing):", craActivities);
+    console.log("  totalActivitiesTime (calculated):", totalActivitiesTime);
+    console.log("  totalWorkingDays (calculated):", totalWorkingDays);
+    console.log("  totalWorkingDaysActivitiesTime (calculated):", totalWorkingDaysActivitiesTime);
+    console.log("  totalPaidLeaveDaysInMonth (calculated):", totalPaidLeaveDaysInMonth);
+    console.log("  timeDifferenceValue (calculated):", timeDifferenceValue);
+    console.log("  currentMonth:", currentDisplayedMonth);
 
     setDetailedReportData({
       activities: craActivities,
       clientDefinitions,
       activityTypeDefinitions,
-      totalWorkingDaysInMonth: totalWorkingDays,
-      totalActivitiesTimeInMonth: totalActivitiesTime,
+      totalWorkingDaysInMonth: totalWorkingDays, // Total working days in month (count)
+      totalActivitiesTimeInMonth: totalActivitiesTime, // Total activities time (all days)
+      totalWorkingDaysActivitiesTime: totalWorkingDaysActivitiesTime, // New: Total activities time on working days
+      totalPaidLeaveDaysInMonth: totalPaidLeaveDaysInMonth, // New: Total paid leave days
       timeDifference: timeDifferenceValue,
       currentMonth: currentDisplayedMonth,
       userName: currentUserName,
@@ -1030,17 +944,6 @@ export default function AdminCRAPage() {
     return (
       <div className="flex justify-center items-center h-screen text-xl text-gray-700">
         Chargement des données de session et de l'application...
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    router.push("/api/auth/signin");
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-        <p className="text-xl text-red-600 mb-4">
-          Redirection vers la page de connexion...
-        </p>
       </div>
     );
   }
@@ -1072,8 +975,8 @@ export default function AdminCRAPage() {
             Retour
           </button>
         </div>
+
         <div className="flex justify-center mb-8 space-x-4">
-          {/* Onglets disponibles pour l'admin */}
           <button
             onClick={() => setActiveTab("craManager")}
             className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
@@ -1127,7 +1030,6 @@ export default function AdminCRAPage() {
           >
             Vue d'ensemble
           </button>
-          {/* Le lien vers la page d'administration, qui est cette page, peut être laissé ou retiré */}
           {currentUserRole === "admin" && (
             <Link
               href="/cra-manager/admin"
@@ -1136,7 +1038,8 @@ export default function AdminCRAPage() {
               Administration
             </Link>
           )}
-        </div>{" "}
+        </div>
+
         {loadingAppData ? (
           <div className="flex justify-center items-center h-64">
             <p className="text-gray-600 text-lg">Chargement des données...</p>
@@ -1159,7 +1062,7 @@ export default function AdminCRAPage() {
                 onMonthChange={setCurrentDisplayedMonth}
                 monthlyReports={monthlyReports}
                 onSendMonthlyReport={handleSendMonthlyReport}
-                // readOnly est false par défaut pour le CraBoard de l'utilisateur
+                onOpenReportPopup={handleShowDetailedReport}
               />
             )}
 
@@ -1211,14 +1114,15 @@ export default function AdminCRAPage() {
             )}
           </>
         )}
-      </div>{" "}
-      {/* Fin du div w-full max-w-7xl mx-auto... */}
+      </div>
+
       <ToastMessage
         message={toastMessage.message}
         type={toastMessage.type}
         isVisible={toastMessage.isVisible}
         onClose={hideMessage}
       />
+
       {showDeleteReportConfirmModal && reportToDelete && (
         <ConfirmationModal
           isOpen={showDeleteReportConfirmModal}
@@ -1236,12 +1140,23 @@ export default function AdminCRAPage() {
           cancelButtonText="Annuler"
         />
       )}
-      {/* Rendu du composant de rapport détaillé */}
-      <DetailedCraReportModal
-        isOpen={showDetailedReportModal}
-        onClose={() => setShowDetailedReportModal(false)}
-        reportData={detailedReportData}
-      />
-    </div> /* Fin du div min-h-screen bg-gray-100 py-8 */
+
+      {showDetailedReportModal && detailedReportData && (
+        <DetailedCraReportModal
+          isOpen={showDetailedReportModal}
+          onClose={() => setShowDetailedReportModal(false)}
+          month={detailedReportData.currentMonth}
+          activities={detailedReportData.activities}
+          activityTypeDefinitions={detailedReportData.activityTypeDefinitions}
+          clientDefinitions={detailedReportData.clientDefinitions}
+          totalWorkingDays={detailedReportData.totalWorkingDaysInMonth}
+          totalActivitiesTime={detailedReportData.totalActivitiesTimeInMonth}
+          totalWorkingDaysActivitiesTime={detailedReportData.totalWorkingDaysActivitiesTime} // New prop
+          totalPaidLeaveDaysInMonth={detailedReportData.totalPaidLeaveDaysInMonth} // New prop
+          timeDifference={detailedReportData.timeDifference}
+          userFirstName={detailedReportData.userName}
+        />
+      )}
+    </div>
   );
 }

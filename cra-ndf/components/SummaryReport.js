@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useMemo, useRef, useCallback, useEffect } from "react";
-import { format, isValid, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from "date-fns";
+import { format, isValid, parseISO, isWeekend, eachDayOfInterval, isSameMonth } from "date-fns";
 import { fr } from "date-fns/locale";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -14,88 +14,75 @@ export default function SummaryReport({
   activities,
   activityTypeDefinitions,
   clientDefinitions,
-  totalWorkingDays = 0,
-  totalActivitiesTime = 0,
-  timeDifference = "0.00",
+  showMessage,
   userFirstName,
+  // PROPS REÇUES DU CRABOARD POUR LES STATUTS ET JOURS FÉRIÉS
+  craReportStatus,
+  paidLeaveReportStatus,
+  craReport,
+  paidLeaveReport,
+  publicHolidays,
 }) {
   const reportRef = useRef();
 
-  useEffect(() => {
-    if (isOpen) {
-      console.log("SummaryReport est ouvert. Props reçues:", {
-        month, activities, activityTypeDefinitions, clientDefinitions,
-        totalWorkingDays, totalActivitiesTime, timeDifference, userFirstName
-      });
-      if (!isValid(month)) {
-        console.error("SummaryReport: Prop 'month' invalide lors de l'ouverture:", month);
-      }
-      if (!activities || activities.length === 0) {
-        console.warn("SummaryReport: Aucune activité reçue ou tableau vide.");
-      }
-    }
-  }, [isOpen, month, activities, activityTypeDefinitions, clientDefinitions, totalWorkingDays, totalActivitiesTime, timeDifference, userFirstName]);
+  const isPublicHoliday = useCallback(
+    (date) => {
+      if (!isValid(date) || !publicHolidays) return false;
+      const formattedDate = format(date, "yyyy-MM-dd");
+      return publicHolidays.includes(formattedDate);
+    },
+    [publicHolidays]
+  );
 
-  if (!isOpen) {
-    return null;
-  }
-
-  // Fallback pour les props essentielles
-  if (!month || !activities || !clientDefinitions || !activityTypeDefinitions) {
-    console.error("SummaryReport: Données essentielles manquantes pour le rendu du rapport.", { month, activities, clientDefinitions, activityTypeDefinitions });
-    return (
-      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(107, 114, 128, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem' }}>
-        <div style={{ backgroundColor: 'rgb(255, 255, 255)', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '28rem', position: 'relative' }}>
-          <button
-            onClick={onClose}
-            style={{ position: 'absolute', top: '1rem', right: '1rem', color: 'rgb(107, 114, 128)', fontSize: '1.875rem', fontWeight: 'bold', cursor: 'pointer' }}
-            aria-label="Fermer"
-          >
-            &times;
-          </button>
-          <p style={{ color: 'rgb(220, 38, 38)', textAlign: 'center' }}>
-            Erreur: Impossible d'afficher le rapport mensuel car des données essentielles sont manquantes.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isValid(month)) {
-    console.error("SummaryReport: Prop 'month' invalide reçue après le check initial:", month);
-    return (
-      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(107, 114, 128, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem' }}>
-        <div style={{ backgroundColor: 'rgb(255, 255, 255)', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '28rem', position: 'relative' }}>
-          <button
-            onClick={onClose}
-            style={{ position: 'absolute', top: '1rem', right: '1rem', color: 'rgb(107, 114, 128)', fontSize: '1.875rem', fontWeight: 'bold', cursor: 'pointer' }}
-            aria-label="Fermer"
-          >
-            &times;
-          </button>
-          <p style={{ color: 'rgb(220, 38, 38)', textAlign: 'center' }}>
-            Erreur: Impossible d'afficher le rapport mensuel car la date est invalide.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const monthName = format(month, "MMMM yyyy", { locale: fr });
-
-  const getClientName = useCallback((clientId) => {
-    const client = clientDefinitions.find((c) => String(c.id) === String(clientId));
-    return client ? client.nom_client : "Client Inconnu";
-  }, [clientDefinitions]);
-
+  // Memoize getActivityTypeName
   const getActivityTypeName = useCallback((activityTypeId) => {
+    if (!activityTypeDefinitions || activityTypeDefinitions.length === 0) {
+      return "Type Inconnu (définitions manquantes)";
+    }
     const type = activityTypeDefinitions.find((t) => String(t.id) === String(activityTypeId));
     return type ? type.name : "Type Inconnu";
   }, [activityTypeDefinitions]);
 
-  const activitiesByDay = useMemo(() => {
-    const groups = {};
-    activities.forEach((activity) => {
+  // Memoize getClientName
+  const getClientName = useCallback((clientId) => {
+    if (!clientDefinitions || clientDefinitions.length === 0) {
+      return "Client Inconnu (définitions manquantes)";
+    }
+    const client = clientDefinitions.find((c) => String(c.id) === String(clientId));
+    return client ? client.nom_client : "Client Inconnu";
+  }, [clientDefinitions]);
+
+  // Calcul des totaux
+  const totals = useMemo(() => {
+    if (!isValid(month)) {
+      return {
+        totalWorkingDays: 0,
+        totalActivitiesTime: 0,
+        totalWorkingDaysActivitiesTime: 0,
+        totalPaidLeaveDaysInMonth: 0,
+        timeDifference: "0.00",
+      };
+    }
+
+    const monthStart = format(month, 'yyyy-MM-01');
+    const monthEnd = format(month, 'yyyy-MM-t');
+    const allDaysInMonth = eachDayOfInterval({ start: new Date(monthStart), end: new Date(monthEnd) });
+
+    const totalWorkingDays = allDaysInMonth.filter(
+      (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
+    ).length || 0;
+
+    let totalActivitiesTime = 0;
+    let totalWorkingDaysActivitiesTime = 0;
+    let totalPaidLeaveDaysInMonth = 0;
+
+    const paidLeaveType = activityTypeDefinitions.find(t => t.name && t.name.toLowerCase().includes("congé payé"));
+    const paidLeaveTypeId = paidLeaveType ? paidLeaveType.id : null;
+
+    activities.forEach(activity => {
+      const duration = parseFloat(activity.temps_passe) || 0;
+      totalActivitiesTime += duration;
+
       let dateObj = null;
       if (typeof activity.date_activite === "string") {
         dateObj = parseISO(activity.date_activite);
@@ -104,61 +91,111 @@ export default function SummaryReport({
       }
 
       if (isValid(dateObj)) {
-        const dateKey = format(dateObj, "yyyy-MM-dd");
-        if (!groups[dateKey]) {
-          groups[dateKey] = [];
+        if (!isWeekend(dateObj, { weekStartsOn: 1 }) && !isPublicHoliday(dateObj)) {
+          totalWorkingDaysActivitiesTime += duration;
         }
-        groups[dateKey].push({ ...activity, date_activite: dateObj });
-      } else {
-        console.warn("SummaryReport: Ignorer l'activité avec date_activite invalide:", activity);
+
+        if (String(activity.type_activite) === String(paidLeaveTypeId)) {
+          totalPaidLeaveDaysInMonth += duration;
+        }
       }
     });
-    return groups;
-  }, [activities]);
 
-  const startOfMonthDate = startOfMonth(month);
-  const endOfMonthDate = endOfMonth(month);
-  const allDaysInMonth = eachDayOfInterval({ start: startOfMonthDate, end: endOfMonthDate });
+    const timeDifference = (totalActivitiesTime - totalWorkingDays).toFixed(2);
 
-  const workingDays = allDaysInMonth.filter(day => {
-    const dayOfWeek = getDay(day);
-    return dayOfWeek >= 1 && dayOfWeek <= 5;
-  });
+    return {
+      totalWorkingDays,
+      totalActivitiesTime,
+      totalWorkingDaysActivitiesTime,
+      totalPaidLeaveDaysInMonth,
+      timeDifference,
+    };
+  }, [month, activities, isPublicHoliday, activityTypeDefinitions]);
+
+  const {
+    totalWorkingDays,
+    totalActivitiesTime,
+    totalWorkingDaysActivitiesTime,
+    totalPaidLeaveDaysInMonth,
+    timeDifference,
+  } = totals;
+
+  // Effect pour le débogage
+  useEffect(() => {
+    if (isOpen) {
+      console.log("[SummaryReport] Component is open. Props received:", {
+        month: isValid(month) ? format(month, 'yyyy-MM-dd') : month,
+        activitiesCount: activities.length,
+        activityTypeDefinitionsCount: activityTypeDefinitions.length,
+        clientDefinitionsCount: clientDefinitions.length,
+        publicHolidaysCount: publicHolidays ? publicHolidays.length : 0,
+        craReportStatus,
+        paidLeaveReportStatus,
+        userFirstName,
+        calculatedTotals: totals,
+        sampleActivities: activities.slice(0, 3).map(a => ({ id: a.id, type_activite: a.type_activite, temps_passe: a.temps_passe })),
+        sampleActivityTypeDefinitions: activityTypeDefinitions.slice(0, 3).map(def => ({ id: def.id, name: def.name })),
+      });
+    }
+  }, [
+    isOpen, month, activities, activityTypeDefinitions, clientDefinitions,
+    publicHolidays, craReportStatus, paidLeaveReportStatus, craReport,
+    paidLeaveReport, userFirstName, totals
+  ]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
+    console.error("[SummaryReport] Essential data missing or invalid for report rendering.", { month, activities, clientDefinitions, activityTypeDefinitions, publicHolidays });
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+          >
+            &times;
+          </button>
+          <p className="text-red-700 text-center">
+            Erreur: Impossible d'afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const monthName = format(month, "MMMM yyyy", { locale: fr });
 
   const handleDownloadPdf = async () => {
     const input = reportRef.current;
     if (!input) {
       console.error("PDF Generation Error: Report element not found.");
-      alert("Une erreur est survenue lors de la génération du PDF. Élément du rapport introuvable.");
+      showMessage("Une erreur est survenue lors de la génération du PDF. Élément du rapport introuvable.", "error");
       return;
     }
 
-    // Sauvegarder les styles originaux pour les restaurer
     const originalInputStyle = input.style.cssText;
-    
-    // Appliquer des styles temporaires pour la capture
     input.style.padding = '20px';
     input.style.boxShadow = 'none';
-    input.style.backgroundColor = 'rgb(255, 255, 255)'; // Forcer un fond blanc
-    input.style.color = 'rgb(51, 51, 51)'; // Forcer une couleur de texte foncée
+    input.style.backgroundColor = 'rgb(255, 255, 255)';
+    input.style.color = 'rgb(51, 51, 51)';
 
     try {
       const canvas = await html2canvas(input, {
-        scale: 2, // Augmenter la résolution pour une meilleure qualité PDF
-        useCORS: true, // Important si vous avez des images/ressources externes
-        windowWidth: input.scrollWidth, // Capturer toute la largeur du contenu
-        windowHeight: input.scrollHeight, // Capturer toute la hauteur du contenu
-        logging: true, // Activer le logging pour le débogage d'html2canvas
-        // Ignorer les éléments qui pourraient causer des problèmes de rendu (ex: scrollbars invisibles)
-        ignoreElements: (element) => {
-          return element.classList.contains('do-not-print'); // Ajoutez cette classe aux éléments à ignorer
-        }
+        scale: 2,
+        useCORS: true,
+        windowWidth: input.scrollWidth,
+        windowHeight: input.scrollHeight,
+        logging: true,
+        ignoreElements: (element) => element.classList.contains('do-not-print')
       });
 
       const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4"); // 'p' pour portrait, 'mm' pour millimètres, 'a4' pour le format
-      const imgWidth = 210; // Largeur A4 en mm
-      const pageHeight = 297; // Hauteur A4 en mm
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgWidth = 210;
+      const pageHeight = 297;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
       let heightLeft = imgHeight;
@@ -178,226 +215,157 @@ export default function SummaryReport({
       pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
     } catch (error) {
       console.error("PDF Generation Error (Detailed): ", error);
-      alert(`Une erreur est survenue lors de la génération du PDF. Détails: ${error.message || error}. Veuillez réessayer.`);
+      showMessage(`Une erreur est survenue lors de la génération du PDF. Détails: ${error.message || error}. Veuillez réessayer.`, "error");
     } finally {
-      // Restaurer les styles originaux après la capture
       input.style.cssText = originalInputStyle;
     }
   };
 
+  // Group activities by day and sort them for display
+  const allDaysWithActivities = useMemo(() => {
+    const groups = {};
+    activities.forEach((activity) => {
+      let dateObj = null;
+      if (typeof activity.date_activite === "string") {
+        dateObj = parseISO(activity.date_activite);
+      } else if (activity.date_activite) {
+        dateObj = new Date(activity.date_activite);
+      }
+
+      if (isValid(dateObj) && isSameMonth(dateObj, month)) {
+        const dateKey = format(dateObj, "yyyy-MM-dd");
+        if (!groups[dateKey]) {
+          groups[dateKey] = [];
+        }
+        groups[dateKey].push({ ...activity, date_activite: dateObj });
+      } else {
+        console.warn("[SummaryReport] Ignoring activity with invalid date_activite or out of month:", activity);
+      }
+    });
+
+    return Object.keys(groups)
+      .sort()
+      .map(dateKey => {
+        const day = parseISO(dateKey);
+        const dailyActivities = groups[dateKey] || [];
+        const totalDailyTime = dailyActivities.reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
+        const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+        return { day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay };
+      });
+  }, [activities, month, isPublicHoliday]);
+
+  // Déterminer l'ID du type "Congé Payé" une seule fois
+  const paidLeaveTypeId = useMemo(() => {
+    const type = activityTypeDefinitions.find(
+      (t) => t.name && t.name.toLowerCase().includes("congé payé")
+    );
+    return type ? type.id : null;
+  }, [activityTypeDefinitions]);
+
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(107, 114, 128, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem', overflowY: 'auto' }}>
-      <div style={{ backgroundColor: 'rgb(255, 255, 255)', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '56rem', maxHeight: '90vh', overflowY: 'auto', position: 'relative', padding: '2rem' }}>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4 overflow-y-auto">
+      <div ref={reportRef} className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative p-6 sm:p-8">
         <button
           onClick={onClose}
-          style={{ position: 'absolute', top: '1rem', right: '1rem', color: 'rgb(107, 114, 128)', fontSize: '1.875rem', fontWeight: 'bold', cursor: 'pointer' }}
-          aria-label="Fermer le rapport"
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
         >
           &times;
         </button>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+          Rapport de Synthèse - {monthName}
+        </h2>
 
-        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <button
-            onClick={handleDownloadPdf}
-            style={{ backgroundColor: 'rgb(37, 99, 235)', color: 'rgb(255, 255, 255)', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)', transitionProperty: 'background-color', transitionDuration: '300ms', fontSize: '1.125rem', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: 'auto', cursor: 'pointer' }}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              style={{ height: '1.5rem', width: '1.5rem', marginRight: '0.5rem' }}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 10v6m0 0l3-3m-3 3l-3-3m2-8h7a2 2 0 012 2v7a2 2 0 01-2 2h-7a2 2 0 01-2-2V5a2 2 0 012-2z"
-              />
-            </svg>
-            Télécharger le rapport (PDF)
-          </button>
-        </div>
-
-        {/* Contenu du Rapport (sera capturé par html2canvas) */}
-        {/* Styles inline agressifs pour forcer les couleurs compatibles */}
-        <div
-          ref={reportRef}
-          style={{ padding: '1.5rem', backgroundColor: 'rgb(255, 255, 255)', borderRadius: '0.5rem', fontFamily: 'Arial, sans-serif', color: 'rgb(51, 51, 51)' }}
-        >
-          <h1 style={{ fontSize: '2.25rem', fontWeight: '800', textAlign: 'center', color: 'rgb(49, 46, 129)', marginBottom: '2rem' }}>
-            Rapport d'Activité Mensuel
-          </h1>
-
-          <div style={{ marginBottom: '2rem', borderBottom: '2px solid rgb(224, 231, 255)', paddingBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: 'rgb(67, 56, 202)', marginBottom: '1rem' }}>
-              Informations Générales
-            </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', fontSize: '1.125rem' }}>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Consultant :</span> {userFirstName}
-              </p>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Mois du rapport :</span>{" "}
-                {monthName}
-              </p>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Jours ouvrés dans le mois :</span>{" "}
-                {totalWorkingDays} jours
-              </p>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Temps total déclaré :</span>{" "}
-                {totalActivitiesTime.toFixed(2)} jours
-              </p>
-              <p style={{ gridColumn: '1 / -1', color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Écart :</span>{" "}
-                <span
-                  style={{
-                    fontWeight: 'bold',
-                    color: parseFloat(timeDifference) < 0
-                      ? 'rgb(220, 38, 38)' // red-600
-                      : 'rgb(21, 128, 61)' // green-700
-                  }}
-                >
-                  {timeDifference} jour(s)
-                </span>
-              </p>
-            </div>
+        <div className="space-y-6">
+          {/* Section Informations Générales */}
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <h3 className="text-lg font-semibold text-blue-800 mb-2">Informations Générales</h3>
+            <p><strong>Mois du rapport :</strong> {monthName}</p>
+            <p><strong>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime} jours</p>
+            <p><strong>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth} jours</p>
+            <p><strong>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
           </div>
 
-          <div style={{ marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: 'rgb(67, 56, 202)', marginBottom: '1rem' }}>
-              Détail des Activités
-            </h2>
-            {workingDays.length === 0 && Object.keys(activitiesByDay).length === 0 ? (
-                <p style={{ color: 'rgb(75, 85, 99)', fontStyle: 'italic' }}>Aucune activité enregistrée pour ce mois.</p>
+          {/* SECTION POUR LES STATUTS DES RAPPORTS PAR LE MANAGER - ENTIÈREMENT SUPPRIMÉE */}
+          {/* (Commenté ou supprimé précédemment) */}
+
+          {/* Section Détail des Activités */}
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Détail des Activités</h3>
+            {allDaysWithActivities.length > 0 ? (
+              <div className="space-y-4">
+                {allDaysWithActivities.map(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => (
+                  <div key={format(day, 'yyyy-MM-dd')} className="p-3 border border-gray-200 rounded-md bg-white shadow-sm">
+                    <p className="font-bold text-gray-800 mb-1">
+                      {format(day, "EEEE dd MMMM yyyy", { locale: fr })} ({totalDailyTime}j)
+                      {isWeekendDay && <span className="ml-2 text-sm text-gray-500">(Week-end)</span>}
+                      {isPublicHoliday(day) && <span className="ml-2 text-sm text-gray-500">(Jour Férié)</span>}
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                      {dailyActivities.map((activity) => {
+                        const clientName = getClientName(activity.client_id);
+                        const activityTypeName = getActivityTypeName(activity.type_activite);
+                        
+                        let statusColorClass = 'text-gray-700';
+                        if (activity.status === 'validated') statusColorClass = 'text-green-600';
+                        if (activity.status === 'pending_review') statusColorClass = 'text-yellow-600';
+                        if (activity.status === 'rejected') statusColorClass = 'text-red-600';
+                        if (activity.status === 'finalized') statusColorClass = 'text-purple-600';
+
+                        // Déterminer la couleur de fond de la ligne d'activité
+                        let activityLineBgClass = 'bg-blue-50'; // Couleur de fond par défaut (bleu clair)
+                        let activityLineTextColorClass = 'text-blue-800'; // Couleur de texte par défaut
+
+                        if (String(activity.type_activite) === String(paidLeaveTypeId)) {
+                          // Si c'est un congé payé, pas de couleur de fond spécifique, utiliser le fond de la liste
+                          activityLineBgClass = ''; // Pas de couleur de fond
+                          activityLineTextColorClass = 'text-gray-700'; // Revenir à la couleur de texte par défaut
+                        }
+
+                        return (
+                          <li key={activity.id} className={`flex flex-wrap p-1 rounded-sm ${activityLineBgClass} ${activityLineTextColorClass}`}>
+                            <span className="font-medium">{activityTypeName} ({parseFloat(activity.temps_passe) || 0}j)</span>
+                            {/* Conditionnel pour afficher le client et le tiret précédent */}
+                            {clientName !== "Client Inconnu" && (
+                              <>
+                                <span className="mx-1">-</span>
+                                <span>Client: {clientName}</span>
+                              </>
+                            )}
+                            <span className="mx-1">-</span>
+                            <span className={`font-medium ${statusColorClass}`}>Statut: {activity.status}</span>
+                            {activity.description && (
+                              <>
+                                <span className="mx-1">-</span>
+                                <span className="italic">"{activity.description}"</span>
+                              </>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             ) : (
-                <>
-                    {workingDays.map((day) => {
-                        const dateKey = format(day, "yyyy-MM-dd");
-                        const dailyActivities = activitiesByDay[dateKey] || [];
-                        const totalDailyTime = dailyActivities.reduce((sum, act) => sum + (parseFloat(act.duree_jours) || 0), 0);
-
-                        return (
-                            <div key={dateKey} style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid rgb(229, 231, 235)', borderRadius: '0.5rem', backgroundColor: 'rgb(255, 255, 255)', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
-                                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'rgb(55, 65, 81)', marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ color: 'rgb(55, 65, 81)' }}>
-                                        {format(day, "EEEE dd MMMM yyyy", { locale: fr })}
-                                    </span>
-                                    <span style={{ fontSize: '1rem', fontWeight: '400', color: 'rgb(107, 114, 128)' }}>
-                                        Total du jour: {totalDailyTime.toFixed(2)} jours
-                                    </span>
-                                </h3>
-                                {dailyActivities.length > 0 ? (
-                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                        {dailyActivities.map((activity) => (
-                                            <li
-                                                key={activity.id}
-                                                style={{ backgroundColor: 'rgb(249, 250, 251)', padding: '0.75rem', borderRadius: '0.375rem', border: '1px solid rgb(243, 244, 246)' }}
-                                            >
-                                                <p style={{ color: 'rgb(17, 24, 39)', fontWeight: '500' }}>
-                                                    <span style={{ color: 'rgb(99, 102, 241)' }}>Client :</span>{" "}
-                                                    {getClientName(activity.client_id)}
-                                                </p>
-                                                <p style={{ color: 'rgb(55, 65, 81)', fontSize: '0.875rem' }}>
-                                                    <span style={{ color: 'rgb(99, 102, 241)' }}>Type :</span>{" "}
-                                                    {getActivityTypeName(activity.activity_type_id)}
-                                                </p>
-                                                <p style={{ color: 'rgb(55, 65, 81)', fontSize: '0.875rem' }}>
-                                                    <span style={{ color: 'rgb(99, 102, 241)' }}>Durée :</span>{" "}
-                                                    {(parseFloat(activity.duree_jours) || 0).toFixed(2)} jours
-                                                </p>
-                                                {activity.description && (
-                                                    <p style={{ color: 'rgb(75, 85, 99)', fontSize: '0.875rem', fontStyle: 'italic', marginTop: '0.25rem' }}>
-                                                        "{activity.description}"
-                                                    </p>
-                                                )}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p style={{ color: 'rgb(107, 114, 128)', fontStyle: 'italic' }}>Aucune activité déclarée pour ce jour ouvré.</p>
-                                )}
-                            </div>
-                        );
-                    })}
-                    {Object.keys(activitiesByDay).filter(dateKey => {
-                        const day = parseISO(dateKey);
-                        const dayOfWeek = getDay(day);
-                        return dayOfWeek === 0 || dayOfWeek === 6;
-                    }).map(dateKey => {
-                        const day = parseISO(dateKey);
-                        const dailyActivities = activitiesByDay[dateKey] || [];
-                        const totalDailyTime = dailyActivities.reduce((sum, act) => sum + (parseFloat(act.duree_jours) || 0), 0);
-                        if (dailyActivities.length === 0) return null;
-
-                        return (
-                            <div key={dateKey} style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid rgb(253, 230, 138)', borderRadius: '0.5rem', backgroundColor: 'rgb(255, 251, 235)', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
-                                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'rgb(55, 65, 81)', marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ color: 'rgb(55, 65, 81)' }}>
-                                        {format(day, "EEEE dd MMMM yyyy", { locale: fr })} (Weekend)
-                                    </span>
-                                    <span style={{ fontSize: '1rem', fontWeight: '400', color: 'rgb(107, 114, 128)' }}>
-                                        Total du jour: {totalDailyTime.toFixed(2)} jours
-                                    </span>
-                                </h3>
-                                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                    {dailyActivities.map((activity) => (
-                                        <li
-                                            key={activity.id}
-                                            style={{ backgroundColor: 'rgb(249, 250, 251)', padding: '0.75rem', borderRadius: '0.375rem', border: '1px solid rgb(243, 244, 246)' }}
-                                        >
-                                            <p style={{ color: 'rgb(17, 24, 39)', fontWeight: '500' }}>
-                                                <span style={{ color: 'rgb(99, 102, 241)' }}>Client :</span>{" "}
-                                                {getClientName(activity.client_id)}
-                                            </p>
-                                            <p style={{ color: 'rgb(55, 65, 81)', fontSize: '0.875rem' }}>
-                                                <span style={{ color: 'rgb(99, 102, 241)' }}>Type :</span>{" "}
-                                                {getActivityTypeName(activity.activity_type_id)}
-                                            </p>
-                                            <p style={{ color: 'rgb(55, 65, 81)', fontSize: '0.875rem' }}>
-                                                <span style={{ color: 'rgb(99, 102, 241)' }}>Durée :</span>{" "}
-                                                {(parseFloat(activity.duree_jours) || 0).toFixed(2)} jours
-                                            </p>
-                                            {activity.description && (
-                                                <p style={{ color: 'rgb(75, 85, 99)', fontSize: '0.875rem', fontStyle: 'italic', marginTop: '0.25rem' }}>
-                                                    "{activity.description}"
-                                                </p>
-                                            )}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        );
-                    })}
-                </>
+              <p className="text-gray-500 italic">Aucune activité enregistrée pour ce mois.</p>
             )}
           </div>
+        </div>
 
-          <div style={{ borderTop: '2px solid rgb(224, 231, 255)', paddingTop: '1.5rem', marginTop: '2rem' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: 'rgb(67, 56, 202)', marginBottom: '1rem' }}>
-              Statistiques Clés
-            </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', fontSize: '1.125rem' }}>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Nombre total d'activités :</span>{" "}
-                {activities.length}
-              </p>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Clients uniques :</span>{" "}
-                {[...new Set(activities.map(a => getClientName(a.client_id)))].length}
-              </p>
-              <p style={{ color: 'rgb(51, 51, 51)' }}>
-                <span style={{ fontWeight: '600' }}>Types d'activités uniques :</span>{" "}
-                {[...new Set(activities.map(a => getActivityTypeName(a.activity_type_id)))].length}
-              </p>
-            </div>
-          </div>
-
-          <p style={{ textAlign: 'center', color: 'rgb(107, 114, 128)', fontSize: '0.875rem', marginTop: '2.5rem' }}>
-            Généré le {format(new Date(), "dd MMMM yyyy à HH:mm", { locale: fr })}
-          </p>
+        <div className="flex justify-end mt-6 space-x-3">
+          <button
+            onClick={handleDownloadPdf}
+            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200 do-not-print"
+          >
+            Télécharger PDF
+          </button>
+          <button
+            onClick={onClose}
+            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200"
+          >
+            Fermer
+          </button>
         </div>
       </div>
     </div>

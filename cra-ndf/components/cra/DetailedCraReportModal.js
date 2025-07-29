@@ -176,35 +176,18 @@ export default function DetailedCraReportModal({
               Informations Générales
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-lg">
-              <p>
-                <span className="font-semibold">Consultant :</span> {userName}
-              </p>
+
               <p>
                 <span className="font-semibold">Mois du rapport :</span>{" "}
                 {format(currentMonth, "MMMM yyyy", { locale: fr })}
               </p>
               <p>
                 <span className="font-semibold">
-                  Jours ouvrés dans le mois :
+                  Jours ouvrés travaillé dans le mois :
                 </span>{" "}
                 {totalWorkingDaysInMonth} jours
               </p>
-              <p>
-                <span className="font-semibold">Temps total déclaré :</span>{" "}
-                {totalActivitiesTimeInMonth.toFixed(2)} jours
-              </p>
-              <p className="col-span-full">
-                <span className="font-semibold">Écart :</span>{" "}
-                <span
-                  className={`font-bold ${
-                    parseFloat(timeDifference) < 0
-                      ? "text-red-600"
-                      : "text-green-700"
-                  }`}
-                >
-                  {timeDifference} jour(s)
-                </span>
-              </p>
+              
             </div>
           </div>
 

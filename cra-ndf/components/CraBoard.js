@@ -2518,15 +2518,21 @@ export default function CraBoard({
           isOpen={showSummaryReport}
           onClose={handleToggleSummaryReport}
           month={summaryReportMonth}
-          userId={userId}
+          userId={userId} // userId est-il utilisé dans SummaryReport? Si non, peut-être le retirer.
           activities={activitiesForCurrentMonth}
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           showMessage={localShowMessage}
           onOpenMonthlyReportPreview={handleOpenMonthlyReportPreview}
-          readOnly={readOnly} // Utilise la prop globale readOnly ici
-          isPublicHoliday={isPublicHoliday}
-        />
+          readOnly={readOnly}
+          // --- AJOUTEZ/VÉRIFIEZ CES PROPS ---
+          publicHolidays={publicHolidays.map(d => format(d, 'yyyy-MM-dd'))} // <--- TRÈS IMPORTANT: Passer les jours fériés formatés
+          craReportStatus={craReportStatus}
+          paidLeaveReportStatus={paidLeaveReportStatus}
+          craReport={craReport}
+          paidLeaveReport={paidLeaveReport}
+          userFirstName={userFirstName} 
+          />
       )}
     </div>
   );
