@@ -14,9 +14,20 @@ const MONTHS_MAP = {
   Juillet: 6, Août: 7, Septembre: 8, Octobre: 9, Novembre: 10, Décembre: 11,
 };
 
-function getDefaultForm(minDate) {
+function getDefaultForm(minDate, maxDate) {
+  // Date actuelle en YYYY-MM-DD
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+
+  let dateStr = todayStr;
+
+  // bornes min/max définies ? on contraint
+  if (minDate && todayStr < minDate) dateStr = minDate;
+  if (maxDate && todayStr > maxDate) dateStr = maxDate;
+  if (!minDate && !maxDate) dateStr = todayStr;
+
   return {
-    dateStr: minDate || "",
+    dateStr,
     nature: NATURES[0],
     description: "",
     tva: "0%",
@@ -67,12 +78,12 @@ export default function AddNdfDetailModal({
   // Initialisation d'une ligne si on ouvre
   useEffect(() => {
     if (open && details.length === 0) {
-      setDetails([getDefaultForm(minDate)]);
+      setDetails([getDefaultForm(minDate, maxDate)]);
     }
-  }, [open, details.length, minDate]);
+  }, [open, details.length, minDate, maxDate]);
 
   function resetAll() {
-    setDetails([getDefaultForm(minDate)]);
+    setDetails([getDefaultForm(minDate, maxDate)]);
     setError("");
   }
 
@@ -139,7 +150,7 @@ export default function AddNdfDetailModal({
     );
   }
   function addForm() {
-    if (details.length < 5) setDetails([...details, getDefaultForm(minDate)]);
+    if (details.length < 5) setDetails([...details, getDefaultForm(minDate, maxDate)]);
   }
   function removeForm(idx) {
     if (details.length > 1) setDetails(details.filter((_, i) => i !== idx));
