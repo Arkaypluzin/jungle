@@ -1,17 +1,66 @@
 "use client";
-import React from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import EditNdfDetailModal from "@/components/NDF/NDF_ACTIONS/EditNdfDetailModal";
 import DeleteNdfDetailButton from "@/components/NDF/NDF_ACTIONS/DeleteNdfDetailButton";
-import { useState, useMemo, useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const NATURES = ["carburant", "parking", "peage", "repas", "achat divers"];
-const TVAS = ["autre taux", "multi-taux", "0%", "5.5%", "10%", "20%"];
+// ------------------- UTILS -------------------
 
-function roundUpToCent(value) {
-  return Math.ceil(value * 100) / 100;
+function getTvaArray(tva, montant) {
+  if (Array.isArray(tva)) return tva;
+  if (typeof tva === "string" && tva.includes("/")) {
+    const montantNum = parseFloat(montant) || 0;
+    return tva.split("/").map(t => {
+      const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+      const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+      return { taux: tauxNum, valeur_tva };
+    });
+  }
+  if (typeof tva === "string") {
+    const tauxNum = parseFloat(tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+    const montantNum = parseFloat(montant) || 0;
+    const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+    return [{ taux: tauxNum, valeur_tva }];
+  }
+  return [];
 }
+
+function getTTCLineRounded(montant, tvaArr) {
+  const base = parseFloat(montant) || 0;
+  if (!tvaArr || (Array.isArray(tvaArr) && tvaArr.length === 0)) return base;
+  let arr = Array.isArray(tvaArr) ? tvaArr : getTvaArray(tvaArr, montant);
+  const totalTva = arr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+  return Math.round((base + totalTva) * 100) / 100;
+}
+
+function formatTvaPdf(detail) {
+  let arr = Array.isArray(detail.tva)
+    ? detail.tva
+    : getTvaArray(detail.tva, detail.montant);
+
+  if (!arr.length || arr.length === 1) {
+    let tvaUnique = arr[0];
+    if (tvaUnique && tvaUnique.taux !== undefined) {
+      return `${tvaUnique.taux}%` +
+        (tvaUnique.valeur_tva !== undefined && !isNaN(tvaUnique.valeur_tva)
+          ? ` > +${parseFloat(tvaUnique.valeur_tva).toFixed(2)}€`
+          : "");
+    }
+    return typeof detail.tva === "string" ? detail.tva : "";
+  }
+  return arr
+    .map(
+      (tvaObj) =>
+        `${tvaObj.taux}%` +
+        (tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
+          ? ` > +${parseFloat(tvaObj.valeur_tva).toFixed(2)}€`
+          : "")
+    )
+    .join('\n');
+}
+
+// ------------------------------------------------
 
 export default function NdfDetailTable({
   details: initialDetails,
@@ -25,15 +74,7 @@ export default function NdfDetailTable({
   const [clients, setClients] = useState([]);
   const [projets, setProjets] = useState([]);
 
-  const [filterModal, setFilterModal] = useState(false);
-  const [sortBy, setSortBy] = useState("");
-  const [sortDir, setSortDir] = useState("asc");
-  const [nature, setNature] = useState("");
-  const [tvaType, setTvaType] = useState("");
-  const [tvaOtherValue, setTvaOtherValue] = useState("");
-  const [tvaMultiValue, setTvaMultiValue] = useState("");
-  const [resetKey, setResetKey] = useState(0);
-
+  // --------- CHARGEMENT DES CLIENTS/PROJETS ----------
   useEffect(() => {
     fetch("/api/client")
       .then((res) => res.json())
@@ -50,60 +91,66 @@ export default function NdfDetailTable({
     const c = clients.find((c) => c.id === client_id);
     return c ? c.nom_client : "";
   }
-
   function getProjetName(projet_id) {
     if (!projet_id) return "";
     const p = projets.find((p) => (p.id || p.uuid) === projet_id);
     return p ? p.nom : "";
   }
 
-  const refresh = async () => window.location.reload();
+  const refresh = () => window.location.reload();
 
-  function formatTvaPdf(detail) {
-    let arr = Array.isArray(detail.tva)
-      ? detail.tva
-      : getTvaArray(detail.tva, detail.montant);
-
-    if (!arr.length || arr.length === 1) {
-      let tvaUnique = arr[0];
-      if (tvaUnique && tvaUnique.taux !== undefined) {
-        return `${tvaUnique.taux}%` +
-          (tvaUnique.valeur_tva !== undefined && !isNaN(tvaUnique.valeur_tva)
-            ? ` > +${parseFloat(tvaUnique.valeur_tva).toFixed(2)}€`
-            : "");
-      }
-      return typeof detail.tva === "string" ? detail.tva : "";
-    }
-    return arr
-      .map(
-        (tvaObj) =>
-          `${tvaObj.taux}%` +
-          (tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
-            ? ` > +${parseFloat(tvaObj.valeur_tva).toFixed(2)}€`
-            : "")
-      )
-      .join('\n');
-  }
-
-  const exportToPDF = async () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-
-    doc.setProperties({
-      title: `Note de frais - ${month || ""} ${year || ""} ${name || ""}`,
-      subject: `Détails de la note de frais pour ${name || "Utilisateur"}`,
-      author: name || "Application NDF",
-      creator: "Next.js NDF App with jspdf",
-      keywords: "note de frais, dépenses, rapport, PDF",
+  // --------- TRI AUTOMATIQUE PAR DATE (ASC) ----------
+  const filteredDetails = useMemo(() => {
+    let current = details.filter((detail) => {
+      const lower = search.toLowerCase();
+      return (
+        detail.date_str?.toLowerCase().includes(lower) ||
+        detail.nature?.toLowerCase().includes(lower) ||
+        detail.description?.toLowerCase().includes(lower) ||
+        getClientName(detail.client_id)?.toLowerCase().includes(lower) ||
+        getProjetName(detail.projet_id)?.toLowerCase().includes(lower) ||
+        (typeof detail.tva === "string" ? detail.tva.toLowerCase().includes(lower) : false) ||
+        String(detail.montant).toLowerCase().includes(lower)
+      );
     });
 
+    // TRI PAR DATE (du plus ancien au plus récent)
+    current = [...current].sort((a, b) => {
+      if (!a.date_str && !b.date_str) return 0;
+      if (!a.date_str) return 1;
+      if (!b.date_str) return -1;
+      return new Date(a.date_str) - new Date(b.date_str);
+    });
+
+    return current;
+  }, [details, search, clients, projets]);
+
+  // --------- TOTAUX -----------
+  const totalHT = useMemo(
+    () => filteredDetails.reduce((acc, d) => acc + (parseFloat(d.montant) || 0), 0),
+    [filteredDetails]
+  );
+  const totalTTC = useMemo(
+    () => filteredDetails.reduce((acc, d) => acc + getTTCLineRounded(d.montant, d.tva), 0),
+    [filteredDetails]
+  );
+  const totalTVA = useMemo(() => {
+    return filteredDetails.reduce((acc, d) => {
+      let tvaArr = Array.isArray(d.tva) ? d.tva : getTvaArray(d.tva, d.montant);
+      const totalLigne = tvaArr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+      return acc + totalLigne;
+    }, 0);
+  }, [filteredDetails]);
+
+  // --------- EXPORT PDF -----------
+  const exportToPDF = async () => {
+    const doc = new jsPDF({ orientation: "landscape" });
     let titleText = "Note de frais";
     const subtitleParts = [];
     if (month) subtitleParts.push(month);
     if (year) subtitleParts.push(year);
     if (name) subtitleParts.push(name);
-    if (subtitleParts.length > 0) {
-      titleText += ` — ${subtitleParts.join(" — ")}`;
-    }
+    if (subtitleParts.length > 0) titleText += ` — ${subtitleParts.join(" — ")}`;
 
     const addHeaderAndFooter = (pageNumber) => {
       doc.setFontSize(10);
@@ -132,7 +179,8 @@ export default function NdfDetailTable({
         "Moyen de paiement",
         "Montant HT",
         "TVA",
-        "Montant TTC"
+        "Montant TTC",
+        "Justificatif",
       ],
     ];
 
@@ -150,32 +198,6 @@ export default function NdfDetailTable({
         `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
         detail.img_url ? "Oui" : "Non",
       ]);
-
-      if (
-        detail.nature === "repas" &&
-        (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0))
-      ) {
-        let sousLigneTexte = [];
-        if (detail.type_repas) {
-          sousLigneTexte.push(`Type de repas : ${detail.type_repas}`);
-        }
-        if (Array.isArray(detail.inviter) && detail.inviter.length > 0) {
-          sousLigneTexte.push(`Invités : ${detail.inviter.join(", ")}`);
-        }
-        rows.push([
-          {
-            content: sousLigneTexte.join("\n"),
-            colSpan: 10,
-            styles: {
-              fontStyle: "italic",
-              fontSize: 9,
-              textColor: [100, 100, 100],
-              halign: "left",
-              cellPadding: { top: 2, bottom: 2, left: 8, right: 2 },
-            }
-          }
-        ]);
-      }
     });
 
     autoTable(doc, {
@@ -191,8 +213,8 @@ export default function NdfDetailTable({
         textColor: [50, 50, 50],
         lineColor: [220, 220, 220],
         lineWidth: 0.1,
-        overflow: 'linebreak',
-        cellWidth: 'auto',
+        overflow: "linebreak",
+        cellWidth: "auto",
       },
       headStyles: {
         fillColor: [30, 144, 255],
@@ -206,304 +228,72 @@ export default function NdfDetailTable({
         fillColor: [240, 248, 255],
       },
       columnStyles: {
-        0: { halign: "center", cellWidth: 30 }, // Date
-        1: { halign: "center", cellWidth: 25 }, // Nature
-        2: { halign: "center", minCellWidth: 35, cellWidth: 40 }, // Description
-        3: { halign: "center", cellWidth: 25 }, // Client
-        4: { halign: "center", cellWidth: 25 }, // Projet
-        5: { halign: "center", cellWidth: 40 }, // Moyen de paiement
-        6: { halign: "center", cellWidth: 30 }, // Montant HT
-        7: { halign: "center", cellWidth: 35 }, // TVA
-        8: { halign: "center", fontStyle: "bold", cellWidth: 30 }, // Montant TTC
-        9: { halign: "center", cellWidth: 25 }, // Justificatif
+        0: { halign: "center", cellWidth: 30 },
+        1: { halign: "center", cellWidth: 25 },
+        2: { halign: "center", minCellWidth: 35, cellWidth: 40 },
+        3: { halign: "center", cellWidth: 25 },
+        4: { halign: "center", cellWidth: 25 },
+        5: { halign: "center", cellWidth: 40 },
+        6: { halign: "center", cellWidth: 30 },
+        7: { halign: "center", cellWidth: 35 },
+        8: { halign: "center", fontStyle: "bold", cellWidth: 30 },
+        9: { halign: "center", cellWidth: 25 },
       },
       didDrawPage: (data) => {
-        if (data.pageNumber > 1) {
-          addHeaderAndFooter(data.pageNumber);
-        }
+        if (data.pageNumber > 1) addHeaderAndFooter(data.pageNumber);
       },
     });
 
     autoTable(doc, {
       body: [
         [
-          { content: "Total HT", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
-          { content: `${totalHT.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
+          { content: "Total HT", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10 } },
+          { content: `${totalHT.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11 } },
           { content: "" },
         ],
         [
-          { content: "Total TVA", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
-          { content: `${totalTVA.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
+          { content: "Total TVA", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10 } },
+          { content: `${totalTVA.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11 } },
           { content: "" },
         ],
         [
-          { content: "Total TTC", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10, textColor: [30, 30, 30] } },
-          { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11, textColor: [30, 30, 30] } },
+          { content: "Total TTC", colSpan: 7, styles: { halign: "left", fontStyle: "bold", fontSize: 10 } },
+          { content: `${totalTTC.toFixed(2)}€`, styles: { fontStyle: "bold", halign: "left", fontSize: 11 } },
           { content: "" },
         ],
         [
-          { content: `Nombre total de lignes de note de frais : ${filteredDetails.length}`, colSpan: 9, styles: { halign: "center", fontSize: 10, textColor: [80, 80, 80], fontStyle: "italic" } },
+          { content: `Nombre total de lignes : ${filteredDetails.length}`, colSpan: 9, styles: { halign: "center", fontSize: 10, fontStyle: "italic" } },
         ],
       ],
       theme: "plain",
       startY: doc.lastAutoTable.finalY + 8,
       margin: { left: 10, right: 10 },
-      styles: {
-        fontSize: 10,
-        cellPadding: 3,
-        textColor: [0, 0, 0],
-      },
-      columnStyles: {
-        0: { halign: "right", fontStyle: "bold" },
-        1: { halign: "left", fontStyle: "bold" },
-      },
+      styles: { fontSize: 10, cellPadding: 3, textColor: [0, 0, 0] },
     });
 
-    async function toDataUrl(url) {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    for (const detail of filteredDetails) {
-      if (detail.img_url) {
-        doc.addPage();
-        addHeaderAndFooter(doc.internal.getNumberOfPages());
-        doc.setFontSize(18);
-        doc.setTextColor(20, 20, 20);
-        doc.text(
-          `Justificatif pour la dépense du ${detail.date_str} (${detail.nature})`,
-          14,
-          25
-        );
-        try {
-          const dataUrl = await toDataUrl(detail.img_url);
-          const imgProps = doc.getImageProperties(dataUrl);
-          const pageWidth = doc.internal.pageSize.getWidth();
-          const pageHeight = doc.internal.pageSize.getHeight();
-
-          const margin = 20;
-          let imgWidth = pageWidth - 2 * margin;
-          let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-
-          const availableHeight = pageHeight - 2 * margin - 30;
-          if (imgHeight > availableHeight) {
-            imgHeight = availableHeight;
-            imgWidth = (imgProps.width * imgHeight) / imgProps.height;
-          }
-
-          doc.addImage(
-            dataUrl,
-            imgProps.fileType,
-            margin,
-            35,
-            imgWidth,
-            imgHeight
-          );
-        } catch (e) {
-          doc.setFontSize(12);
-          doc.setTextColor(200, 0, 0);
-          doc.text(
-            "Erreur lors du chargement du justificatif. Le fichier pourrait être manquant ou corrompu.",
-            14,
-            40
-          );
-        }
-      }
-    }
-
-    const fileName = `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`;
-    doc.save(fileName);
+    doc.save(
+      `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`
+    );
   };
 
-  // A placer tout en haut
-  function getTvaArray(tva, montant) {
-    if (Array.isArray(tva)) return tva;
-    if (typeof tva === "string" && tva.includes("/")) {
-      const montantNum = parseFloat(montant) || 0;
-      return tva.split("/").map(t => {
-        const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-        const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
-        return { taux: tauxNum, valeur_tva };
-      });
-    }
-    if (typeof tva === "string") {
-      const tauxNum = parseFloat(tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-      const montantNum = parseFloat(montant) || 0;
-      const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
-      return [{ taux: tauxNum, valeur_tva }];
-    }
-    return [];
-  }
-
-  function getTvaLabel(tva) {
-    if (Array.isArray(tva)) {
-      return tva.map(t => (t.taux !== undefined ? t.taux + "%" : "")).join(" / ");
-    }
-    if (typeof tva === "string") return tva;
-    return "";
-  }
-
-  function getTTCLineRounded(montant, tvaArr) {
-    const base = parseFloat(montant) || 0;
-    if (!tvaArr || (Array.isArray(tvaArr) && tvaArr.length === 0)) return base;
-    let arr = Array.isArray(tvaArr) ? tvaArr : getTvaArray(tvaArr, montant);
-    const totalTva = arr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
-    return Math.round((base + totalTva) * 100) / 100;
-  }
-
-  const filteredDetails = useMemo(() => {
-    let currentFilteredDetails = details.filter((detail) => {
-      const lower = search.toLowerCase();
-      return (
-        detail.date_str?.toLowerCase().includes(lower) ||
-        detail.nature?.toLowerCase().includes(lower) ||
-        detail.description?.toLowerCase().includes(lower) ||
-        getClientName(detail.client_id)?.toLowerCase().includes(lower) ||
-        getProjetName(detail.projet_id)?.toLowerCase().includes(lower) ||
-        detail.tva?.toLowerCase().includes(lower) ||
-        String(detail.montant).toLowerCase().includes(lower)
-      );
-    });
-
-    if (nature) {
-      currentFilteredDetails = currentFilteredDetails.filter(
-        (d) => d.nature === nature
-      );
-    }
-
-    if (tvaType) {
-      if (tvaType === "autre taux" && tvaOtherValue) {
-        currentFilteredDetails = currentFilteredDetails.filter((d) =>
-          d.tva.replace(/\s/g, "").includes(tvaOtherValue.replace(/\s/g, ""))
-        );
-      } else if (tvaType === "multi-taux" && tvaMultiValue) {
-        currentFilteredDetails = currentFilteredDetails.filter((d) =>
-          d.tva.replace(/\s/g, "").includes(tvaMultiValue.replace(/\s/g, ""))
-        );
-      } else if (tvaType !== "autre taux" && tvaType !== "multi-taux") {
-        currentFilteredDetails = currentFilteredDetails.filter(
-          (d) => d.tva === tvaType
-        );
-      }
-    }
-
-    if (sortBy) {
-      currentFilteredDetails = [...currentFilteredDetails].sort((a, b) => {
-        let valA, valB;
-        if (sortBy === "date") {
-          valA = new Date(a.date_str);
-          valB = new Date(b.date_str);
-        } else if (sortBy === "tva") {
-          valA = parseFloat(
-            a.tva
-              .split("/")[0]
-              ?.replace(/[^\d.,]/g, "")
-              .replace(",", ".") || 0
-          );
-          valB = parseFloat(
-            b.tva
-              .split("/")[0]
-              ?.replace(/[^\d.,]/g, "")
-              .replace(",", ".") || 0
-          );
-        } else if (sortBy === "montant") {
-          valA = parseFloat(a.montant);
-          valB = parseFloat(b.montant);
-        }
-        return sortDir === "asc" ? valA - valB : valB - valA;
-      });
-    }
-    return currentFilteredDetails;
-  }, [
-    details,
-    search,
-    nature,
-    tvaType,
-    tvaOtherValue,
-    tvaMultiValue,
-    sortBy,
-    sortDir,
-    getTTCLineRounded,
-    clients,
-    projets,
-  ]);
-
-  const totalHT = useMemo(
-    () => filteredDetails.reduce((acc, d) => acc + (parseFloat(d.montant) || 0), 0),
-    [filteredDetails]
-  );
-
-  const totalTTC = useMemo(
-    () => filteredDetails.reduce((acc, d) => acc + getTTCLineRounded(d.montant, d.tva), 0),
-    [filteredDetails]
-  );
-
-  const totalTVA = useMemo(() => {
-    return filteredDetails.reduce((acc, d) => {
-      let tvaArr = Array.isArray(d.tva) ? d.tva : getTvaArray(d.tva, d.montant);
-      const totalLigne = tvaArr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
-      return acc + totalLigne;
-    }, 0);
-  }, [filteredDetails]);
-
-  function resetFilters() {
-    setNature("");
-    setTvaType("");
-    setTvaOtherValue("");
-    setTvaMultiValue("");
-    setSortBy("");
-    setSortDir("asc");
-    setResetKey((prev) => prev + 1);
-    setFilterModal(false);
-  }
-
-  // --- Ici, plus de early return qui cache le tableau ---
-
+  // --------- RENDU TABLEAU -----------
   return (
     <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
       <div className="overflow-x-auto rounded-lg shadow-sm border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Date
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Nature
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Description
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Client
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Projet
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Moyen de paiement
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Montant HT
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                TVA
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Montant TTC
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Justificatif
-              </th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Actions
-              </th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Nature</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Description</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Client</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Projet</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Moyen de paiement</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Montant HT</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">TVA</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Montant TTC</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Justificatif</th>
+              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-100">
@@ -535,7 +325,7 @@ export default function NdfDetailTable({
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
                       {detail.moyen_paiement || <span className="italic text-gray-400">-</span>}
                     </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800 text-center">
+                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">
                       {parseFloat(detail.montant).toFixed(2)}€
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
@@ -563,12 +353,7 @@ export default function NdfDetailTable({
                     </td>
                     <td className="py-3 px-3 text-center">
                       {detail.img_url ? (
-                        <a
-                          href={detail.img_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-block"
-                        >
+                        <a href={detail.img_url} target="_blank" rel="noopener noreferrer" className="inline-block">
                           <img
                             src={detail.img_url}
                             alt="Justificatif"
@@ -601,22 +386,6 @@ export default function NdfDetailTable({
                       )}
                     </td>
                   </tr>
-                  {detail.nature === "repas" && (detail.type_repas || (Array.isArray(detail.inviter) && detail.inviter.length > 0)) && (
-                    <tr key={detail.uuid + "-repas"}>
-                      <td colSpan={11} className="bg-gray-50 px-8 py-2 text-gray-700 text-sm border-t border-b border-gray-200">
-                        {detail.type_repas && (
-                          <div>
-                            <span className="font-semibold text-gray-800">Type de repas :</span> {detail.type_repas}
-                          </div>
-                        )}
-                        {Array.isArray(detail.inviter) && detail.inviter.length > 0 && (
-                          <div>
-                            <span className="font-semibold text-gray-800">Invités :</span> {detail.inviter.join(", ")}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
                 </React.Fragment>
               ))
             )}
@@ -648,13 +417,12 @@ export default function NdfDetailTable({
             </tr>
             <tr>
               <td colSpan={11} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
-                Nombre total de lignes de note de frais : {filteredDetails.length}
+                Nombre total de lignes : {filteredDetails.length}
               </td>
             </tr>
           </tfoot>
         </table>
       </div>
-
       <div className="mt-8 text-center">
         <button
           onClick={exportToPDF}
