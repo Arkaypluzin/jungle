@@ -369,10 +369,15 @@ export default function NdfDetailTable({
                     <td className="py-3 px-3 text-center whitespace-nowrap">
                       {ndfStatut === "Provisoire" && (
                         <div className="flex justify-center gap-2">
-                          <EditNdfDetailModal
-                            detail={detail}
-                            onEdited={refresh}
-                          />
+                          {filteredDetails.map(detail => (
+                            <EditNdfDetailModal
+                              key={detail.uuid}
+                              detail={detail}
+                              onEdited={refresh}
+                              parentNdfMonth={month}
+                              parentNdfYear={year}
+                            />
+                          ))}
                           <DeleteNdfDetailButton
                             detailId={detail.uuid}
                             onDeleted={refresh}
