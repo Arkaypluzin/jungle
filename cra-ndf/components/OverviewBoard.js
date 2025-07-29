@@ -20,7 +20,7 @@ import {
   addDays,
   subDays,
   parseISO,
-  isWithinInterval, // Ajout pour le filtre par date
+  // isBefore, // Plus nécessaire si le filtre par date est retiré
 } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -37,9 +37,12 @@ export default function OverviewBoard({
   const [viewMode, setViewMode] = useState("month"); // 'month', 'week', 'day'
   const [publicHolidays, setPublicHolidays] = useState([]);
 
-  // NOUVEAUX ÉTATS POUR LE FILTRE PAR DATE
-  const [filterStartDate, setFilterStartDate] = useState(""); // Chaîne 'yyyy-MM-dd'
-  const [filterEndDate, setFilterEndDate] = useState(""); // Chaîne 'yyyy-MM-dd'
+  // ÉTATS POUR LE FILTRE PAR DATE DE CONGÉS - SUPPRIMÉS
+  // const [leaveFilterStartDate, setLeaveFilterStartDate] = useState("");
+  // const [leaveFilterEndDate, setLeaveFilterEndDate] = useState("");
+
+  // ÉTAT POUR LE TRI DES CONGÉS - CONSERVÉ
+  const [leaveSortOrder, setLeaveSortOrder] = useState("asc"); // 'asc' pour ancien au nouveau, 'desc' pour nouveau à l'ancien
 
   const paidLeaveTypeId = useMemo(() => {
     const type = activityTypeDefinitions.find(
@@ -257,40 +260,14 @@ export default function OverviewBoard({
   const activitiesByDayAndUser = useMemo(() => {
     const data = new Map(); // Map<userId, Map<dateKey, Array<activity>>>
 
-    // Filtrer les activités par la plage de dates si les filtres sont définis
-    const filteredActivities = allActivities.filter(activity => {
-      if (!filterStartDate && !filterEndDate) {
-        return true; // Pas de filtre appliqué
-      }
-
-      const activityDate = activity.date_activite;
-      if (!isValid(activityDate)) {
-        return false; // Ignorer les activités avec date invalide
-      }
-
-      let passesFilter = true;
-      if (filterStartDate) {
-        const start = parseISO(filterStartDate);
-        if (isValid(start) && isBefore(activityDate, start)) {
-          passesFilter = false;
-        }
-      }
-      if (filterEndDate) {
-        const end = parseISO(filterEndDate);
-        if (isValid(end) && isBefore(end, activityDate)) { // Note: isBefore(end, activityDate) means activityDate is *after* end
-          passesFilter = false;
-        }
-      }
-      return passesFilter;
-    });
-
-
     allUsers.forEach((user) => {
       data.set(user.id, new Map()); // Initialize map for each user, where user.id is azureAdUserId
     });
 
-    filteredActivities.forEach((activity) => { // Utilise filteredActivities ici
-      // Utilise userAzureAdId si populé, sinon user_id (qui devrait être l'azureAdUserId)
+    // Toutes les activités sont traitées, sans filtre de date ici
+    const processedActivities = allActivities;
+
+    processedActivities.forEach((activity) => {
       const userIdToMap = activity.userAzureAdId || activity.user_id;
       if (isValid(activity.date_activite) && userIdToMap) {
         const dateKey = format(activity.date_activite, "yyyy-MM-dd");
@@ -308,8 +285,28 @@ export default function OverviewBoard({
         }
       }
     });
+
+    // Appliquer le tri aux activités DANS CHAQUE JOUR, si c'est un congé payé
+    data.forEach(userMap => {
+      userMap.forEach(activitiesArray => {
+        activitiesArray.sort((a, b) => {
+          const isAPaidLeave = String(a.type_activite) === String(paidLeaveTypeId);
+          const isBPaidLeave = String(b.type_activite) === String(paidLeaveTypeId);
+
+          // Si les deux sont des congés payés, trier par date
+          if (isAPaidLeave && isBPaidLeave) {
+            const dateA = a.date_activite.getTime();
+            const dateB = b.date_activite.getTime();
+            return leaveSortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+          }
+          // Si l'un est un congé payé et l'autre non, ou si aucun n'est un congé, ne pas changer l'ordre relatif.
+          return 0;
+        });
+      });
+    });
+
     return data;
-  }, [allActivities, allUsers, filterStartDate, filterEndDate]); // Ajout des dépendances de filtre
+  }, [allActivities, allUsers, paidLeaveTypeId, leaveSortOrder]); // leaveFilterStartDate et leaveFilterEndDate retirés des dépendances
 
   const navigateView = useCallback(
     (direction) => {
@@ -386,30 +383,18 @@ export default function OverviewBoard({
         </div>
       </div>
 
-      {/* NOUVELLE SECTION DE FILTRE PAR DATE */}
-      <div className="flex flex-col sm:flex-row justify-center items-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4 p-4 bg-gray-50 rounded-lg shadow-inner">
-        <label htmlFor="filterStartDate" className="font-semibold text-gray-700">Filtrer du :</label>
-        <input
-          type="date"
-          id="filterStartDate"
-          value={filterStartDate}
-          onChange={(e) => setFilterStartDate(e.target.value)}
-          className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-        />
-        <label htmlFor="filterEndDate" className="font-semibold text-gray-700">au :</label>
-        <input
-          type="date"
-          id="filterEndDate"
-          value={filterEndDate}
-          onChange={(e) => setFilterEndDate(e.target.value)}
-          className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-        />
-        <button
-          onClick={() => { setFilterStartDate(""); setFilterEndDate(""); }}
-          className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200"
+      {/* SECTION DE TRI POUR LES CONGÉS */}
+      <div className="flex flex-col sm:flex-row justify-center items-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4 p-4 bg-lime-50 rounded-lg shadow-inner border border-lime-200">
+        <span className="font-semibold text-lime-800 text-lg">Trier les demandes de congés :</span>
+        <select
+          id="leaveSortOrder"
+          value={leaveSortOrder}
+          onChange={(e) => setLeaveSortOrder(e.target.value)}
+          className="p-2 border border-gray-300 rounded-md focus:ring-lime-500 focus:border-lime-500"
         >
-          Réinitialiser Filtre
-        </button>
+          <option value="asc">Plus ancien au plus nouveau</option>
+          <option value="desc">Plus nouveau au plus ancien</option>
+        </select>
       </div>
 
       <div className="flex justify-between items-center mb-6">

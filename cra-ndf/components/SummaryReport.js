@@ -333,7 +333,7 @@ export default function SummaryReport({
                               </>
                             )}
                             <span className="mx-1">-</span>
-                            <span className={`font-medium ${statusColorClass}`}>Statut: {activity.status}</span>
+
                             {activity.description && (
                               <>
                                 <span className="mx-1">-</span>
