@@ -140,7 +140,7 @@ export default function SummaryReport({
         }
 
         if (String(activity.type_activite) === String(overtimeTypeId)) {
-            totalOvertimeHours += duration;
+          totalOvertimeHours += duration;
         }
       }
     });
@@ -232,38 +232,38 @@ export default function SummaryReport({
     // Create a map for quick lookup of activities by date
     const activitiesMap = new Map(); // Map<dateKey (YYYY-MM-DD), Array<Activity>>
     activities.forEach(activity => { // Use activities prop here
-        let dateObj = null;
-        if (typeof activity.date_activite === "string") {
-            dateObj = parseISO(activity.date_activite);
-        } else if (activity.date_activite) {
-            dateObj = new Date(activity.date_activite);
-        }
+      let dateObj = null;
+      if (typeof activity.date_activite === "string") {
+        dateObj = parseISO(activity.date_activite);
+      } else if (activity.date_activite) {
+        dateObj = new Date(activity.date_activite);
+      }
 
-        if (isValid(dateObj) && isSameMonth(dateObj, month)) {
-            const dateKey = format(dateObj, "yyyy-MM-dd");
-            if (!activitiesMap.has(dateKey)) {
-                activitiesMap.set(dateKey, []);
-            }
-            activitiesMap.get(dateKey).push({ ...activity, date_activite: dateObj });
+      if (isValid(dateObj) && isSameMonth(dateObj, month)) {
+        const dateKey = format(dateObj, "yyyy-MM-dd");
+        if (!activitiesMap.has(dateKey)) {
+          activitiesMap.set(dateKey, []);
         }
+        activitiesMap.get(dateKey).push({ ...activity, date_activite: dateObj });
+      }
     });
 
     // Sort activities within each day
     activitiesMap.forEach(dailyActivities => {
-        dailyActivities.sort((a, b) => {
-            const dateA = a.date_activite.getTime();
-            const dateB = b.date_activite.getTime();
-            return dateA - dateB;
-        });
+      dailyActivities.sort((a, b) => {
+        const dateA = a.date_activite.getTime();
+        const dateB = b.date_activite.getTime();
+        return dateA - dateB;
+      });
     });
 
     // Now, iterate over all days in the month
     return allDaysInMonth.map(day => {
-        const dateKey = format(day, "yyyy-MM-dd");
-        const dailyActivities = activitiesMap.get(dateKey) || [];
-        const totalDailyTime = dailyActivities.reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
-        const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-        return { day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay };
+      const dateKey = format(day, "yyyy-MM-dd");
+      const dailyActivities = activitiesMap.get(dateKey) || [];
+      const totalDailyTime = dailyActivities.reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
+      const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+      return { day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay };
     });
   }, [activities, month, isPublicHoliday]); // Depend on activities prop
 
@@ -382,7 +382,7 @@ export default function SummaryReport({
       setIsSignatureLoading(true);
       try {
         // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
-        const response = await fetch(`/api/signature?userId=${userFirstName}`); 
+        const response = await fetch(`/api/signature?userId=${userFirstName}`);
         if (response.ok) {
           const data = await response.json();
           if (data.image) {
@@ -465,7 +465,7 @@ export default function SummaryReport({
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ userId: userFirstName, image: dataURL }), 
+          body: JSON.stringify({ userId: userFirstName, image: dataURL }),
         });
         if (response.ok) {
           showMessage("Signature enregistrée avec succès !", "success");
@@ -512,7 +512,7 @@ export default function SummaryReport({
       pdf.setTextColor(30, 64, 175); // blue-800 - rgb(30, 64, 175)
       pdf.text("Informations Générales", margin, yPos);
       yPos += defaultLineHeight;
-      
+
       pdf.setFont("helvetica", "normal");
       pdf.setTextColor(51, 51, 51); // Dark gray - rgb(51, 51, 51)
       pdf.text(`Mois du rapport : ${monthName}`, margin + 5, yPos);
@@ -573,7 +573,7 @@ export default function SummaryReport({
             dailyActivities.forEach(activity => {
               const clientName = getClientName(activity.client_id);
               const activityTypeName = getActivityTypeName(activity.type_activite);
-              
+
               let activityTextContent = `${activityTypeName} (${parseFloat(activity.temps_passe).toFixed(1)}j)`;
               if (clientName !== "Client Inconnu") {
                 activityTextContent += ` - Client: ${clientName}`;
@@ -581,7 +581,7 @@ export default function SummaryReport({
               if (activity.description) {
                 activityTextContent += ` - "${activity.description}"`;
               }
-              
+
               // Calculate text height for the rectangle
               const textWidthForRect = contentWidth - (2 * activityRectPadding);
               const splitText = pdf.splitTextToSize(activityTextContent, textWidthForRect);
@@ -592,7 +592,7 @@ export default function SummaryReport({
             if (dailyActivities.length === 0) {
               estimatedActivitiesContentHeight += defaultLineHeight + (2 * activityRectPadding) + itemSpacing; // Height for the message
             }
-            
+
             const totalHeightNeededForDayBlock = dayHeaderHeight + estimatedActivitiesContentHeight + itemSpacing; // Adjusted to be tighter
 
             // Check if a new page is needed before drawing the day block
@@ -670,7 +670,7 @@ export default function SummaryReport({
               const rectX = margin + 5;
               const rectWidth = contentWidth - 5;
               const rectHeight = defaultLineHeight + (2 * activityRectPadding); // Height for the message
-              
+
               pdf.setFillColor(240, 240, 240); // Very light gray for days without activities
               pdf.rect(rectX, yPos - itemSpacing, rectWidth, rectHeight, 'F');
 
@@ -776,13 +776,15 @@ export default function SummaryReport({
           {/* Section Informations Générales */}
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <h3 className="text-lg font-semibold text-blue-800 mb-2">Informations Générales</h3>
-            <p><strong>Mois du rapport :</strong> {monthName}</p>
-            <p><strong>Total jours ouvrés dans le mois :</strong> {totalWorkingDays} jours</p>
-            <p><strong>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime.toFixed(1)} jours</p>
-            <p><strong>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth.toFixed(1)} jours</p>
-            <p><strong>Jours non ouvrés travaillés :</strong> {nonWorkingDaysWorked.toFixed(1)} jours</p>
-            <p><strong>Heures Supplémentaires :</strong> {totalOvertimeHours.toFixed(1)} jours</p>
-            <p><strong>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
+            <div className="text-gray-700">
+              <p><strong>Mois du rapport :</strong> {monthName}</p>
+              <p><strong>Total jours ouvrés dans le mois :</strong> {totalWorkingDays} jours</p>
+              <p><strong>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime.toFixed(1)} jours</p>
+              <p><strong>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth.toFixed(1)} jours</p>
+              <p><strong>Jours non ouvrés travaillés :</strong> {nonWorkingDaysWorked.toFixed(1)} jours</p>
+              <p><strong>Heures Supplémentaires :</strong> {totalOvertimeHours.toFixed(1)} jours</p>
+              <p><strong>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
+            </div>
           </div>
 
           {/* Section Détail des Activités */}
