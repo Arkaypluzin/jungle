@@ -155,12 +155,6 @@ export default function ActivityModal({
         1
       )}j pour ce jour.`;
     }
-    // NOUVEAU: Pour la multi-sélection, le temps_passe doit être 1
-    if (isMultiDayAdd && parsedTempsPasse !== 1) {
-      errors.temps_passe =
-        "Pour la sélection multiple, le temps passé doit être de 1 jour.";
-    }
-
     if (!formData.type_activite) {
       errors.type_activite = "Le type d'activité est requis.";
     }
@@ -325,7 +319,7 @@ export default function ActivityModal({
             </div>
           )}
 
-          <div className="flex-grow mb-4">
+<div className="flex-grow mb-4">
             <label
               htmlFor="temps_passe"
               className="block text-sm font-medium text-gray-700 mb-1"
@@ -343,7 +337,6 @@ export default function ActivityModal({
               name="temps_passe"
               step="0.1"
               min="0.1"
-              // NOUVEAU: Max dynamique pour le temps passé
               max={isMultiDayAdd ? 1 : availableTimeForDay}
               value={formData.temps_passe}
               onChange={handleChange}
@@ -351,9 +344,10 @@ export default function ActivityModal({
               required
               disabled={
                 readOnly ||
-                isActivityLocked ||
-                (isMultiDayAdd && formData.temps_passe === 1)
-              } // Désactive si multi-add et déjà 1
+                isActivityLocked 
+                // Ancienne condition: (isMultiDayAdd && formData.temps_passe === 1)
+                // Cette condition est retirée pour permettre l'édition en mode multi-jours
+              } 
             />
             {formErrors.temps_passe && (
               <p className="text-red-500 text-xs mt-1">
@@ -361,7 +355,6 @@ export default function ActivityModal({
               </p>
             )}
           </div>
-
           <div className="flex-grow mb-4">
             <label
               htmlFor="type_activite"
