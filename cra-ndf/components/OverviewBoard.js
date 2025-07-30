@@ -24,7 +24,7 @@ import {
 import { fr } from "date-fns/locale";
 
 export default function OverviewBoard({
-  activityTypeDefinitions,
+  activityTypeDefinitions, // Cette prop est cruciale pour identifier les congés !
   clientDefinitions,
   showMessage,
   userRole,
@@ -46,8 +46,9 @@ export default function OverviewBoard({
   // État pour le filtre utilisateur global (tableau d'IDs pour multi-sélection)
   const [selectedUserIdsFilter, setSelectedUserIdsFilter] = useState([]);
 
-  // État pour le filtre de statut des congés communs
-  const [commonLeaveStatusFilter, setCommonLeaveStatusFilter] = useState('all'); // 'all', 'pending_review', 'validated', 'rejected', 'draft'
+  // État pour le filtre de statut des congés
+  // Initialisé à 'all' par défaut pour couvrir tous les cas au démarrage
+  const [commonLeaveStatusFilter, setCommonLeaveStatusFilter] = useState('all');
 
   // NOUVEAU: État pour basculer entre les congés communs et individuels
   const [showCommonLeavesOnly, setShowCommonLeavesOnly] = useState(true); // true: congés communs, false: congés individuels
@@ -66,6 +67,8 @@ export default function OverviewBoard({
 
 
   // MODIFICATION ICI: Collecter TOUS les IDs de types d'activités liés aux congés/absences
+  // NOTE IMPORTANTE: La précision de cette liste dépend du contenu de activityTypeDefinitions.
+  // Nous avons besoin de ce contenu pour affiner les mots-clés si nécessaire.
   const leaveActivityTypeIds = useMemo(() => {
     // Liste plus complète et robuste de mots-clés pour les congés et absences
     const leaveKeywords = [
@@ -383,7 +386,7 @@ export default function OverviewBoard({
   }, [allActivities, allUsers]);
 
 
-  // NOUVEAU USEMEMO: Résumé des jours de congés pris par plusieurs personnes pour la période affichée
+  // MODIFICATION ICI: Résumé des jours de congés pris par plusieurs personnes pour la période affichée
   const multiPersonLeaveDaysSummary = useMemo(() => {
     console.log("--- Début du calcul multiPersonLeaveDaysSummary ---");
     console.log("  Filtre de statut sélectionné (commonLeaveStatusFilter):", commonLeaveStatusFilter);
@@ -391,7 +394,7 @@ export default function OverviewBoard({
     console.log("  Nombre total d'activités (allActivities.length):", allActivities.length);
     console.log("  IDs des types de congé/absence (leaveActivityTypeIds):", Array.from(leaveActivityTypeIds));
     console.log("  Utilisateurs chargés (allUsers.length):", allUsers.length);
-    // console.log("  IDs des utilisateurs chargés:", allUsers.map(u => u.id));
+    console.log("  selectedUserIdsFilter (pour congés individuels):", selectedUserIdsFilter);
 
 
     const leaveDaysByDate = new Map(); // Map<dateKey (YYYY-MM-DD), Set<userId>>
@@ -403,6 +406,7 @@ export default function OverviewBoard({
 
     // Déterminer les statuts à inclure dans le filtre
     const statusesToInclude = [];
+    // Si 'all' est sélectionné, inclure tous les statuts. Sinon, inclure le statut spécifique.
     if (commonLeaveStatusFilter === 'all') {
       statusesToInclude.push("pending_review", "validated", "draft", "rejected");
     } else {
@@ -468,12 +472,23 @@ export default function OverviewBoard({
             console.log(`    Jour ${dateKey} n'est PAS un congé COMMUN (taille: ${userIdsSet.size}).`);
           }
         } else {
+          // Logique pour les congés individuels
           if (userIdsSet.size === 1) { // Congés individuels (exactement une personne)
-            console.log(`    Jour ${dateKey} est un congé INDIVIDUEL (taille: ${userIdsSet.size}). Ajouté au résumé.`);
-            summary.push({
-              date: day, // Utilise l'objet Date réel de daysInView
-              userIds: Array.from(userIdsSet),
-            });
+            const singleUserId = Array.from(userIdsSet)[0];
+            // Appliquer le filtre utilisateur si des utilisateurs sont sélectionnés
+            const isUserFiltered = selectedUserIdsFilter.length === 0 || selectedUserIdsFilter.includes(singleUserId);
+
+            console.log(`    DEBUG: Congé individuel pour ${singleUserId}. Filtre sélectionné: [${selectedUserIdsFilter.join(', ')}]. Est filtré: ${isUserFiltered}`);
+
+            if (isUserFiltered) {
+              console.log(`    Jour ${dateKey} est un congé INDIVIDUEL (taille: ${userIdsSet.size}). Ajouté au résumé.`);
+              summary.push({
+                date: day, // Utilise l'objet Date réel de daysInView
+                userIds: Array.from(userIdsSet),
+              });
+            } else {
+              console.log(`    Jour ${dateKey} est un congé INDIVIDUEL mais l'utilisateur (${singleUserId}) n'est PAS dans le filtre sélectionné.`);
+            }
           } else {
             console.log(`    Jour ${dateKey} n'est PAS un congé INDIVIDUEL (taille: ${userIdsSet.size}).`);
           }
@@ -489,7 +504,7 @@ export default function OverviewBoard({
     console.log("--- Fin du calcul multiPersonLeaveDaysSummary ---");
     console.log("multiPersonLeaveDaysSummary (résultat final):", summary);
     return summary;
-  }, [allActivities, daysInView, leaveActivityTypeIds, allUsers, commonLeaveStatusFilter, showCommonLeavesOnly]);
+  }, [allActivities, daysInView, leaveActivityTypeIds, allUsers, commonLeaveStatusFilter, showCommonLeavesOnly, selectedUserIdsFilter]); // Ajout de selectedUserIdsFilter comme dépendance
 
 
   // NOUVEAU USEMEMO: Calcul des résumés d'activités par utilisateur pour la période affichée
@@ -507,13 +522,17 @@ export default function OverviewBoard({
         summaries.set(user.id, {
             userId: user.id,
             userName: user.name,
-            leaveDays: 0, // Congés validés
-            pendingReviewLeaveDays: 0, // Congés en attente de révision (status: 'pending_review')
-            draftLeaveDays: 0, // Congés brouillons (status: 'draft')
-            rejectedLeaveDays: 0, // Congés refusés (status: 'rejected')
-            billableDays: 0,
-            overtimeDays: 0,
-            totalWorkingDaysInView: workingDaysCount, // Ajout du nouveau champ
+            totalLeaveDaysValidated: 0,
+            totalLeaveDaysPending: 0,
+            totalLeaveDaysDraft: 0,
+            totalLeaveDaysRejected: 0,
+            totalNonLeaveActivitiesTime: 0, // Somme du temps pour toutes les activités NON-CONGÉS
+            totalNonLeavePendingReviewActivities: 0, // Somme du temps pour les activités NON-CONGÉS en attente
+            totalNonLeaveDraftActivities: 0, // Somme du temps pour les activités NON-CONGÉS brouillons
+            totalNonLeaveValidatedActivities: 0, // Somme du temps pour les activités NON-CONGÉS validées
+            totalBillableDays: 0,
+            totalOvertimeDays: 0,
+            totalWorkingDaysInView: workingDaysCount, // Jours ouvrés théoriques dans la période
         });
     });
 
@@ -529,50 +548,38 @@ export default function OverviewBoard({
                       (type) => String(type.id) === String(activity.type_activite)
                     );
                     const tempsPasse = parseFloat(activity.temps_passe) || 0;
-
-                    // MODIFICATION ICI: Utiliser leaveActivityTypeIds pour vérifier si c'est une activité de congé
                     const isLeaveActivity = leaveActivityTypeIds.has(String(activity.type_activite));
-                    const isAbsence = activityTypeObj?.name?.toLowerCase().includes("absence");
-                    const isOvertime = activityTypeObj?.is_overtime;
 
-                    // console.log(`--- Activity Debug ---`);
-                    // console.log(`  Activity ID: ${activity.id}, User: ${user.name}, Date: ${dateKey}`);
-                    // console.log(`  Type: ${activityTypeObj?.name || 'Unknown'}, Status: ${activity.status}, Temps Passé: ${tempsPasse}`);
-                    // console.log(`  Is Leave Activity: ${isLeaveActivity}`);
-
-                    // Jours de congés
-                    if (isLeaveActivity) { // Utiliser isLeaveActivity ici
+                    if (isLeaveActivity) {
+                        // Accumuler les congés par statut
                         if (activity.status === "validated") {
-                            userSummary.leaveDays += tempsPasse;
-                            // console.log(`  -> Categorized as VALIDATED. Current leaveDays: ${userSummary.leaveDays}`);
+                            userSummary.totalLeaveDaysValidated += tempsPasse;
                         } else if (activity.status === "pending_review") {
-                            userSummary.pendingReviewLeaveDays += tempsPasse;
-                            // console.log(`  -> Categorized as PENDING_REVIEW. Current pendingReviewLeaveDays: ${userSummary.pendingReviewLeaveDays}`);
+                            userSummary.totalLeaveDaysPending += tempsPasse;
                         } else if (activity.status === "draft") {
-                            userSummary.draftLeaveDays += tempsPasse;
-                            // console.log(`  -> Categorized as DRAFT. Current draftLeaveDays: ${userSummary.draftLeaveDays}`);
+                            userSummary.totalLeaveDaysDraft += tempsPasse;
                         } else if (activity.status === "rejected") {
-                            userSummary.rejectedLeaveDays += tempsPasse;
-                            // console.log(`  -> Categorized as REJECTED. Current rejectedLeaveDays: ${userSummary.rejectedLeaveDays}`);
-                        } else {
-                            // console.log(`  -> Leave activity with unexpected status: ${activity.status}`);
+                            userSummary.totalLeaveDaysRejected += tempsPasse;
                         }
                     } else {
-                        // Heures supp (en jours)
-                        if (isOvertime) {
-                            userSummary.overtimeDays += tempsPasse;
-                            // console.log(`  -> Added ${tempsPasse} to overtimeDays. Current: ${userSummary.overtimeDays}`);
+                        // Accumuler le temps pour les activités NON-CONGÉS
+                        userSummary.totalNonLeaveActivitiesTime += tempsPasse;
+
+                        // Accumuler les activités NON-CONGÉS par statut
+                        if (activity.status === "pending_review") {
+                            userSummary.totalNonLeavePendingReviewActivities += tempsPasse;
+                        } else if (activity.status === "validated") {
+                            userSummary.totalNonLeaveValidatedActivities += tempsPasse;
+                        } else if (activity.status === "draft") {
+                            userSummary.totalNonLeaveDraftActivities += tempsPasse;
                         }
 
-                        // Jours facturables (utilise maintenant is_billable du type d'activité)
-                        if (activityTypeObj?.is_billable) {
-                            userSummary.billableDays += tempsPasse;
-                            // console.log(`  -> Added ${tempsPasse} to billableDays. Current: ${userSummary.billableDays}`);
+                        // Accumuler les heures supp et jours facturables (qui sont des non-congés)
+                        if (activityTypeObj?.is_overtime) {
+                            userSummary.totalOvertimeDays += tempsPasse;
                         }
-                        // Note: totalAccountedDays n'est plus affiché directement dans le résumé,
-                        // mais la logique de calcul peut être conservée si nécessaire pour d'autres usages.
-                        if (!isAbsence) {
-                            // console.log(`  -> Activity is not absence, accounted for. (Not directly shown in summary)`);
+                        if (activityTypeObj?.is_billable) {
+                            userSummary.totalBillableDays += tempsPasse;
                         }
                     }
                 });
@@ -646,6 +653,7 @@ export default function OverviewBoard({
     );
   }
 
+  // Ajustement des titres et messages en fonction du mode de congés
   const commonLeavesTitle = showCommonLeavesOnly ? "Jours avec Congés Communs (période actuelle)" : "Jours avec Congés Individuels (période actuelle)";
   const noLeavesMessage = showCommonLeavesOnly ? "Aucun jour avec des congés communs pour la période sélectionnée et le statut choisi." : "Aucun jour avec des congés individuels pour la période sélectionnée et le statut choisi.";
 
@@ -729,14 +737,20 @@ export default function OverviewBoard({
           <span className="text-gray-700 font-semibold">Type de congés :</span>
           <div className="flex rounded-md shadow-sm">
             <button
-              onClick={() => setShowCommonLeavesOnly(true)}
+              onClick={() => {
+                setShowCommonLeavesOnly(true);
+                setCommonLeaveStatusFilter('all'); // Réinitialise à 'Tous' pour les congés communs
+              }}
               className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
                 ${showCommonLeavesOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
               Communs
             </button>
             <button
-              onClick={() => setShowCommonLeavesOnly(false)}
+              onClick={() => {
+                setShowCommonLeavesOnly(false);
+                setCommonLeaveStatusFilter('all'); // Réinitialise à 'Tous' pour les congés individuels
+              }}
               className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
                 ${!showCommonLeavesOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
@@ -745,10 +759,11 @@ export default function OverviewBoard({
           </div>
         </div>
 
-        {/* Filtre de statut pour les congés communs */}
+        {/* Filtre de statut pour les congés */}
         <div className="flex justify-center items-center gap-4 mb-4">
           <span className="text-gray-700 font-semibold">Afficher les congés :</span>
           <div className="flex rounded-md shadow-sm">
+            {/* Bouton "Tous" toujours présent */}
             <button
               onClick={() => setCommonLeaveStatusFilter('all')}
               className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
@@ -756,34 +771,40 @@ export default function OverviewBoard({
             >
               Tous
             </button>
-            <button
-              onClick={() => setCommonLeaveStatusFilter('pending_review')}
-              className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
-                ${commonLeaveStatusFilter === 'pending_review' ? 'bg-yellow-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              En attente
-            </button>
-            <button
-              onClick={() => setCommonLeaveStatusFilter('validated')}
-              className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
-                ${commonLeaveStatusFilter === 'validated' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              Validés
-            </button>
-            <button
-              onClick={() => setCommonLeaveStatusFilter('rejected')}
-              className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
-                ${commonLeaveStatusFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              Refusés
-            </button>
-            <button
-              onClick={() => setCommonLeaveStatusFilter('draft')}
-              className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
-                ${commonLeaveStatusFilter === 'draft' ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              Brouillons
-            </button>
+
+            {/* Statuts spécifiques, affichés uniquement si le mode n'est PAS "Communs" */}
+            {!showCommonLeavesOnly && (
+              <>
+                <button
+                  onClick={() => setCommonLeaveStatusFilter('pending_review')}
+                  className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                    ${commonLeaveStatusFilter === 'pending_review' ? 'bg-yellow-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                >
+                  En attente
+                </button>
+                <button
+                  onClick={() => setCommonLeaveStatusFilter('validated')}
+                  className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                    ${commonLeaveStatusFilter === 'validated' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                >
+                  Validés
+                </button>
+                <button
+                  onClick={() => setCommonLeaveStatusFilter('rejected')}
+                  className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                    ${commonLeaveStatusFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                >
+                  Refusés
+                </button>
+                <button
+                  onClick={() => setCommonLeaveStatusFilter('draft')}
+                  className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
+                    ${commonLeaveStatusFilter === 'draft' ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                >
+                  Brouillons
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1019,7 +1040,7 @@ export default function OverviewBoard({
                                     activityTitle = "Congé refusé";
                                   } else if (activity.status === "draft") {
                                     activityColorClass = "bg-gray-200 text-gray-800"; // Brouillon
-                                    activityStatusIcon = "📝";
+                                    activityStatusIcon = "�";
                                     activityTitle = "Congé brouillon";
                                   } else {
                                     activityColorClass = "bg-lime-200 text-lime-800";
@@ -1061,43 +1082,47 @@ export default function OverviewBoard({
                   {userSummary && (
                     <div className="flex flex-col gap-2 mt-2 pl-2"> {/* Utiliser flex-col pour empiler les résumés */}
                       <div className="flex flex-wrap justify-start gap-2 text-base font-semibold"> {/* text-base pour texte légèrement plus petit, justify-start pour aligner à gauche, font-semibold pour moins de gras */}
+                        {/* Nouvelle ligne pour les totaux d'activités par statut */}
+                        <div className="bg-green-100 text-green-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Activités Validées: {userSummary.totalNonLeaveValidatedActivities.toFixed(1)}j
+                        </div>
+                        <div className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Activités Brouillons: {userSummary.totalNonLeaveDraftActivities.toFixed(1)}j
+                        </div>
+                        <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Jours Travaillés: {userSummary.totalNonLeaveActivitiesTime.toFixed(1)}j
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
                         {/* Congés Validés */}
                         <div className="bg-green-200 text-green-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Congés Validés: {userSummary.leaveDays.toFixed(1)}j
+                          Congés Validés: {userSummary.totalLeaveDaysValidated.toFixed(1)}j
+                        </div>
+                        {/* Congés en Attente */}
+                        <div className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Congés en Attente: {userSummary.totalLeaveDaysPending.toFixed(1)}j
+                        </div>
+                        {/* Congés Brouillons */}
+                        <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Congés Brouillons: {userSummary.totalLeaveDaysDraft.toFixed(1)}j
+                        </div>
+                        {/* Congés Refusés */}
+                        <div className="bg-red-200 text-red-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Congés Refusés: {userSummary.totalLeaveDaysRejected.toFixed(1)}j
                         </div>
                         {/* Facturable */}
                         <div className="bg-blue-200 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Facturable: {userSummary.billableDays.toFixed(1)}j
+                          Facturable: {userSummary.totalBillableDays.toFixed(1)}j
                         </div>
                         {/* Heures Supp */}
                         <div className="bg-purple-200 text-purple-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Heures Supp: {userSummary.overtimeDays.toFixed(1)}j
+                          Heures Supp: {userSummary.totalOvertimeDays.toFixed(1)}j
                         </div>
-                        {/* Jours Ouvrés (ancien Total Imputé) */}
+                        {/* Jours Ouvrés (Théoriques) */}
                         <div className="bg-gray-300 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Jours Ouvrés: {userSummary.totalWorkingDaysInView.toFixed(1)}j
+                          Jours Ouvrés (Théoriques): {userSummary.totalWorkingDaysInView.toFixed(1)}j
                         </div>
                       </div>
-                      {/* NOUVEAU: Affichage des congés en attente, brouillons et refusés */}
-                      {(userSummary.pendingReviewLeaveDays > 0 || userSummary.draftLeaveDays > 0 || userSummary.rejectedLeaveDays > 0) && (
-                        <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
-                          {userSummary.pendingReviewLeaveDays > 0 && (
-                            <div className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                              Congés en Attente: {userSummary.pendingReviewLeaveDays.toFixed(1)}j
-                            </div>
-                          )}
-                          {userSummary.draftLeaveDays > 0 && (
-                            <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                              Congés Brouillons: {userSummary.draftLeaveDays.toFixed(1)}j
-                            </div>
-                          )}
-                          {userSummary.rejectedLeaveDays > 0 && (
-                            <div className="bg-red-200 text-red-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                              Congés Refusés: {userSummary.rejectedLeaveDays.toFixed(1)}j
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
