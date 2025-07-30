@@ -150,15 +150,15 @@ export default function SummaryReport({
   if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
     console.error("[SummaryReport] Essential data missing or invalid for report rendering.", { month, activities, clientDefinitions, activityTypeDefinitions, publicHolidays });
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
+      <div className="fixed inset-0" style={{ backgroundColor: 'rgba(100, 100, 100, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem' }}>
+        <div style={{ backgroundColor: '#ffffff', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '28rem', position: 'relative' }}>
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+            style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', color: '#9ca3af', fontSize: '1.5rem', fontWeight: 'bold' }}
           >
             &times;
           </button>
-          <p className="text-red-700 text-center">
+          <p style={{ color: '#b91c1c', textAlign: 'center' }}>
             Erreur: Impossible d'afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
           </p>
         </div>
@@ -176,6 +176,7 @@ export default function SummaryReport({
       return;
     }
 
+    // Temporairement ajuster les styles pour une meilleure capture
     const originalInputStyle = input.style.cssText;
     input.style.padding = '20px';
     input.style.boxShadow = 'none';
@@ -183,6 +184,9 @@ export default function SummaryReport({
     input.style.color = 'rgb(51, 51, 51)';
 
     try {
+      // Log the outerHTML before converting to canvas
+      console.log("HTML content before html2canvas:", input.outerHTML);
+
       const canvas = await html2canvas(input, {
         scale: 2,
         useCORS: true,
@@ -213,10 +217,17 @@ export default function SummaryReport({
 
       const monthYear = format(month, "MMMM_yyyy", { locale: fr });
       pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
+      showMessage("PDF généré avec succès !", "success");
     } catch (error) {
       console.error("PDF Generation Error (Detailed): ", error);
-      showMessage(`Une erreur est survenue lors de la génération du PDF. Détails: ${error.message || error}. Veuillez réessayer.`, "error");
+      showMessage(
+        `Une erreur est survenue lors de la génération du PDF. Détails: ${error.message || error}. ` +
+        `Si l'erreur mentionne "oklch", cela signifie que des couleurs modernes non supportées par le générateur de PDF sont utilisées. ` +
+        `Veuillez vérifier votre configuration Tailwind CSS (tailwind.config.js) ou vos fichiers CSS globaux pour remplacer les couleurs "oklch" par des formats comme "rgb()" ou des codes hexadécimaux.`,
+        "error"
+      );
     } finally {
+      // Restaurer les styles originaux
       input.style.cssText = originalInputStyle;
     }
   };
@@ -256,88 +267,75 @@ export default function SummaryReport({
 
   // Déterminer l'ID du type "Congé Payé" une seule fois
   const paidLeaveTypeId = useMemo(() => {
-    const type = activityTypeDefinitions.find(
-      (t) => t.name && t.name.toLowerCase().includes("congé payé")
-    );
+    const type = activityTypeDefinitions.find(t => t.name && t.name.toLowerCase().includes("congé payé"));
     return type ? type.id : null;
   }, [activityTypeDefinitions]);
 
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4 overflow-y-auto">
-      <div ref={reportRef} className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative p-6 sm:p-8">
+    <div className="fixed inset-0" style={{ backgroundColor: 'rgba(100, 100, 100, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem', overflowY: 'auto' }}>
+      <div ref={reportRef} style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '64rem', maxHeight: '90vh', overflowY: 'auto', position: 'relative', padding: '1.5rem' }}>
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+          style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', color: '#9ca3af', fontSize: '1.5rem', fontWeight: 'bold' }}
         >
           &times;
         </button>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1.5rem', textAlign: 'center' }}>
           Rapport de Synthèse - {monthName}
         </h2>
 
-        <div className="space-y-6">
+        <div style={{ marginBottom: '1.5rem' }}>
           {/* Section Informations Générales */}
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <h3 className="text-lg font-semibold text-blue-800 mb-2">Informations Générales</h3>
-            <p><strong>Mois du rapport :</strong> {monthName}</p>
-            <p><strong>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime} jours</p>
-            <p><strong>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth} jours</p>
-            <p><strong>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
+          <div style={{ backgroundColor: '#eff6ff', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #bfdbfe' }}>
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#1e40af', marginBottom: '0.5rem' }}>Informations Générales</h3>
+            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Mois du rapport :</strong> {monthName}</p>
+            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime} jours</p>
+            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth} jours</p>
+            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
           </div>
 
-          {/* SECTION POUR LES STATUTS DES RAPPORTS PAR LE MANAGER - ENTIÈREMENT SUPPRIMÉE */}
-          {/* (Commenté ou supprimé précédemment) */}
-
           {/* Section Détail des Activités */}
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Détail des Activités</h3>
+          <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', marginTop: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '0.5rem' }}>Détail des Activités</h3>
             {allDaysWithActivities.length > 0 ? (
-              <div className="space-y-4">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {allDaysWithActivities.map(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => (
-                  <div key={format(day, 'yyyy-MM-dd')} className="p-3 border border-gray-200 rounded-md bg-white shadow-sm">
-                    <p className="font-bold text-gray-800 mb-1">
+                  <div key={format(day, 'yyyy-MM-dd')} style={{ padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.375rem', backgroundColor: '#ffffff', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
+                    <p style={{ fontWeight: 'bold', color: '#1f2937', marginBottom: '0.25rem' }}>
                       {format(day, "EEEE dd MMMM yyyy", { locale: fr })} ({totalDailyTime}j)
-                      {isWeekendDay && <span className="ml-2 text-sm text-gray-500">(Week-end)</span>}
-                      {isPublicHoliday(day) && <span className="ml-2 text-sm text-gray-500">(Jour Férié)</span>}
+                      {isWeekendDay && <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem', color: '#6b7280' }}>(Week-end)</span>}
+                      {isPublicHoliday(day) && <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem', color: '#6b7280' }}>(Jour Férié)</span>}
                     </p>
-                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                    <ul style={{ listStyleType: 'disc', paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', color: '#4b5563' }}>
                       {dailyActivities.map((activity) => {
                         const clientName = getClientName(activity.client_id);
                         const activityTypeName = getActivityTypeName(activity.type_activite);
                         
-                        let statusColorClass = 'text-gray-700';
-                        if (activity.status === 'validated') statusColorClass = 'text-green-600';
-                        if (activity.status === 'pending_review') statusColorClass = 'text-yellow-600';
-                        if (activity.status === 'rejected') statusColorClass = 'text-red-600';
-                        if (activity.status === 'finalized') statusColorClass = 'text-purple-600';
-
-                        // Déterminer la couleur de fond de la ligne d'activité
-                        let activityLineBgClass = 'bg-blue-50'; // Couleur de fond par défaut (bleu clair)
-                        let activityLineTextColorClass = 'text-blue-800'; // Couleur de texte par défaut
+                        let activityLineBgColor = '#eff6ff'; // Default (blue-50)
+                        let activityLineTextColor = '#1e40af'; // Default (blue-800)
 
                         if (String(activity.type_activite) === String(paidLeaveTypeId)) {
-                          // Si c'est un congé payé, pas de couleur de fond spécifique, utiliser le fond de la liste
-                          activityLineBgClass = ''; // Pas de couleur de fond
-                          activityLineTextColorClass = 'text-gray-700'; // Revenir à la couleur de texte par défaut
+                          activityLineBgColor = 'transparent'; // No specific background for leave
+                          activityLineTextColor = '#4b5563'; // Revert to default text color
                         }
 
                         return (
-                          <li key={activity.id} className={`flex flex-wrap p-1 rounded-sm ${activityLineBgClass} ${activityLineTextColorClass}`}>
-                            <span className="font-medium">{activityTypeName} ({parseFloat(activity.temps_passe) || 0}j)</span>
+                          <li key={activity.id} style={{ display: 'flex', flexWrap: 'wrap', padding: '0.25rem', borderRadius: '0.125rem', backgroundColor: activityLineBgColor, color: activityLineTextColor }}>
+                            <span style={{ fontWeight: 'medium' }}>{activityTypeName} ({parseFloat(activity.temps_passe) || 0}j)</span>
                             {/* Conditionnel pour afficher le client et le tiret précédent */}
                             {clientName !== "Client Inconnu" && (
                               <>
-                                <span className="mx-1">-</span>
+                                <span style={{ margin: '0 0.25rem' }}>-</span>
                                 <span>Client: {clientName}</span>
                               </>
                             )}
-                            <span className="mx-1">-</span>
+                            <span style={{ margin: '0 0.25rem' }}>-</span>
 
                             {activity.description && (
                               <>
-                                <span className="mx-1">-</span>
-                                <span className="italic">"{activity.description}"</span>
+                                <span style={{ margin: '0 0.25rem' }}>-</span>
+                                <span style={{ fontStyle: 'italic' }}>"{activity.description}"</span>
                               </>
                             )}
                           </li>
@@ -348,21 +346,26 @@ export default function SummaryReport({
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 italic">Aucune activité enregistrée pour ce mois.</p>
+              <p style={{ color: '#6b7280', fontStyle: 'italic' }}>Aucune activité enregistrée pour ce mois.</p>
             )}
           </div>
         </div>
 
-        <div className="flex justify-end mt-6 space-x-3">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', gap: '0.75rem' }}>
           <button
             onClick={handleDownloadPdf}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200 do-not-print"
+            className="do-not-print" // Garde la classe pour l'ignorer lors de la capture
+            style={{ backgroundColor: '#dc2626', color: '#ffffff', fontWeight: 'bold', padding: '0.5rem 1rem', borderRadius: '0.5rem', outline: 'none', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)', transitionProperty: 'background-color', transitionDuration: '200ms' }}
+            onMouseOver={e => e.currentTarget.style.backgroundColor = '#b91c1c'}
+            onMouseOut={e => e.currentTarget.style.backgroundColor = '#dc2626'}
           >
             Télécharger PDF
           </button>
           <button
             onClick={onClose}
-            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200"
+            style={{ backgroundColor: '#d1d5db', color: '#1f2937', fontWeight: 'bold', padding: '0.5rem 1rem', borderRadius: '0.5rem', outline: 'none', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)', transitionProperty: 'background-color', transitionDuration: '200ms' }}
+            onMouseOver={e => e.currentTarget.style.backgroundColor = '#9ca3af'}
+            onMouseOut={e => e.currentTarget.style.backgroundColor = '#d1d5db'}
           >
             Fermer
           </button>

@@ -112,7 +112,7 @@ export async function createOrUpdateMonthlyReportController(
       total_days_worked: parseFloat(total_days_worked),
       total_billable_days: parseFloat(total_billable_days),
       activities_snapshot: activities_snapshot,
-      status: "pending_review",
+      status: "pending_review", // Le statut initial est toujours 'pending_review' lors de la création/mise à jour
       submittedAt: new Date(),
       report_type: report_type,
     };
@@ -223,29 +223,18 @@ export async function getMonthlyReportByIdController(reportId) {
       Array.isArray(report.activities_snapshot) &&
       report.activities_snapshot.length > 0
     ) {
+      // Simplification du map pour éviter l'erreur de parsing
       const activityObjectIds = report.activities_snapshot
-        .map((id, index) => {
-          console.log(
-            `[Backend DEBUG] Processing activities_snapshot[${index}]: "${id}" (Type: ${typeof id})`
-          );
+        .map(id => {
           try {
             if (typeof id === "string" && ObjectId.isValid(id)) {
-              const objectId = new ObjectId(id);
-              console.log(
-                `[Backend DEBUG] Converted to ObjectId: "${objectId.toString()}"`
-              );
-              return objectId;
+              return new ObjectId(id);
             } else {
-              console.warn(
-                `[Backend] ID d'activité invalide ou non-ObjectId trouvé dans activities_snapshot: ${id}. Ce document sera ignoré.`
-              );
+              console.warn(`[Backend] ID d'activité invalide ou non-ObjectId trouvé dans activities_snapshot: ${id}. Ce document sera ignoré.`);
               return null;
             }
           } catch (e) {
-            console.error(
-              `[Backend] Erreur lors de la conversion de l'ID en ObjectId pour ${id}:`,
-              e
-            );
+            console.error(`[Backend] Erreur lors de la conversion de l'ID en ObjectId pour ${id}:`, e);
             return null;
           }
         })
@@ -379,6 +368,7 @@ export async function updateMonthlyReportStatusController(
   try {
     const db = await getMongoDb();
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
+    const activitiesCollection = await getActivitiesCollection(db); // Obtenir la collection d'activités
 
     let updateOperation = {
       $set: {
@@ -394,6 +384,7 @@ export async function updateMonthlyReportStatusController(
       updateOperation.$unset = { rejectionReason: "" };
     }
 
+    // 1. Mettre à jour le statut du rapport mensuel lui-même
     const result = await monthlyReportsCollection.updateOne(
       { _id: new ObjectId(reportId) },
       updateOperation
@@ -408,6 +399,65 @@ export async function updateMonthlyReportStatusController(
     console.log(
       `[Backend] updateMonthlyReportStatusController: Statut du rapport ${reportId} mis à jour à "${newStatus}"`
     );
+
+    // NOUVEAU: Si le rapport est validé, mettre à jour le statut des activités associées
+    if (newStatus === "validated") {
+      const report = await monthlyReportsCollection.findOne({ _id: new ObjectId(reportId) });
+
+      if (report && report.activities_snapshot && report.activities_snapshot.length > 0) {
+        // Convertir les IDs des activités en ObjectId pour la requête MongoDB
+        const activityObjectIds = report.activities_snapshot
+          .map(id => {
+            try {
+              return new ObjectId(id);
+            } catch (e) {
+              console.warn(`[Backend] ID d'activité invalide dans activities_snapshot: ${id}. Ignoré.`);
+              return null;
+            }
+          })
+          .filter(id => id !== null);
+
+        if (activityObjectIds.length > 0) {
+          console.log(`[Backend] updateMonthlyReportStatusController: Mise à jour du statut de ${activityObjectIds.length} activités vers "validated"...`);
+          const updateActivitiesResult = await activitiesCollection.updateMany(
+            { _id: { $in: activityObjectIds } },
+            { $set: { status: "validated", updated_at: new Date() } }
+          );
+          console.log(`[Backend] updateMonthlyReportStatusController: ${updateActivitiesResult.matchedCount} activités trouvées, ${updateActivitiesResult.modifiedCount} activités modifiées vers "validated".`);
+        } else {
+          console.log("[Backend] updateMonthlyReportStatusController: activities_snapshot est vide ou ne contient pas d'IDs valides. Aucune activité individuelle à mettre à jour.");
+        }
+      } else {
+        console.log("[Backend] updateMonthlyReportStatusController: Rapport non trouvé ou activities_snapshot manquant/vide. Aucune activité individuelle à mettre à jour.");
+      }
+    } else if (newStatus === "rejected") {
+      // Si un rapport est rejeté, remettre les activités en "rejected"
+      const report = await monthlyReportsCollection.findOne({ _id: new ObjectId(reportId) });
+
+      if (report && report.activities_snapshot && report.activities_snapshot.length > 0) {
+        const activityObjectIds = report.activities_snapshot
+          .map(id => {
+            try {
+              return new ObjectId(id);
+            } catch (e) {
+              console.warn(`[Backend] ID d'activité invalide dans activities_snapshot: ${id}. Ignoré.`);
+              return null;
+            }
+          })
+          .filter(id => id !== null);
+
+        if (activityObjectIds.length > 0) {
+          console.log(`[Backend] updateMonthlyReportStatusController: Mise à jour du statut de ${activityObjectIds.length} activités vers "rejected" suite au rejet du rapport...`);
+          const updateActivitiesResult = await activitiesCollection.updateMany(
+            { _id: { $in: activityObjectIds } },
+            { $set: { status: "rejected", updated_at: new Date() } }
+          );
+          console.log(`[Backend] updateMonthlyReportStatusController: ${updateActivitiesResult.matchedCount} activités trouvées, ${updateActivitiesResult.modifiedCount} activités modifiées vers "rejected".`);
+        }
+      }
+    }
+
+
     return {
       success: true,
       message: "Statut du rapport mensuel mis à jour avec succès.",

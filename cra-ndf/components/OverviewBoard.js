@@ -29,7 +29,7 @@ export default function OverviewBoard({
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
-  userRole,
+  userRole, 
 }) {
   // Tous les appels useState au tout début
   const [loading, setLoading] = useState(true);
@@ -39,25 +39,27 @@ export default function OverviewBoard({
   const [viewMode, setViewMode] = useState("month"); // 'month', 'week', 'day'
   const [publicHolidays, setPublicHolidays] = useState([]);
   const [allMonthlyReports, setAllMonthlyReports] = useState([]);
-
-  const [detailedLeaveSortOrder, setDetailedLeaveSortOrder] = useState("asc");
-  const [showLeaveRequestsList, setShowLeaveRequestsList] = useState(false);
   
-  // NOUVEAUX ÉTATS POUR LA VUE PERSONNALISÉE
-  const [showCustomBoard, setShowCustomBoard] = useState(false);
-  const [selectedUserIdsForCustomBoard, setSelectedUserIdsForCustomBoard] = useState([]);
+  // État pour le filtre utilisateur global (tableau d'IDs pour multi-sélection)
+  const [selectedUserIdsFilter, setSelectedUserIdsFilter] = useState([]);
+
+  // État pour le filtre de statut des congés communs
+  const [commonLeaveStatusFilter, setCommonLeaveStatusFilter] = useState('all'); // 'all', 'pending_review', 'validated', 'rejected', 'draft'
+
+  // NOUVEAU: État pour basculer entre les congés communs et individuels
+  const [showCommonLeavesOnly, setShowCommonLeavesOnly] = useState(true); // true: congés communs, false: congés individuels
+
+  // Déclencheur de rafraîchissement manuel
+  const [refreshActivitiesTrigger, setRefreshActivitiesTrigger] = useState(0);
 
 
-  const [leaveFilterMonth, setLeaveFilterMonth] = useState("");
-
-  // DÉPLACÉ ICI: Filtrer les utilisateurs à afficher dans la vue personnalisée
-  // Ce useMemo est maintenant déclaré juste après ses dépendances directes (states)
-  const displayedUsersForCustomBoard = useMemo(() => {
-    if (selectedUserIdsForCustomBoard.length === 0) {
-      return [];
+  // Filtrer les utilisateurs à afficher dans le calendrier
+  const filteredUsersForCalendar = useMemo(() => {
+    if (selectedUserIdsFilter.length === 0) { // Si aucun ID n'est sélectionné, afficher tous les utilisateurs
+      return allUsers;
     }
-    return allUsers.filter(user => selectedUserIdsForCustomBoard.includes(user.id));
-  }, [allUsers, selectedUserIdsForCustomBoard]);
+    return allUsers.filter(user => selectedUserIdsFilter.includes(user.id));
+  }, [allUsers, selectedUserIdsFilter]);
 
 
   const paidLeaveTypeId = useMemo(() => {
@@ -67,8 +69,8 @@ export default function OverviewBoard({
     return type ? type.id : null;
   }, [activityTypeDefinitions]);
 
-  const fetchAndParse = useCallback(async (url, resourceName) => {
-    const res = await fetch(url);
+  const fetchAndParse = useCallback(async (url, resourceName, options = {}) => {
+    const res = await fetch(url, options);
     if (!res.ok) {
       let errorInfo = `Erreur HTTP ${res.status}: ${res.statusText}`;
       let rawText = "Non disponible (erreur réseau ou réponse vide)";
@@ -90,6 +92,9 @@ export default function OverviewBoard({
     }
     const contentType = res.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
+      if (res.status >= 200 && res.status < 300) {
+        return {}; // Retourne un objet vide pour les succès sans contenu JSON
+      }
       const rawText = await res.text();
       throw new Error(
         `Réponse inattendue pour ${resourceName}: Le contenu n'est pas du JSON. Début de la réponse: "${rawText.substring(
@@ -138,6 +143,8 @@ export default function OverviewBoard({
             return {
               ...activity,
               date_activite: isValid(dateObj) ? dateObj : null,
+              // Assurez-vous que temps_passe est toujours un nombre
+              temps_passe: parseFloat(activity.temps_passe || activity.duree_jours || 0), // Fallback pour duree_jours si temps_passe n'existe pas
             };
           })
           .filter((activity) => activity.date_activite !== null);
@@ -226,40 +233,53 @@ export default function OverviewBoard({
     return eachDayOfInterval({ start, end });
   }, [currentViewStart, viewMode]);
 
+
+  // Effect pour charger les activités quand la vue, le filtre utilisateur ou le déclencheur de rafraîchissement change
   useEffect(() => {
-    const loadData = async () => {
+    const loadActivities = async () => {
       setLoading(true);
       try {
-        console.log("useEffect: Début du chargement des données...");
+        const activitiesData = await fetchActivitiesForRange(
+          daysInView[0],
+          daysInView[daysInView.length - 1]
+        );
+        setAllActivities(activitiesData);
+        console.log("useEffect [view/filter/refresh]: Activités rechargées:", activitiesData.length);
+      } catch (error) {
+        console.error("OverviewBoard: Erreur lors du rechargement des activités:", error);
+        showMessage(`Erreur de rechargement des activités: ${error.message}`, "error");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadActivities();
+  }, [
+    currentViewStart, // Déclenche le rechargement si le mois/semaine/jour change
+    viewMode,         // Déclenche le rechargement si le mode de vue change
+    selectedUserIdsFilter, // Déclenche le rechargement si le filtre utilisateur change
+    refreshActivitiesTrigger, // NOUVEVEAU: Déclenche le rechargement si le bouton de rafraîchissement est cliqué
+    fetchActivitiesForRange,
+    daysInView,
+  ]);
+
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setLoading(true);
+      try {
+        console.log("useEffect: Début du chargement des données initiales...");
         const usersData = await fetchAllUsers();
         setAllUsers(usersData);
         console.log("useEffect: Utilisateurs chargés:", usersData.length);
 
-        let activitiesStartDate, activitiesEndDate;
-        // Charger les activités pour toute l'année si la liste des congés ou le custom board est affiché
-        // Sinon, charger pour la vue actuelle (mois, semaine, jour)
-        if (showLeaveRequestsList || showCustomBoard) {
-          activitiesStartDate = startOfYear(currentViewStart);
-          activitiesEndDate = endOfYear(currentViewStart);
-          console.log(`useEffect: Chargement des activités pour toute l'année (${format(activitiesStartDate, 'yyyy-MM-dd')} à ${format(activitiesEndDate, 'yyyy-MM-dd')})`);
-        } else {
-          activitiesStartDate = daysInView[0];
-          activitiesEndDate = daysInView[daysInView.length - 1];
-          console.log(`useEffect: Chargement des activités pour la vue actuelle (${format(activitiesStartDate, 'yyyy-MM-dd')} à ${format(activitiesEndDate, 'yyyy-MM-dd')})`);
-        }
+        // Charger les activités pour la période initiale
+        const activitiesData = await fetchActivitiesForRange(
+          daysInView[0],
+          daysInView[daysInView.length - 1]
+        );
+        setAllActivities(activitiesData);
+        console.log("useEffect: Activités initiales chargées:", activitiesData.length);
         
-        if (isValid(activitiesStartDate) && isValid(activitiesEndDate)) {
-          const activitiesData = await fetchActivitiesForRange(
-            activitiesStartDate,
-            activitiesEndDate
-          );
-          setAllActivities(activitiesData);
-          console.log("useEffect: Activités chargées:", activitiesData.length);
-        } else {
-          setAllActivities([]);
-          console.log("useEffect: Plage de dates d'activités invalide, 0 activités chargées.");
-        }
-
         await fetchPublicHolidays(currentViewStart.getFullYear());
         console.log("useEffect: Jours fériés chargés.");
 
@@ -267,26 +287,21 @@ export default function OverviewBoard({
         console.log("useEffect: Rapports mensuels chargés.");
 
       } catch (error) {
-        console.error("OverviewBoard: Erreur de chargement des données dans useEffect:", error);
-        showMessage(`Erreur de chargement des données: ${error.message}`, "error");
+        console.error("OverviewBoard: Erreur de chargement des données initiales dans useEffect:", error);
+        showMessage(`Erreur de chargement des données initiales: ${error.message}`, "error");
       } finally {
         setLoading(false);
-        console.log("useEffect: Chargement des données terminé, setLoading(false).");
+        console.log("useEffect: Chargement des données initiales terminé, setLoading(false).");
       }
     };
-    loadData();
+    loadInitialData();
   }, [
-    currentViewStart,
-    viewMode,
     fetchAllUsers,
     fetchActivitiesForRange,
     fetchPublicHolidays,
     fetchAllMonthlyReports,
-    showMessage,
-    daysInView,
-    showLeaveRequestsList,
-    showCustomBoard, // AJOUTÉ: Dépendance pour recharger les activités si le mode de vue change
-  ]);
+  ]); // Dépendances minimales pour le chargement initial
+
 
   const activitiesByDayAndUser = useMemo(() => {
     const data = new Map();
@@ -328,152 +343,6 @@ export default function OverviewBoard({
   }, [allActivities, allUsers]);
 
 
-  // USEMEMO POUR LA LISTE DÉTAILLÉE DES DEMANDES DE CONGÉS
-  const detailedLeaveRequestsList = useMemo(() => {
-    console.log("detailedLeaveRequestsList useMemo: Début du calcul.");
-    console.log("  allActivities.length:", allActivities.length);
-    console.log("  allMonthlyReports.length:", allMonthlyReports.length);
-    console.log("  allUsers.length:", allUsers.length);
-    console.log("  paidLeaveTypeId:", paidLeaveTypeId);
-    console.log("  detailedLeaveSortOrder:", detailedLeaveSortOrder);
-    console.log("  leaveFilterMonth:", leaveFilterMonth);
-
-
-    const allLeaveRequests = []; 
-
-    const reportsMap = new Map(); 
-    allMonthlyReports.forEach(report => {
-      const key = `${report.user_id}-${report.month}-${report.year}-${report.report_type}`;
-      reportsMap.set(key, report);
-    });
-    console.log("  reportsMap size:", reportsMap.size);
-
-    // Étape 1: Collecter toutes les demandes de congés avec leur date d'envoi
-    allActivities.forEach(activity => {
-      if (String(activity.type_activite) === String(paidLeaveTypeId) && isValid(activity.date_activite)) {
-        const userIdToMap = activity.userAzureAdId || activity.user_id;
-        const user = allUsers.find(u => String(u.id) === String(userIdToMap));
-        const userName = user ? user.name : `Utilisateur Inconnu (${userIdToMap})`;
-
-        const monthOfActivity = activity.date_activite.getMonth(); // 0-11
-        const yearOfActivity = activity.date_activite.getFullYear();
-        const reportType = 'paid_leave';
-
-        const reportKey = `${userIdToMap}-${monthOfActivity + 1}-${yearOfActivity}-${reportType}`;
-        const correspondingReport = reportsMap.get(reportKey);
-
-        const submittedAtDate = correspondingReport?.submittedAt ? parseISO(correspondingReport.submittedAt) : null;
-        
-        allLeaveRequests.push({
-          id: activity.id,
-          userId: userIdToMap,
-          userName: userName,
-          date_activite: activity.date_activite, // Date du congé
-          temps_passe: parseFloat(activity.temps_passe) || 0,
-          status: activity.status,
-          submittedAt: submittedAtDate, // Date d'envoi du rapport (peut être null)
-        });
-      }
-    });
-    console.log("  allLeaveRequests (initial collection) length:", allLeaveRequests.length);
-
-
-    // Étape 2: Regrouper les demandes par utilisateur et déterminer la première/dernière date d'envoi pour chaque utilisateur
-    const userGroupsMap = new Map(); 
-
-    allLeaveRequests.forEach(req => {
-      if (!userGroupsMap.has(req.userId)) {
-        userGroupsMap.set(req.userId, {
-          userName: req.userName,
-          requests: [],
-          allSubmittedDates: [], 
-        });
-      }
-      const userGroup = userGroupsMap.get(req.userId);
-      userGroup.requests.push(req);
-      if (req.submittedAt) {
-        userGroup.allSubmittedDates.push(req.submittedAt.getTime());
-      }
-    });
-    console.log("  userGroupsMap size (before overall date calculation):", userGroupsMap.size);
-
-
-    // Calculer firstSubmittedAt et lastSubmittedAt après que toutes les requêtes soient regroupées
-    const userGroupsWithOverallDates = Array.from(userGroupsMap.values()).map(group => {
-        const sortedSubmittedDates = group.allSubmittedDates.sort((a, b) => a - b);
-        const firstSubmitted = sortedSubmittedDates.length > 0 ? new Date(sortedSubmittedDates[0]) : null;
-        const lastSubmitted = sortedSubmittedDates.length > 0 ? new Date(sortedSubmittedDates[sortedSubmittedDates.length - 1]) : null;
-        
-        console.log(`    User: ${group.userName}, First Overall Submitted: ${firstSubmitted?.toISOString() || 'N/A'}, Last Overall Submitted: ${lastSubmitted?.toISOString() || 'N/A'}`);
-
-        return {
-            ...group,
-            firstSubmittedAt: firstSubmitted,
-            lastSubmittedAt: lastSubmitted,
-            allSubmittedDates: undefined 
-        };
-    });
-    console.log("  userGroupsWithOverallDates length:", userGroupsWithOverallDates.length);
-
-
-    // Étape 3: Filtrer les demandes de chaque utilisateur par le mois du congé
-    // Et trier les demandes individuelles de chaque utilisateur par date d'envoi
-    const filteredAndSortedUserGroups = userGroupsWithOverallDates.map(userGroup => {
-      const filteredRequests = userGroup.requests.filter(req => {
-        const monthOfActivity = req.date_activite.getMonth();
-        return leaveFilterMonth === "" || (monthOfActivity === parseInt(leaveFilterMonth, 10));
-      });
-
-      // Tri des requêtes individuelles au sein du groupe par date d'envoi
-      filteredRequests.sort((a, b) => {
-        const dateA = a.submittedAt ? a.submittedAt.getTime() : 0;
-        const dateB = b.submittedAt ? b.submittedAt.getTime() : 0;
-        return detailedLeaveSortOrder === 'asc' ? dateA - dateB : dateB - dateA;
-      });
-
-      return {
-        ...userGroup,
-        requests: filteredRequests,
-      };
-    });
-    console.log("  filteredAndSortedUserGroups length (after filtering individual requests):", filteredAndSortedUserGroups.length);
-
-
-    // Étape 4: Trier les groupes d'utilisateurs eux-mêmes
-    const finalSortedUsers = filteredAndSortedUserGroups.sort((a, b) => {
-      const dateA_val = detailedLeaveSortOrder === 'asc' 
-        ? (a.firstSubmittedAt ? a.firstSubmittedAt.getTime() : Infinity) 
-        : (a.lastSubmittedAt ? a.lastSubmittedAt.getTime() : -Infinity);
-      
-      const dateB_val = detailedLeaveSortOrder === 'asc' 
-        ? (b.firstSubmittedAt ? b.firstSubmittedAt.getTime() : Infinity) 
-        : (b.lastSubmittedAt ? b.lastSubmittedAt.getTime() : -Infinity);
-      
-      console.log(`--- Débogage Tri Utilisateurs ---`);
-      console.log(`Ordre de tri demandé: ${detailedLeaveSortOrder}`);
-      console.log(`Utilisateur A: ${a.userName}, FirstSubmittedAt: ${a.firstSubmittedAt?.toISOString() || 'N/A'}, LastSubmittedAt: ${a.lastSubmittedAt?.toISOString() || 'N/A'}`);
-      console.log(`Utilisateur B: ${b.userName}, FirstSubmittedAt: ${b.firstSubmittedAt?.toISOString() || 'N/A'}, LastSubmittedAt: ${b.lastSubmittedAt?.toISOString() || 'N/A'}`);
-      console.log(`Valeur de comparaison A: ${dateA_val}, Valeur de comparaison B: ${dateB_val}`);
-      
-      let comparisonResult;
-      if (detailedLeaveSortOrder === 'asc') {
-        comparisonResult = dateA_val - dateB_val;
-      } else { // 'desc'
-        comparisonResult = dateB_val - dateA_val; 
-      }
-      console.log(`Résultat de la comparaison (A - B): ${comparisonResult}`);
-      return comparisonResult;
-    });
-    console.log("  finalSortedUsers length (after user group sort):", finalSortedUsers.length);
-
-    // Retourner uniquement les groupes qui ont des requêtes après filtrage
-    const finalResult = finalSortedUsers.filter(userGroup => userGroup.requests.length > 0);
-    console.log("detailedLeaveRequestsList useMemo: Fin du calcul. Résultat final length:", finalResult.length);
-    return finalResult;
-
-  }, [allActivities, paidLeaveTypeId, allUsers, allMonthlyReports, detailedLeaveSortOrder, leaveFilterMonth]);
-
-
   // NOUVEAU USEMEMO: Résumé des jours de congés pris par plusieurs personnes pour la période affichée
   const multiPersonLeaveDaysSummary = useMemo(() => {
     console.log("multiPersonLeaveDaysSummary useMemo: Début du calcul pour la vue actuelle.");
@@ -484,21 +353,29 @@ export default function OverviewBoard({
       return [];
     }
 
+    // Déterminer les statuts à inclure dans le filtre
+    const statusesToInclude = [];
+    if (commonLeaveStatusFilter === 'all') {
+      statusesToInclude.push("pending_review", "validated", "draft", "rejected");
+    } else {
+      statusesToInclude.push(commonLeaveStatusFilter);
+    }
+    console.log(`  Filtre de statut des congés communs: ${commonLeaveStatusFilter}. Statuts inclus: ${statusesToInclude.join(', ')}`);
+
+
     // Parcourir les jours de la vue actuelle (mois, semaine, jour)
     daysInView.forEach(day => {
-      const dateKey = format(day, "yyyy-MM-dd");
-      // Récupérer les activités pour ce jour et tous les utilisateurs
-      // On utilise activitiesByDayAndUser qui contient déjà les activités par jour et par utilisateur
       allUsers.forEach(user => {
+        const dateKey = format(day, "yyyy-MM-dd");
         const activitiesForUserDay = activitiesByDayAndUser.get(user.id)?.get(dateKey) || [];
         
         activitiesForUserDay.forEach(activity => {
-          // Vérifier si c'est une activité de congé payé et si la date est valide et le statut est validé
+          // Vérifier si c'est une activité de congé payé, si la date est valide, et si le statut correspond au filtre
           if (
             String(activity.type_activite) === String(paidLeaveTypeId) &&
             isValid(activity.date_activite) &&
             (activity.userAzureAdId || activity.user_id) &&
-            activity.status === "validated" // On ne compte que les congés validés
+            statusesToInclude.includes(activity.status) // Applique le filtre de statut
           ) {
             const userId = activity.userAzureAdId || activity.user_id;
 
@@ -513,11 +390,21 @@ export default function OverviewBoard({
 
     const summary = [];
     leaveDaysByDate.forEach((userIdsSet, dateKey) => {
-      if (userIdsSet.size > 1) { // Si plus d'une personne a pris congé ce jour-là
-        summary.push({
-          date: parseISO(dateKey),
-          userCount: userIdsSet.size,
-        });
+      // Logique de bascule pour les congés communs ou individuels
+      if (showCommonLeavesOnly) {
+        if (userIdsSet.size > 1) { // Congés communs (plus d'une personne)
+          summary.push({
+            date: parseISO(dateKey),
+            userIds: Array.from(userIdsSet), // Stocke les IDs des utilisateurs pour l'affichage
+          });
+        }
+      } else {
+        if (userIdsSet.size === 1) { // Congés individuels (exactement une personne)
+          summary.push({
+            date: parseISO(dateKey),
+            userIds: Array.from(userIdsSet),
+          });
+        }
       }
     });
 
@@ -526,7 +413,100 @@ export default function OverviewBoard({
 
     console.log("multiPersonLeaveDaysSummary (résultat final):", summary);
     return summary;
-  }, [activitiesByDayAndUser, daysInView, paidLeaveTypeId, allUsers]);
+  }, [activitiesByDayAndUser, daysInView, paidLeaveTypeId, allUsers, commonLeaveStatusFilter, showCommonLeavesOnly]); // Ajout de showCommonLeavesOnly comme dépendance
+
+
+  // NOUVEAU USEMEMO: Calcul des résumés d'activités par utilisateur pour la période affichée
+  const userActivitySummaries = useMemo(() => {
+    console.log("userActivitySummaries useMemo: Début du calcul.");
+    const summaries = new Map();
+
+    // Calculer le nombre total de jours ouvrés dans la période de vue actuelle
+    const workingDaysCount = daysInView.filter(day => 
+      !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
+    ).length;
+    console.log(`  Calculated total working days in view: ${workingDaysCount}`);
+
+    allUsers.forEach(user => {
+        summaries.set(user.id, {
+            userId: user.id,
+            userName: user.name,
+            leaveDays: 0, // Congés validés
+            pendingReviewLeaveDays: 0, // Congés en attente de révision (status: 'pending_review')
+            draftLeaveDays: 0, // Congés brouillons (status: 'draft')
+            rejectedLeaveDays: 0, // Congés refusés (status: 'rejected')
+            billableDays: 0,
+            overtimeDays: 0, 
+            totalWorkingDaysInView: workingDaysCount, // Ajout du nouveau champ
+        });
+    });
+
+    daysInView.forEach(day => {
+        const dateKey = format(day, "yyyy-MM-dd");
+        allUsers.forEach(user => {
+            const activitiesForUserDay = activitiesByDayAndUser.get(user.id)?.get(dateKey) || [];
+            const userSummary = summaries.get(user.id);
+
+            if (userSummary) {
+                activitiesForUserDay.forEach(activity => {
+                    const activityTypeObj = activityTypeDefinitions.find(
+                        (type) => String(type.id) === String(activity.type_activite)
+                    );
+                    const tempsPasse = parseFloat(activity.temps_passe) || 0; 
+
+                    const isPaidLeave = String(activity.type_activite) === String(paidLeaveTypeId);
+                    const isAbsence = activityTypeObj?.name?.toLowerCase().includes("absence");
+                    const isOvertime = activityTypeObj?.is_overtime;
+
+                    console.log(`--- Activity Debug ---`);
+                    console.log(`  Activity ID: ${activity.id}, User: ${user.name}, Date: ${dateKey}`);
+                    console.log(`  Type: ${activityTypeObj?.name || 'Unknown'}, Status: ${activity.status}, Temps Passé: ${tempsPasse}`);
+                    console.log(`  Is Paid Leave: ${isPaidLeave}`);
+
+                    // Jours de congés
+                    if (isPaidLeave) {
+                        if (activity.status === "validated") {
+                            userSummary.leaveDays += tempsPasse;
+                            console.log(`  -> Categorized as VALIDATED. Current leaveDays: ${userSummary.leaveDays}`);
+                        } else if (activity.status === "pending_review") {
+                            userSummary.pendingReviewLeaveDays += tempsPasse;
+                            console.log(`  -> Categorized as PENDING_REVIEW. Current pendingReviewLeaveDays: ${userSummary.pendingReviewLeaveDays}`);
+                        } else if (activity.status === "draft") {
+                            userSummary.draftLeaveDays += tempsPasse;
+                            console.log(`  -> Categorized as DRAFT. Current draftLeaveDays: ${userSummary.draftLeaveDays}`);
+                        } else if (activity.status === "rejected") {
+                            userSummary.rejectedLeaveDays += tempsPasse;
+                            console.log(`  -> Categorized as REJECTED. Current rejectedLeaveDays: ${userSummary.rejectedLeaveDays}`);
+                        } else {
+                            console.log(`  -> Paid leave with unexpected status: ${activity.status}`);
+                        }
+                    } else {
+                        // Heures supp (en jours)
+                        if (isOvertime) {
+                            userSummary.overtimeDays += tempsPasse;
+                            console.log(`  -> Added ${tempsPasse} to overtimeDays. Current: ${userSummary.overtimeDays}`);
+                        }
+
+                        // Jours facturables (utilise maintenant is_billable du type d'activité)
+                        if (activityTypeObj?.is_billable) { 
+                            userSummary.billableDays += tempsPasse;
+                            console.log(`  -> Added ${tempsPasse} to billableDays. Current: ${userSummary.billableDays}`);
+                        }
+                        // Note: totalAccountedDays n'est plus affiché directement dans le résumé,
+                        // mais la logique de calcul peut être conservée si nécessaire pour d'autres usages.
+                        if (!isAbsence) {
+                            console.log(`  -> Activity is not absence, accounted for. (Not directly shown in summary)`);
+                        }
+                    }
+                });
+            }
+        });
+    });
+
+    const result = Array.from(summaries.values());
+    console.log("userActivitySummaries (résultat final):", result);
+    return result;
+  }, [allUsers, activitiesByDayAndUser, daysInView, paidLeaveTypeId, activityTypeDefinitions, isPublicHoliday]);
 
 
   const navigateView = useCallback(
@@ -553,20 +533,24 @@ export default function OverviewBoard({
   const handleViewModeChange = useCallback((mode) => {
     setViewMode(mode);
     setCurrentViewStart(new Date());
-    setShowLeaveRequestsList(false); // S'assurer que la liste des congés est masquée
-    setShowCustomBoard(false); // S'assurer que le custom board est masqué
   }, []);
 
-  // Handler pour la sélection des utilisateurs pour le Custom Board
-  const handleUserSelectionForCustomBoard = useCallback((event) => {
-    const { options } = event.target;
-    const selectedValues = [];
-    for (let i = 0, l = options.length; i < l; i++) {
-      if (options[i].selected) {
-        selectedValues.push(options[i].value);
+  // Handler pour la sélection des utilisateurs pour le filtre global (multi-sélection)
+  const toggleUserSelection = useCallback((userId) => {
+    setSelectedUserIdsFilter(prevSelected => {
+      if (prevSelected.includes(userId)) {
+        // Si déjà sélectionné, le désélectionner
+        return prevSelected.filter(id => id !== userId);
+      } else {
+        // Sinon, le sélectionner
+        return [...prevSelected, userId];
       }
-    }
-    setSelectedUserIdsForCustomBoard(selectedValues);
+    });
+  }, []);
+
+  // Handler pour réinitialiser le filtre utilisateur
+  const handleResetUserFilter = useCallback(() => {
+    setSelectedUserIdsFilter([]);
   }, []);
 
 
@@ -585,6 +569,10 @@ export default function OverviewBoard({
     );
   }
 
+  const commonLeavesTitle = showCommonLeavesOnly ? "Jours avec Congés Communs (période actuelle)" : "Jours avec Congés Individuels (période actuelle)";
+  const noLeavesMessage = showCommonLeavesOnly ? "Aucun jour avec des congés communs pour la période sélectionnée et le statut choisi." : "Aucun jour avec des congés individuels pour la période sélectionnée et le statut choisi.";
+
+
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8 font-inter">
       <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
@@ -596,7 +584,7 @@ export default function OverviewBoard({
           <button
             onClick={() => handleViewModeChange("day")}
             className={`px-4 py-2 rounded-l-lg font-semibold transition-colors duration-200 ${
-              viewMode === "day" && !showLeaveRequestsList && !showCustomBoard
+              viewMode === "day"
                 ? "bg-blue-600 text-white"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
@@ -606,7 +594,7 @@ export default function OverviewBoard({
           <button
             onClick={() => handleViewModeChange("week")}
             className={`px-4 py-2 font-semibold transition-colors duration-200 ${
-              viewMode === "week" && !showLeaveRequestsList && !showCustomBoard
+              viewMode === "week"
                 ? "bg-blue-600 text-white"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
@@ -615,251 +603,279 @@ export default function OverviewBoard({
           </button>
           <button
             onClick={() => handleViewModeChange("month")}
-            className={`px-4 py-2 font-semibold transition-colors duration-200 ${
-              viewMode === "month" && !showLeaveRequestsList && !showCustomBoard
+            className={`px-4 py-2 rounded-r-lg font-semibold transition-colors duration-200 ${
+              viewMode === "month"
                 ? "bg-blue-600 text-white"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
           >
             Vue Mois
           </button>
-          <button
-            onClick={() => { setShowLeaveRequestsList(!showLeaveRequestsList); setShowCustomBoard(false); }}
-            className={`px-4 py-2 font-semibold transition-colors duration-200 ${
-              showLeaveRequestsList
-                ? "bg-lime-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            {showLeaveRequestsList ? "Masquer Demandes Congés" : "Voir Demandes Congés"}
-          </button>
-          <button
-            onClick={() => { setShowCustomBoard(!showCustomBoard); setShowLeaveRequestsList(false); }}
-            className={`px-4 py-2 rounded-r-lg font-semibold transition-colors duration-200 ${
-              showCustomBoard
-                ? "bg-purple-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            {showCustomBoard ? "Masquer Vue Personnalisée" : "Vue Personnalisée"}
-          </button>
         </div>
       </div>
 
-      {/* NOUVELLE SECTION: Résumé des jours de congés multi-personnes (pour la période affichée) */}
-      {!showLeaveRequestsList && !showCustomBoard && multiPersonLeaveDaysSummary.length > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 shadow-inner">
-          <h3 className="text-xl font-bold text-orange-800 mb-3 text-center">
-            Jours de Congés Multi-personnes (période actuelle)
-          </h3>
-          <div className="flex flex-wrap justify-center gap-3">
-            {multiPersonLeaveDaysSummary.map((item, index) => (
-              <div
-                key={index}
-                className="bg-orange-100 text-orange-900 px-4 py-2 rounded-full text-sm font-semibold shadow-md flex items-center space-x-2"
-              >
-                <span>{format(item.date, "dd MMMM", { locale: fr })}</span>
-                <span className="bg-orange-300 text-orange-900 rounded-full w-6 h-6 flex items-center justify-center font-bold">
-                  {item.userCount}
-                </span>
-                <span className="text-orange-700">personnes</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {showLeaveRequestsList ? (
-        // SECTION: LISTE DÉTAILLÉE DES DEMANDES DE CONGÉS
-        <div className="p-4 bg-lime-50 rounded-lg shadow-inner border border-lime-200 mb-6">
-          <h3 className="text-xl font-bold text-lime-800 mb-4 text-center">
-            Demandes de Congés Détaillées (par mois du congé)
-          </h3>
-          
-          <div className="flex flex-col sm:flex-row justify-end items-center mb-4 space-y-2 sm:space-y-0 sm:space-x-4">
-            <div className="flex items-center">
-              <label htmlFor="leaveFilterMonth" className="font-semibold text-gray-700 mr-2">Filtrer par mois du congé :</label>
-              <select
-                id="leaveFilterMonth"
-                value={leaveFilterMonth}
-                onChange={(e) => setLeaveFilterMonth(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-lime-500 focus:border-lime-500"
-              >
-                <option value="">Tous les mois</option>
-                {months.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center">
-              <label htmlFor="detailedLeaveSortOrder" className="font-semibold text-gray-700 mr-2">Trier les utilisateurs par date d'envoi :</label>
-              <select
-                id="detailedLeaveSortOrder"
-                value={detailedLeaveSortOrder}
-                onChange={(e) => setDetailedLeaveSortOrder(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-lime-500 focus:border-lime-500"
-              >
-                <option value="asc">Plus ancien au plus nouveau</option>
-                <option value="desc">Plus nouveau au plus ancien</option>
-              </select>
-            </div>
-          </div>
-
-          {detailedLeaveRequestsList.length > 0 ? (
-            <div className="overflow-x-auto">
-              {detailedLeaveRequestsList.map(userGroup => (
-                <div key={userGroup.userName} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
-                  <h4 className="text-lg font-semibold text-blue-700 mb-3 border-b pb-2">
-                    {userGroup.userName}
-                  </h4>
-                  <table className="min-w-full">
-                    <thead>
-                      <tr>
-                        <th className="py-2 px-3 text-left text-sm font-semibold text-gray-600 uppercase">
-                          Date d'envoi
-                        </th>
-                        <th className="py-2 px-3 text-left text-sm font-semibold text-gray-600 uppercase">
-                          Date du Congé
-                        </th>
-                        <th className="py-2 px-3 text-left text-sm font-semibold text-gray-600 uppercase">
-                          Jours
-                        </th>
-                        <th className="py-2 px-3 text-left text-sm font-semibold text-gray-600 uppercase">
-                          Statut
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {userGroup.requests.map(request => {
-                        let statusColorClass = 'text-gray-700';
-                        let statusText = request.status;
-                        if (request.status === "pending_review") {
-                          statusColorClass = "text-blue-800 bg-blue-100";
-                          statusText = "En attente";
-                        } else if (request.status === "validated") {
-                          statusColorClass = "text-green-800 bg-green-100";
-                          statusText = "Validé";
-                        } else if (request.status === "rejected") {
-                          statusColorClass = "text-red-800 bg-red-100";
-                          statusText = "Rejeté";
-                        } else if (request.status === "draft") { 
-                          statusColorClass = "text-gray-800 bg-gray-100";
-                          statusText = "Brouillon";
-                        } else { 
-                          statusColorClass = "text-gray-800 bg-gray-100";
-                          statusText = request.status; 
-                        }
-                        statusColorClass += " px-2 py-1 rounded-full text-xs font-semibold";
-
-                        return (
-                          <tr key={request.id} className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50">
-                            <td className="py-2 px-3 text-sm text-gray-800">
-                              {request.submittedAt
-                                ? format(request.submittedAt, "dd/MM/yyyy HH:mm:ss", { locale: fr })
-                                : "N/A (non soumis)"}
-                            </td>
-                            <td className="py-2 px-3 text-sm text-gray-800">
-                              {format(request.date_activite, "dd/MM/yyyy", { locale: fr })}
-                            </td>
-                            <td className="py-2 px-3 text-sm text-gray-800">{request.temps_passe}</td>
-                            <td className={`py-2 px-3 text-sm ${statusColorClass}`}>
-                              {statusText}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-600 text-center py-4">Aucune demande de congé trouvée pour le mois de congé sélectionné.</p>
-          )}
-        </div>
-      ) : showCustomBoard ? (
-        // NOUVELLE SECTION: VUE PERSONNALISÉE
-        <div className="p-4 bg-purple-50 rounded-lg shadow-inner border border-purple-200 mb-6">
-          <h3 className="text-xl font-bold text-purple-800 mb-4 text-center">
-            Vue Personnalisée des Activités
-          </h3>
-          
-          <div className="mb-6">
-            <label htmlFor="user-select-custom-board" className="block text-gray-700 text-sm font-bold mb-2">
-              Sélectionnez les utilisateurs :
-            </label>
-            <select
-              id="user-select-custom-board"
-              multiple
-              value={selectedUserIdsForCustomBoard}
-              onChange={handleUserSelectionForCustomBoard}
-              className="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-sm h-48 overflow-y-auto"
+      {/* Section de filtre utilisateur (remplace le select multiple) */}
+      <div className="p-4 bg-gray-50 rounded-lg shadow-inner border border-gray-200 mb-6">
+        <h3 className="text-lg font-semibold text-gray-700 mb-3">Filtrer par utilisateur(s) :</h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {allUsers.map(user => (
+            <button
+              key={user.id}
+              onClick={() => toggleUserSelection(user.id)}
+              className={`px-3 py-1 rounded-full text-sm font-semibold transition-colors duration-200 ease-in-out
+                ${selectedUserIdsFilter.includes(user.id)
+                  ? "bg-blue-500 text-white shadow-md"
+                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
             >
-              {allUsers.map(user => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-gray-500 text-xs mt-1">Maintenez Ctrl (ou Cmd sur Mac) pour sélectionner plusieurs utilisateurs.</p>
+              {user.name}
+            </button>
+          ))}
+        </div>
+        {selectedUserIdsFilter.length > 0 && (
+          <button
+            onClick={handleResetUserFilter}
+            className="px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors duration-200 text-sm"
+          >
+            Réinitialiser le filtre utilisateur
+          </button>
+        )}
+      </div>
+
+      {/* NOUVELLE SECTION: Jours avec Congés Communs (en mode calendrier simplifié) */}
+      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 shadow-inner">
+        <h3 className="text-xl font-semibold text-orange-800 mb-3 text-center">
+          {commonLeavesTitle}
+        </h3>
+        {/* NOUVEAU: Bascule pour les congés communs/individuels */}
+        <div className="flex justify-center items-center gap-4 mb-4">
+          <span className="text-gray-700 font-semibold">Type de congés :</span>
+          <div className="flex rounded-md shadow-sm">
+            <button
+              onClick={() => setShowCommonLeavesOnly(true)}
+              className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
+                ${showCommonLeavesOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Communs
+            </button>
+            <button
+              onClick={() => setShowCommonLeavesOnly(false)}
+              className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
+                ${!showCommonLeavesOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Individuels
+            </button>
           </div>
+        </div>
 
-          {displayedUsersForCustomBoard.length === 0 ? (
-            <p className="text-gray-600 text-center py-8 text-lg">
-              Sélectionnez un ou plusieurs utilisateurs ci-dessus pour afficher leurs activités.
-            </p>
-          ) : (
-            // Réutilisation de la structure du calendrier existante pour les utilisateurs sélectionnés
-            <div className="overflow-x-auto pb-4">
-              <div className="inline-block min-w-full align-middle">
-                {/* Header row for days */}
-                <div className="grid grid-flow-col auto-cols-[100px] gap-1 mb-2">
-                  <div className="w-32 flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
-                    Utilisateur
-                  </div>
-                  {daysInView.map((day) => {
-                    const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-                    const isHoliday = isPublicHoliday(day);
-                    const isNonWorkingDay = isWeekendDay || isHoliday;
-                    const dayClass = isNonWorkingDay
-                      ? "bg-gray-200 text-gray-500"
-                      : "bg-gray-100 text-gray-700";
-                    const todayClass = isSameDay(day, new Date())
-                      ? "border-2 border-purple-400" // Couleur de bordure différente pour la vue personnalisée
-                      : "border border-gray-200";
+        {/* Filtre de statut pour les congés communs */}
+        <div className="flex justify-center items-center gap-4 mb-4">
+          <span className="text-gray-700 font-semibold">Afficher les congés :</span>
+          <div className="flex rounded-md shadow-sm">
+            <button
+              onClick={() => setCommonLeaveStatusFilter('all')}
+              className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
+                ${commonLeaveStatusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Tous
+            </button>
+            <button
+              onClick={() => setCommonLeaveStatusFilter('pending_review')}
+              className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                ${commonLeaveStatusFilter === 'pending_review' ? 'bg-yellow-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              En attente
+            </button>
+            <button
+              onClick={() => setCommonLeaveStatusFilter('validated')}
+              className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                ${commonLeaveStatusFilter === 'validated' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Validés
+            </button>
+            <button
+              onClick={() => setCommonLeaveStatusFilter('rejected')}
+              className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                ${commonLeaveStatusFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Refusés
+            </button>
+            <button
+              onClick={() => setCommonLeaveStatusFilter('draft')}
+              className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
+                ${commonLeaveStatusFilter === 'draft' ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Brouillons
+            </button>
+          </div>
+        </div>
 
-                    return (
-                      <div
-                        key={format(day, "yyyy-MM-dd")}
-                        className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
-                        title={
-                          isNonWorkingDay
-                            ? isWeekendDay && isHoliday
-                              ? "Week-end & Férié"
-                              : isWeekendDay
-                              ? "Week-end"
-                              : "Jour Férié"
-                            : ""
-                        }
-                      >
-                        <div className="font-semibold">
-                          {format(day, "EEE", { locale: fr })}
-                        </div>
-                        <div className="font-bold">{format(day, "d")}</div>
-                      </div>
-                    );
-                  })}
+        {multiPersonLeaveDaysSummary.length > 0 ? (
+          <div className="overflow-x-auto">
+            <div className="inline-block min-w-full align-middle">
+              {/* Header row for days in common leave calendar */}
+              <div className="grid grid-flow-col auto-cols-[100px] gap-1 mb-2">
+                <div className="w-32 flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
+                  Jour
                 </div>
+                {multiPersonLeaveDaysSummary.map((item) => {
+                  const day = item.date;
+                  const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+                  const isHoliday = isPublicHoliday(day);
+                  const isNonWorkingDay = isWeekendDay || isHoliday;
+                  const dayClass = isNonWorkingDay
+                    ? "bg-gray-200 text-gray-500"
+                    : "bg-gray-100 text-gray-700";
+                  const todayClass = isSameDay(day, new Date())
+                    ? "border-2 border-blue-500 bg-blue-50"
+                    : "";
 
-                {/* Rows for each selected user */}
-                {displayedUsersForCustomBoard.map((user) => (
+                  return (
+                    <div
+                      key={format(day, "yyyy-MM-dd")}
+                      className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
+                      title={
+                        isNonWorkingDay
+                          ? isWeekendDay && isHoliday
+                            ? "Week-end & Férié"
+                            : isWeekendDay
+                            ? "Week-end"
+                            : "Jour Férié"
+                          : ""
+                      }
+                    >
+                      <div className="font-semibold">
+                        {format(day, "EEE", { locale: fr })}
+                      </div>
+                      <div className="font-semibold">{format(day, "d")}</div> 
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Users row for common leave calendar */}
+              <div className="grid grid-flow-col auto-cols-[100px] gap-1">
+                <div className="w-32 flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
+                  Utilisateurs
+                </div>
+                {multiPersonLeaveDaysSummary.map((item) => (
                   <div
-                    key={user.id}
+                    key={format(item.date, "yyyy-MM-dd") + "-users"}
+                    className="h-auto p-1 flex flex-col items-center justify-center rounded-md border border-gray-200 bg-white"
+                  >
+                    {item.userIds.map(userId => {
+                      const user = allUsers.find(u => u.id === userId);
+                      return user ? (
+                        <span key={userId} className="text-xs text-gray-700 bg-gray-100 px-1 py-0.5 rounded-sm mb-0.5 last:mb-0">
+                          {user.name}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-600 text-center text-sm">{noLeavesMessage}</p>
+        )}
+      </div>
+
+      {/* SECTION: VUE CALENDRIER PRINCIPAL */}
+      <>
+        <div className="flex justify-between items-center mb-6">
+          <button
+            onClick={() => navigateView("prev")}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
+          >
+            {viewMode === "day"
+              ? "Jour précédent"
+              : viewMode === "week"
+              ? "Semaine précédente"
+              : "Mois précédent"}
+          </button>
+          <h3 className="text-xl font-semibold text-gray-800">
+            {viewMode === "day" && isValid(currentViewStart)
+              ? format(currentViewStart, "EEEE dd MMMM yyyy", { locale: fr })
+              : ""}
+            {viewMode === "week" &&
+            isValid(daysInView[0]) &&
+            isValid(daysInView[daysInView.length - 1])
+              ? `${format(daysInView[0], "dd MMM", { locale: fr })} - ${format(
+                  daysInView[daysInView.length - 1],
+                  "dd MMM yyyy",
+                  { locale: fr }
+                )}`
+              : ""}
+            {viewMode === "month" && isValid(currentViewStart)
+              ? format(currentViewStart, "MMMM yyyy", { locale: fr })
+              : ""}
+          </h3>
+          <button
+            onClick={() => navigateView("next")}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
+          >
+            {viewMode === "day"
+              ? "Jour suivant"
+              : viewMode === "week"
+                ? "Semaine suivante"
+                : "Mois suivant"}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto pb-4">
+          <div className="inline-block min-w-full align-middle">
+            {/* Header row for days */}
+            <div className="grid grid-flow-col auto-cols-[100px] gap-1 mb-2">
+              {" "}
+              {/* Fixed width for day columns */}
+              <div className="w-32 flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
+                Utilisateur
+              </div>
+              {daysInView.map((day) => {
+                const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+                const isHoliday = isPublicHoliday(day);
+                const isNonWorkingDay = isWeekendDay || isHoliday;
+                const dayClass = isNonWorkingDay
+                  ? "bg-gray-200 text-gray-500"
+                  : "bg-gray-100 text-gray-700";
+                const todayClass = isSameDay(day, new Date())
+                  ? "border-2 border-blue-500 bg-blue-50"
+                  : "";
+
+                return (
+                  <div
+                    key={format(day, "yyyy-MM-dd")}
+                    className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
+                    title={
+                      isNonWorkingDay
+                        ? isWeekendDay && isHoliday
+                          ? "Week-end & Férié"
+                          : isWeekendDay
+                          ? "Week-end"
+                          : "Jour Férié"
+                        : ""
+                    }
+                  >
+                    <div className="font-semibold">
+                      {format(day, "EEE", { locale: fr })}
+                    </div>
+                    <div className="font-semibold">{format(day, "d")}</div> 
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Rows for each user */}
+            {filteredUsersForCalendar.map((user) => { 
+              const userSummary = userActivitySummaries.find(s => s.userId === user.id);
+              return (
+                <div key={user.id} className="mb-4"> 
+                  <div
                     className="grid grid-flow-col auto-cols-[100px] gap-1 mb-1"
                   >
-                    <div className="w-32 flex-shrink-0 bg-purple-100 text-purple-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
-                      {user.name} {/* Affiche le nom de l'utilisateur (fullName) */}
+                    <div className="w-32 flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
+                      {user.name}
                     </div>
                     {daysInView.map((day) => {
                       const dateKey = format(day, "yyyy-MM-dd");
@@ -872,7 +888,7 @@ export default function OverviewBoard({
                         ? "bg-gray-100"
                         : "bg-white";
                       const todayClass = isSameDay(day, new Date())
-                        ? "border-2 border-purple-400" 
+                        ? "border-2 border-blue-400"
                         : "border border-gray-200";
 
                       return (
@@ -917,18 +933,22 @@ export default function OverviewBoard({
                                   if (activity.status === "pending_review") {
                                     activityColorClass = "bg-yellow-200 text-yellow-800";
                                     activityStatusIcon = "⏳";
-                                    activityTitle = "Pending Leave";
+                                    activityTitle = "Congé en attente de révision"; 
                                   } else if (activity.status === "validated") {
                                     activityColorClass = "bg-green-200 text-green-800";
                                     activityStatusIcon = "✅";
-                                    activityTitle = "Validated Leave";
+                                    activityTitle = "Congé validé";
                                   } else if (activity.status === "rejected") {
                                     activityColorClass = "bg-red-200 text-red-800";
                                     activityStatusIcon = "❌";
-                                    activityTitle = "Rejected Leave";
+                                    activityTitle = "Congé refusé";
+                                  } else if (activity.status === "draft") {
+                                    activityColorClass = "bg-gray-200 text-gray-800"; // Brouillon
+                                    activityStatusIcon = "📝";
+                                    activityTitle = "Congé brouillon";
                                   } else {
                                     activityColorClass = "bg-lime-200 text-lime-800";
-                                    activityTitle = "Paid Leave";
+                                    activityTitle = "Congé payé";
                                   }
                                 } else if (
                                   activityTypeLabel.toLowerCase().includes("absence")
@@ -962,215 +982,55 @@ export default function OverviewBoard({
                       );
                     })}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        // SECTION: VUE CALENDRIER (EXISTANTE)
-        <>
-          <div className="flex justify-between items-center mb-6">
-            <button
-              onClick={() => navigateView("prev")}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
-            >
-              {viewMode === "day"
-                ? "Jour précédent"
-                : viewMode === "week"
-                ? "Semaine précédente"
-                : "Mois précédent"}
-            </button>
-            <h3 className="text-xl font-semibold text-gray-800">
-              {viewMode === "day" && isValid(currentViewStart)
-                ? format(currentViewStart, "EEEE dd MMMM yyyy", { locale: fr })
-                : ""}
-              {viewMode === "week" &&
-              isValid(daysInView[0]) &&
-              isValid(daysInView[daysInView.length - 1])
-                ? `${format(daysInView[0], "dd MMM", { locale: fr })} - ${format(
-                    daysInView[daysInView.length - 1],
-                    "dd MMM yyyy",
-                    { locale: fr }
-                  )}`
-                : ""}
-              {viewMode === "month" && isValid(currentViewStart)
-                ? format(currentViewStart, "MMMM yyyy", { locale: fr })
-                : ""}
-            </h3>
-            <button
-              onClick={() => navigateView("next")}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
-            >
-              {viewMode === "day"
-                ? "Jour suivant"
-                : viewMode === "week"
-                ? "Semaine suivante"
-                : "Mois suivant"}
-            </button>
-          </div>
-
-          <div className="overflow-x-auto pb-4">
-            <div className="inline-block min-w-full align-middle">
-              {/* Header row for days */}
-              <div className="grid grid-flow-col auto-cols-[100px] gap-1 mb-2">
-                {" "}
-                {/* Fixed width for day columns */}
-                <div className="w-32 flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
-                  Utilisateur
-                </div>
-                {daysInView.map((day) => {
-                  const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-                  const isHoliday = isPublicHoliday(day);
-                  const isNonWorkingDay = isWeekendDay || isHoliday;
-                  const dayClass = isNonWorkingDay
-                    ? "bg-gray-200 text-gray-500"
-                    : "bg-gray-100 text-gray-700";
-                  const todayClass = isSameDay(day, new Date())
-                    ? "border-2 border-blue-500 bg-blue-50"
-                    : "";
-
-                  return (
-                    <div
-                      key={format(day, "yyyy-MM-dd")}
-                      className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
-                      title={
-                        isNonWorkingDay
-                          ? isWeekendDay && isHoliday
-                            ? "Week-end & Férié"
-                            : isWeekendDay
-                            ? "Week-end"
-                            : "Jour Férié"
-                          : ""
-                      }
-                    >
-                      <div className="font-semibold">
-                        {format(day, "EEE", { locale: fr })}
+                  {/* Résumés sous la ligne de l'utilisateur - Styles améliorés */}
+                  {userSummary && (
+                    <div className="flex flex-col gap-2 mt-2 pl-2"> {/* Utiliser flex-col pour empiler les résumés */}
+                      <div className="flex flex-wrap justify-start gap-2 text-base font-semibold"> {/* text-base pour texte légèrement plus petit, justify-start pour aligner à gauche, font-semibold pour moins de gras */}
+                        {/* Congés Validés */}
+                        <div className="bg-green-200 text-green-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Congés Validés: {userSummary.leaveDays.toFixed(1)}j
+                        </div>
+                        {/* Facturable */}
+                        <div className="bg-blue-200 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Facturable: {userSummary.billableDays.toFixed(1)}j
+                        </div>
+                        {/* Heures Supp */}
+                        <div className="bg-purple-200 text-purple-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Heures Supp: {userSummary.overtimeDays.toFixed(1)}j
+                        </div>
+                        {/* Jours Ouvrés (ancien Total Imputé) */}
+                        <div className="bg-gray-300 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                          Jours Ouvrés: {userSummary.totalWorkingDaysInView.toFixed(1)}j
+                        </div>
                       </div>
-                      <div className="font-bold">{format(day, "d")}</div>
+                      {/* NOUVEAU: Affichage des congés en attente, brouillons et refusés */}
+                      {(userSummary.pendingReviewLeaveDays > 0 || userSummary.draftLeaveDays > 0 || userSummary.rejectedLeaveDays > 0) && (
+                        <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
+                          {userSummary.pendingReviewLeaveDays > 0 && (
+                            <div className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                              Congés en Attente: {userSummary.pendingReviewLeaveDays.toFixed(1)}j
+                            </div>
+                          )}
+                          {userSummary.draftLeaveDays > 0 && (
+                            <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                              Congés Brouillons: {userSummary.draftLeaveDays.toFixed(1)}j
+                            </div>
+                          )}
+                          {userSummary.rejectedLeaveDays > 0 && (
+                            <div className="bg-red-200 text-red-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                              Congés Refusés: {userSummary.rejectedLeaveDays.toFixed(1)}j
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Rows for each user */}
-              {allUsers.map((user) => (
-                <div
-                  key={user.id}
-                  className="grid grid-flow-col auto-cols-[100px] gap-1 mb-1"
-                >
-                  {" "}
-                  {/* Fixed width for day columns */}
-                  <div className="w-32 flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
-                    {user.name} {/* Affiche le nom de l'utilisateur (fullName) */}
-                  </div>
-                  {daysInView.map((day) => {
-                    const dateKey = format(day, "yyyy-MM-dd");
-                    // Utilise user.id (qui est azureAdUserId) pour récupérer les activités
-                    const activities =
-                      activitiesByDayAndUser.get(user.id)?.get(dateKey) || [];
-                    const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-                    const isHoliday = isPublicHoliday(day);
-                    const isNonWorkingDay = isWeekendDay || isHoliday;
-                    const cellBgClass = isNonWorkingDay
-                      ? "bg-gray-100"
-                      : "bg-white";
-                    const todayClass = isSameDay(day, new Date())
-                      ? "border-2 border-blue-400"
-                      : "border border-gray-200";
-
-                    return (
-                      <div
-                        key={`${user.id}-${dateKey}`}
-                        className={`h-16 p-1 flex items-center justify-center rounded-md ${cellBgClass} ${todayClass}`}
-                        title={
-                          isNonWorkingDay
-                            ? isWeekendDay && isHoliday
-                              ? "Week-end & Férié"
-                              : isWeekendDay
-                              ? "Week-end"
-                              : "Jour Férié"
-                            : ""
-                        }
-                      >
-                        {activities.length > 0 ? (
-                          <div className="flex flex-col w-full h-full justify-center items-center">
-                            {activities.map((activity) => {
-                              const activityTypeObj = activityTypeDefinitions.find(
-                                (type) =>
-                                  String(type.id) === String(activity.type_activite)
-                              );
-                              const activityTypeLabel = activityTypeObj
-                                ? activityTypeObj.name
-                                : "Inconnu";
-                              const client = clientDefinitions.find(
-                                (c) => String(c.id) === String(activity.client_id)
-                              );
-                              const clientLabel = client
-                                ? client.nom_client
-                                : "N/A";
-
-                              let activityColorClass = "bg-blue-200 text-blue-800"; // Default color for non-leave activities
-                              let activityStatusIcon = "";
-                              let activityTitle = "";
-
-                              if (
-                                String(activity.type_activite) ===
-                                String(paidLeaveTypeId)
-                              ) {
-                                if (activity.status === "pending_review") {
-                                  activityColorClass = "bg-yellow-200 text-yellow-800";
-                                  activityStatusIcon = "⏳";
-                                  activityTitle = "Pending Leave";
-                                } else if (activity.status === "validated") {
-                                  activityColorClass = "bg-green-200 text-green-800";
-                                  activityStatusIcon = "✅";
-                                  activityTitle = "Validated Leave";
-                                } else if (activity.status === "rejected") {
-                                  activityColorClass = "bg-red-200 text-red-800";
-                                  activityStatusIcon = "❌";
-                                  activityTitle = "Rejected Leave";
-                                } else {
-                                  activityColorClass = "bg-lime-200 text-lime-800";
-                                  activityTitle = "Paid Leave";
-                                }
-                              } else if (
-                                activityTypeLabel.toLowerCase().includes("absence")
-                              ) {
-                                activityColorClass = "bg-red-200 text-red-800";
-                              } else if (activityTypeObj?.is_overtime) {
-                                activityColorClass =
-                                  "bg-purple-200 text-purple-800";
-                              }
-
-                              return (
-                                <div
-                                  key={activity.id}
-                                  className={`w-full text-xs px-1 py-0.5 rounded-sm whitespace-nowrap overflow-hidden text-ellipsis mb-0.5 ${activityColorClass}`}
-                                  title={`${activityTypeLabel} (${
-                                    activity.temps_passe
-                                  }j) - Client: ${clientLabel} - Status: ${
-                                    activity.status
-                                  } ${activityTitle ? `(${activityTitle})` : ""}`}
-                                >
-                                  {activityStatusIcon} {activityTypeLabel} (
-                                  {activity.temps_passe}j) - {clientLabel}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <span className="text-gray-300 text-xs"></span>
-                        )}
-                      </div>
-                    );
-                  })}
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        </>
-      )}
+        </div>
+      </>
     </div>
   );
 }
