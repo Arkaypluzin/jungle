@@ -273,23 +273,21 @@ export default function SummaryReport({
 
   // Signature drawing logic
   useEffect(() => {
-    console.log("[Signature] Signature canvas drawing useEffect ran.");
+    console.log("[SummaryReport] Signature canvas useEffect ran."); // Log for debugging
     const canvas = signatureCanvasRef.current;
     if (!canvas) {
-      console.log("[Signature] Canvas ref is null, cannot attach listeners.");
+      console.log("[SummaryReport] Canvas ref is null, cannot attach listeners.");
       return;
     }
 
-    // Set canvas dimensions explicitly based on its computed style
-    // This ensures the drawing resolution matches the display size
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    // Set canvas dimensions explicitly
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
 
     const ctx = canvas.getContext('2d');
     signatureCtxRef.current = ctx;
     if (!ctx) {
-      console.error("[Signature] Canvas 2D context is null, cannot draw.");
+      console.log("[SummaryReport] Canvas context is null, cannot draw.");
       return;
     }
 
@@ -301,32 +299,34 @@ export default function SummaryReport({
     let lastY = 0;
 
     const getCoords = (e) => {
-      const currentRect = canvas.getBoundingClientRect(); // Get latest position
+      const rect = canvas.getBoundingClientRect();
+      // Use clientX/Y for mouse events, touches[0].clientX/Y for touch events
       const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
       const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       return {
-        x: clientX - currentRect.left,
-        y: clientY - currentRect.top
+        x: clientX - rect.left,
+        y: clientY - rect.top
       };
     };
 
     const startDrawing = (e) => {
-      e.preventDefault(); // Prevent default browser actions (e.g., text selection, scrolling)
-      isDrawingRef.current = true;
-      setIsDrawing(true);
+      isDrawingRef.current = true; // Update the ref first
+      setIsDrawing(true); // Update the state for potential UI changes
       const { x, y } = getCoords(e);
       lastX = x;
       lastY = y;
       ctx.beginPath(); // Start a new path for each stroke
       ctx.moveTo(lastX, lastY);
-      console.log(`[Signature] startDrawing: event.type=${e.type}, x=${x}, y=${y}`);
+      console.log(`startDrawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}, x,y: ${x},${y}`); // Debug log
     };
 
     const draw = (e) => {
-      if (!isDrawingRef.current) return;
-      e.preventDefault(); // Prevent default browser actions (e.g., scrolling on touch)
+      if (!isDrawingRef.current) {
+        // console.log(`drawing: Not drawing, isDrawingRef.current is false. Event type: ${e.type}`);
+        return; // Check the ref's current value
+      }
       if (!signatureCtxRef.current) {
-        console.error("[Signature] Canvas context is null during draw.");
+        console.error("drawing: Canvas context is null, cannot draw.");
         return;
       }
       const { x, y } = getCoords(e);
@@ -334,37 +334,43 @@ export default function SummaryReport({
       signatureCtxRef.current.stroke();
       lastX = x;
       lastY = y;
-      // console.log(`[Signature] drawing: event.type=${e.type}, x=${x}, y=${y}`); // Trop verbeux, décommenter si nécessaire
+      // console.log(`drawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}, x,y: ${x},${y}`); // Debug log
     };
 
     const stopDrawing = (e) => {
-      isDrawingRef.current = false;
-      setIsDrawing(false);
+      isDrawingRef.current = false; // Update the ref first
+      setIsDrawing(false); // Update the state for potential UI changes
       if (signatureCtxRef.current) {
         signatureCtxRef.current.closePath(); // Close the current path
       }
-      // Lorsque le dessin s'arrête, mettez à jour l'état signatureData pour la génération PDF
+      // When drawing stops, update the signatureData state for PDF generation
       if (signatureCanvasRef.current) {
         setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
       }
-      console.log(`[Signature] stopDrawing: event.type=${e.type}`);
+      console.log(`stopDrawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}`); // Debug log
     };
 
-    // Attacher les écouteurs d'événements
+    // Attach event listeners
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
-    canvas.addEventListener('mouseout', stopDrawing); // Arrêter le dessin si la souris quitte le canevas
+    canvas.addEventListener('mouseout', stopDrawing); // Stop drawing if mouse leaves canvas
 
-    // Pour les appareils tactiles
-    canvas.addEventListener('touchstart', startDrawing, { passive: false });
-    canvas.addEventListener('touchmove', draw, { passive: false });
+    // For touch devices
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // Prevent scrolling
+      startDrawing(e);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault(); // Prevent scrolling
+      draw(e);
+    }, { passive: false });
     canvas.addEventListener('touchend', stopDrawing);
-    canvas.addEventListener('touchcancel', stopDrawing); // Gérer l'interruption du toucher
+    canvas.addEventListener('touchcancel', stopDrawing); // Handle touch being interrupted
 
     return () => {
-      // Nettoyage : supprimer les écouteurs d'événements lorsque le composant est démonté ou que l'effet est réexécuté
-      console.log("[Signature] Cleaning up signature canvas event listeners.");
+      // Cleanup: remove event listeners when component unmounts or effect re-runs
+      console.log("[SummaryReport] Cleaning up signature canvas event listeners.");
       canvas.removeEventListener('mousedown', startDrawing);
       canvas.removeEventListener('mousemove', draw);
       canvas.removeEventListener('mouseup', stopDrawing);
@@ -375,25 +381,25 @@ export default function SummaryReport({
       canvas.removeEventListener('touchend', stopDrawing);
       canvas.removeEventListener('touchcancel', stopDrawing);
     };
-  }, []); // <--- IMPORTANT: Le tableau de dépendances vide garantit que cela ne s'exécute qu'une seule fois au montage
+  }, []); // <--- IMPORTANT: Empty dependency array ensures this runs only once on mount
 
-  // Charger la signature depuis l'API lorsque la modale s'ouvre
+  // Load signature from API when modal opens
   useEffect(() => {
     const loadSignatureFromApi = async () => {
       if (!isOpen) {
-        // Effacer le canevas et les données lorsque la modale se ferme
+        // Clear canvas and data when modal closes
         setSignatureData(null);
         if (signatureCanvasRef.current) {
           const ctx = signatureCanvasRef.current.getContext('2d');
           ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
         }
-        setIsSignatureLoading(true); // Réinitialiser l'état de chargement pour la prochaine ouverture
+        setIsSignatureLoading(true); // Reset loading state for next open
         return;
       }
 
       setIsSignatureLoading(true);
       try {
-        // Utilisation de userFirstName comme ID unique. Dans une vraie application, utilisez un ID utilisateur plus robuste.
+        // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
         const response = await fetch(`/api/signature?userId=${userFirstName}`); 
         if (response.ok) {
           const data = await response.json();
@@ -416,15 +422,15 @@ export default function SummaryReport({
             }
           }
         } else {
-          console.error("Échec du chargement de la signature depuis l'API:", response.status, response.statusText);
-          setSignatureData(null); // S'assurer qu'aucune ancienne signature n'est affichée
+          console.error("Failed to load signature from API:", response.status, response.statusText);
+          setSignatureData(null); // Ensure no old signature is shown
           if (signatureCanvasRef.current) {
             const ctx = signatureCanvasRef.current.getContext('2d');
             ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
           }
         }
       } catch (error) {
-        console.error("Erreur lors de la récupération de la signature:", error);
+        console.error("Error fetching signature:", error);
         showMessage("Erreur lors du chargement de la signature: " + error.message, "error");
         setSignatureData(null);
         if (signatureCanvasRef.current) {
@@ -437,17 +443,17 @@ export default function SummaryReport({
     };
 
     loadSignatureFromApi();
-  }, [isOpen, userFirstName, showMessage]); // Recharger lorsque la modale s'ouvre ou l'utilisateur change
+  }, [isOpen, userFirstName, showMessage]); // Reload when modal opens or user changes
 
 
   const clearSignature = async () => {
     if (signatureCanvasRef.current) {
       const ctx = signatureCanvasRef.current.getContext('2d');
       ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-      setSignatureData(null); // Effacer également les données stockées
+      setSignatureData(null); // Clear stored data as well
 
       try {
-        // Utilisation de userFirstName comme ID unique. Dans une vraie application, utilisez un ID utilisateur plus robuste.
+        // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
         const response = await fetch(`/api/signature?userId=${userFirstName}`, {
           method: 'DELETE',
         });
@@ -455,11 +461,11 @@ export default function SummaryReport({
           showMessage("Signature effacée !", "info");
         } else {
           const errorData = await response.json();
-          console.error("Échec de la suppression de la signature de l'API:", response.status, errorData.message);
+          console.error("Failed to delete signature from API:", response.status, errorData.message);
           showMessage("Erreur lors de l'effacement de la signature: " + (errorData.message || response.statusText), "error");
         }
       } catch (error) {
-        console.error("Erreur lors de la suppression de la signature:", error);
+        console.error("Error deleting signature:", error);
         showMessage("Erreur lors de l'effacement de la signature: " + error.message, "error");
       }
     }
@@ -468,10 +474,10 @@ export default function SummaryReport({
   const saveSignature = async () => {
     if (signatureCanvasRef.current) {
       const dataURL = signatureCanvasRef.current.toDataURL('image/png');
-      setSignatureData(dataURL); // Mettre à jour l'état local immédiatement
+      setSignatureData(dataURL); // Update local state immediately
 
       try {
-        // Utilisation de userFirstName comme ID unique. Dans une vraie application, utilisez un ID utilisateur plus robuste.
+        // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
         const response = await fetch('/api/signature', {
           method: 'POST',
           headers: {
@@ -483,11 +489,11 @@ export default function SummaryReport({
           showMessage("Signature enregistrée avec succès !", "success");
         } else {
           const errorData = await response.json();
-          console.error("Échec de l'enregistrement de la signature dans l'API:", response.status, errorData.message);
+          console.error("Failed to save signature to API:", response.status, errorData.message);
           showMessage("Erreur lors de l'enregistrement de la signature: " + (errorData.message || response.statusText), "error");
         }
       } catch (error) {
-        console.error("Erreur lors de l'enregistrement de la signature:", error);
+        console.error("Error saving signature:", error);
         showMessage("Erreur lors de l'enregistrement de la signature: " + error.message, "error");
       }
     }
@@ -502,31 +508,31 @@ export default function SummaryReport({
 
     try {
       const pdf = new jsPDF("p", "mm", "a4");
-      let yPos = 10; // Position Y de départ
-      const margin = 15; // Marges augmentées pour une meilleure lisibilité
-      const defaultLineHeight = 5; // Hauteur de ligne réduite pour plus de contenu
-      const sectionSpacing = 8; // Espacement entre les sections
-      const itemSpacing = 1; // Espacement entre les éléments de liste
+      let yPos = 10; // Starting Y position
+      const margin = 15; // Increased margins for better readability
+      const defaultLineHeight = 5; // Reduced line height for more content
+      const sectionSpacing = 8; // Spacing between sections
+      const itemSpacing = 1; // Spacing between list items
       const pageHeight = pdf.internal.pageSize.height;
       const pageWidth = pdf.internal.pageSize.width;
-      const contentWidth = pageWidth - 2 * margin; // Largeur de la zone de contenu
-      const activityRectPadding = 2; // Remplissage interne pour les rectangles d'activité (légèrement réduit)
+      const contentWidth = pageWidth - 2 * margin; // Content area width
+      const activityRectPadding = 2; // Internal padding for activity rectangles (slightly reduced)
 
-      // Titre du rapport
+      // Report Title
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(16);
       pdf.setTextColor(31, 41, 55); // dark-gray-800 - rgb(31, 41, 55)
-      pdf.text(`Rapport de Synthèse - ${monthName} (${userFirstName})`, pageWidth / 2, yPos, { align: 'center' }); // Nom d'utilisateur ajouté
+      pdf.text(`Rapport de Synthèse - ${monthName} (${userFirstName})`, pageWidth / 2, yPos, { align: 'center' }); // Added user name
       yPos += defaultLineHeight * 2;
 
-      // Informations Générales
+      // General Information
       pdf.setFontSize(12);
       pdf.setTextColor(30, 64, 175); // blue-800 - rgb(30, 64, 175)
       pdf.text("Informations Générales", margin, yPos);
       yPos += defaultLineHeight;
       
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(51, 51, 51); // Gris foncé - rgb(51, 51, 51)
+      pdf.setTextColor(51, 51, 51); // Dark gray - rgb(51, 51, 51)
       pdf.text(`Mois du rapport : ${monthName}`, margin + 5, yPos);
       yPos += defaultLineHeight;
       pdf.text(`Total jours ouvrés dans le mois : ${totalWorkingDays} jours`, margin + 5, yPos);
@@ -535,7 +541,7 @@ export default function SummaryReport({
       yPos += defaultLineHeight;
       pdf.text(`Total jours de congés payés : ${totalPaidLeaveDaysInMonth.toFixed(1)} jours`, margin + 5, yPos);
       yPos += defaultLineHeight;
-      // Toujours afficher ces champs, même s'ils sont à zéro
+      // Always display these fields, even if they are zero
       pdf.text(`Jours non ouvrés travaillés : ${nonWorkingDaysWorked.toFixed(1)} jours`, margin + 5, yPos);
       yPos += defaultLineHeight;
       pdf.text(`Heures Supplémentaires : ${totalOvertimeHours.toFixed(1)} jours`, margin + 5, yPos);
@@ -543,7 +549,7 @@ export default function SummaryReport({
       pdf.text(`Écart (Activités - Jours ouvrés) : ${timeDifference} jours`, margin + 5, yPos);
       yPos += sectionSpacing;
 
-      // Détail des Activités
+      // Activity Details
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(12);
       pdf.setTextColor(31, 41, 55); // dark-gray-800 - rgb(31, 41, 55)
@@ -551,7 +557,7 @@ export default function SummaryReport({
       yPos += defaultLineHeight;
 
       if (allDaysWithActivities.length > 0) {
-        // Regroupement des jours par 10
+        // Grouping days by 10
         const daysGrouped = [];
         let currentGroup = [];
         allDaysWithActivities.forEach((dayData, index) => {
@@ -563,7 +569,7 @@ export default function SummaryReport({
         });
 
         daysGrouped.forEach((group, groupIndex) => {
-          if (groupIndex > 0) { // Ajouter un petit espace entre les groupes, mais pas avant le premier groupe
+          if (groupIndex > 0) { // Add a small space between groups, but not before the first group
             yPos += sectionSpacing / 2;
           }
 
@@ -577,11 +583,11 @@ export default function SummaryReport({
 
 
           group.forEach(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => {
-            // Hauteur de l'en-tête du jour
+            // Day header height
             const dayHeaderHeight = defaultLineHeight;
             let estimatedActivitiesContentHeight = 0;
 
-            // Estimer la hauteur pour chaque activité, en tenant compte de splitTextToSize
+            // Estimate height for each activity, considering splitTextToSize
             dailyActivities.forEach(activity => {
               const clientName = getClientName(activity.client_id);
               const activityTypeName = getActivityTypeName(activity.type_activite);
@@ -594,29 +600,29 @@ export default function SummaryReport({
                 activityTextContent += ` - "${activity.description}"`;
               }
               
-              // Calculer la hauteur du texte pour le rectangle
+              // Calculate text height for the rectangle
               const textWidthForRect = contentWidth - (2 * activityRectPadding);
               const splitText = pdf.splitTextToSize(activityTextContent, textWidthForRect);
-              estimatedActivitiesContentHeight += (splitText.length * defaultLineHeight) + itemSpacing + activityRectPadding; // Ajouter le remplissage pour chaque élément
+              estimatedActivitiesContentHeight += (splitText.length * defaultLineHeight) + itemSpacing + activityRectPadding; // Add padding for each item
             });
 
-            // S'il n'y a pas d'activités, prévoir une ligne pour le message "Aucune activité"
+            // If no activities, plan a line for the "No activity" message
             if (dailyActivities.length === 0) {
-              estimatedActivitiesContentHeight += defaultLineHeight + (2 * activityRectPadding) + itemSpacing; // Hauteur pour le message
+              estimatedActivitiesContentHeight += defaultLineHeight + (2 * activityRectPadding) + itemSpacing; // Height for the message
             }
             
-            const totalHeightNeededForDayBlock = dayHeaderHeight + estimatedActivitiesContentHeight + itemSpacing; // Ajusté pour être plus compact
+            const totalHeightNeededForDayBlock = dayHeaderHeight + estimatedActivitiesContentHeight + itemSpacing; // Adjusted to be tighter
 
-            // Vérifier si une nouvelle page est nécessaire avant de dessiner le bloc du jour
+            // Check if a new page is needed before drawing the day block
             if (yPos + totalHeightNeededForDayBlock > pageHeight - margin) {
               pdf.addPage();
-              yPos = margin; // Réinitialiser la position Y pour la nouvelle page
+              yPos = margin; // Reset Y position for new page
               pdf.setFont("helvetica", "bold");
               pdf.setFontSize(12);
               pdf.setTextColor(31, 41, 55);
               pdf.text("Détail des Activités (suite)", margin, yPos);
               yPos += defaultLineHeight;
-              // Rajouter l'en-tête du groupe sur la nouvelle page si c'est un nouveau groupe
+              // Re-add group header on new page if it's a new group
               pdf.setFont("helvetica", "bold");
               pdf.setFontSize(11);
               pdf.setTextColor(75, 85, 99);
@@ -624,29 +630,29 @@ export default function SummaryReport({
               yPos += defaultLineHeight;
             }
 
-            // Dessiner l'en-tête du jour
+            // Draw day header
             pdf.setFontSize(10);
-            pdf.setTextColor(0, 0, 0); // Noir
+            pdf.setTextColor(0, 0, 0); // Black
             let dayText = `${format(day, "EEEE dd MMMM yyyy", { locale: fr })} (${totalDailyTime.toFixed(1)}j)`;
             if (isWeekendDay) dayText += " (Week-end)";
             if (isPublicHoliday(day)) dayText += " (Jour Férié)";
             pdf.text(dayText, margin + 5, yPos);
             yPos += defaultLineHeight;
 
-            // Dessiner les activités quotidiennes ou le message "Aucune activité"
+            // Draw daily activities or "No activity" message
             if (dailyActivities.length > 0) {
               dailyActivities.forEach((activity) => {
                 const clientName = getClientName(activity.client_id);
                 const activityTypeName = getActivityTypeName(activity.type_activite);
                 const isLeaveActivity = String(activity.type_activite) === String(paidLeaveTypeId);
 
-                // Couleurs de fond et de texte pour les "boîtes" d'activité
-                let rectFillColor = [239, 246, 255]; // rgb(239, 246, 255) - Bleu très clair
-                let textColor = [30, 64, 175]; // rgb(30, 64, 175) - Bleu foncé
+                // Background and text colors for activity "boxes"
+                let rectFillColor = [239, 246, 255]; // rgb(239, 246, 255) - Very light blue
+                let textColor = [30, 64, 175]; // rgb(30, 64, 175) - Dark blue
 
                 if (isLeaveActivity) {
-                  rectFillColor = [220, 252, 231]; // rgb(220, 252, 231) - Vert très clair
-                  textColor = [22, 101, 52]; // rgb(22, 101, 52) - Vert foncé
+                  rectFillColor = [220, 252, 231]; // rgb(220, 252, 231) - Very light green
+                  textColor = [22, 101, 52]; // rgb(22, 101, 52) - Dark green
                 }
 
                 // Construction de la ligne de texte de l'activité
@@ -655,64 +661,64 @@ export default function SummaryReport({
                   activityLine += ` - Client: ${clientName}`;
                 }
                 if (activity.description) {
-                  activityLine += ` - "${activity.description}"`; // Description après le client
+                  activityLine += ` - "${activity.description}"`; // Description after client
                 }
 
-                // Utiliser splitTextToSize pour déterminer la hauteur réelle du texte
+                // Use splitTextToSize to determine actual text height
                 const textX = margin + 5 + activityRectPadding;
                 const rectX = margin + 5;
-                const rectWidth = contentWidth - 5; // Largeur du rectangle (contentWidth - remplissage interne)
-                const textMaxWidth = rectWidth - (2 * activityRectPadding); // Largeur maximale pour le texte dans le rectangle
+                const rectWidth = contentWidth - 5; // Rectangle width (contentWidth - internal padding)
+                const textMaxWidth = rectWidth - (2 * activityRectPadding); // Max width for text in rectangle
 
                 const splitText = pdf.splitTextToSize(activityLine, textMaxWidth);
                 const actualTextHeight = splitText.length * defaultLineHeight;
-                const rectHeight = actualTextHeight + (2 * activityRectPadding); // Hauteur du rectangle basée sur le texte + remplissage
+                const rectHeight = actualTextHeight + (2 * activityRectPadding); // Rectangle height based on text + padding
 
-                // Dessiner le rectangle de fond
+                // Draw background rectangle
                 pdf.setFillColor(rectFillColor[0], rectFillColor[1], rectFillColor[2]);
-                pdf.rect(rectX, yPos - itemSpacing, rectWidth, rectHeight, 'F'); // Dessiner un rectangle rempli
+                pdf.rect(rectX, yPos - itemSpacing, rectWidth, rectHeight, 'F'); // Draw filled rectangle
 
-                // Dessiner le texte de l'activité
+                // Draw activity text
                 pdf.setTextColor(textColor[0], textColor[1], textColor[2]);
-                pdf.text(splitText, textX, yPos + activityRectPadding); // Ajuster yPos pour le remplissage du texte
+                pdf.text(splitText, textX, yPos + activityRectPadding); // Ajuster yPos pour le padding du texte
                 yPos += rectHeight + itemSpacing; // Ajuster yPos en fonction de la hauteur du rectangle
               });
             } else {
-              // Afficher "Aucune activité enregistrée" pour les jours sans activités
+              // Display "No activity recorded" for days without activities
               const rectX = margin + 5;
               const rectWidth = contentWidth - 5;
-              const rectHeight = defaultLineHeight + (2 * activityRectPadding); // Hauteur pour le message
+              const rectHeight = defaultLineHeight + (2 * activityRectPadding); // Height for the message
               
-              pdf.setFillColor(240, 240, 240); // Gris très clair pour les jours sans activités
+              pdf.setFillColor(240, 240, 240); // Very light gray for days without activities
               pdf.rect(rectX, yPos - itemSpacing, rectWidth, rectHeight, 'F');
 
-              pdf.setTextColor(150, 150, 150); // Gris clair
+              pdf.setTextColor(150, 150, 150); // Light gray
               pdf.text("Aucune activité enregistrée", margin + 5 + activityRectPadding, yPos + activityRectPadding);
               yPos += rectHeight + itemSpacing;
             }
-            yPos += itemSpacing; // Petite marge entre les jours
+            yPos += itemSpacing; // Small margin between days
           });
-          yPos += sectionSpacing / 2; // Espace supplémentaire après chaque groupe
+          yPos += sectionSpacing / 2; // Extra space after each group
         });
       }
-      else { // Ce bloc else correspond à `if (allDaysWithActivities.length > 0)`
+      else { // This else block corresponds to `if (allDaysWithActivities.length > 0)`
         pdf.setFontSize(10);
-        pdf.setTextColor(150, 150, 150); // Gris clair
+        pdf.setTextColor(150, 150, 150); // Light gray
         pdf.text("Aucune activité enregistrée pour ce mois.", margin + 5, yPos);
         yPos += defaultLineHeight;
       }
 
-      // Ajouter la signature en bas
+      // Add signature at the bottom
       if (signatureData) {
-        const signatureHeight = 40; // Hauteur fixe pour l'image de signature
-        const signatureWidth = 100; // Largeur fixe pour l'image de signature
-        const signatureX = pageWidth - margin - signatureWidth; // Aligner à droite
-        let signatureY = pageHeight - margin - signatureHeight; // Position depuis le bas
+        const signatureHeight = 40; // Fixed height for signature image
+        const signatureWidth = 100; // Fixed width for signature image
+        const signatureX = pageWidth - margin - signatureWidth; // Align right
+        let signatureY = pageHeight - margin - signatureHeight; // Position from bottom
 
-        // Vérifier si la signature tient sur la page actuelle, sinon, ajouter une nouvelle page
-        if (signatureY < yPos + sectionSpacing) { // Si la signature chevauche le contenu
+        // Check if signature fits on current page, if not, add new page
+        if (signatureY < yPos + sectionSpacing) { // If signature overlaps with content
           pdf.addPage();
-          yPos = margin; // Réinitialiser yPos pour la nouvelle page
+          yPos = margin; // Reset yPos for new page
           signatureY = pageHeight - margin - signatureHeight;
         }
 
@@ -727,7 +733,7 @@ export default function SummaryReport({
       pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
       showMessage("PDF généré avec succès !", "success");
     } catch (error) {
-      console.error("Erreur de génération PDF:", error);
+      console.error("PDF Generation Error:", error);
       showMessage("Erreur lors de la génération du PDF: " + error.message, "error");
     }
   };
@@ -756,11 +762,9 @@ export default function SummaryReport({
               <div className="relative w-full max-w-md h-40 border border-gray-300 rounded-md overflow-hidden bg-white">
                 <canvas
                   ref={signatureCanvasRef}
-                  className="w-full h-full border border-gray-400 bg-white cursor-crosshair" // Classes CSS pour la visibilité et le curseur
-                  // Les attributs width et height sont maintenant définis dynamiquement dans useEffect
-                  // mais les laisser ici peut servir de fallback initial ou pour la sémantique.
-                  width="400"
-                  height="160"
+                  className="w-full h-full"
+                  width={400} // Explicit width
+                  height={160} // Explicit height
                 ></canvas>
                 {!signatureData && (
                   <div className="absolute inset-0 flex items-center justify-center text-gray-400 pointer-events-none">
