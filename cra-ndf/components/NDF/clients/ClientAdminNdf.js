@@ -479,12 +479,12 @@ export default function ClientAdminNdf() {
                       {/* Montant à rembourser */}
                       <span className="text-sm text-blue-700 font-bold">
                         {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
-                          ? `À rembourser : ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)} €`
+                          ? `Total à rembourser : ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)} €`
                           : ""}
                       </span>
                       {/* Total Detail TTC */}
                       <span className="text-sm text-blue-700 font-semibold">
-                        Total TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
+                        NDF TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
                       </span>
                       {/* Indemnités kilométriques */}
                       <span className="text-sm text-blue-700 font-semibold">
@@ -668,12 +668,12 @@ export default function ClientAdminNdf() {
                       {/* Montant à rembourser */}
                       <span className="ml-3 text-sm text-blue-700 font-bold">
                         {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
-                          ? `à rembourser ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)}€`
+                          ? `Total à rembourser ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)}€`
                           : ""}
                       </span>
                       {/* Total Detail TTC */}
                       <span className="ml-3 text-sm text-blue-700 font-bold">
-                        Total TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
+                        NDF TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
                       </span>
                       {/* Indemnités kilométriques */}
                       <span className="ml-3 text-sm text-blue-700 font-bold">
