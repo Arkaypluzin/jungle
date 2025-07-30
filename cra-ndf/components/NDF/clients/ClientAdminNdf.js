@@ -106,9 +106,15 @@ export default function ClientAdminNdf() {
     return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
   });
 
-  const totalTTCSomme = useMemo(() => {
-    return filteredNdfs.reduce((acc, ndf) => acc + (totaux[ndf.uuid] || 0), 0);
-  }, [filteredNdfs, totaux]);
+  // Additionne tout ce qui est à rembourser pour la recherche (onglet all)
+  const totalARembourserSomme = useMemo(() => {
+    return filteredNdfs.reduce(
+      (acc, ndf) =>
+        acc +
+        ((totaux[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)),
+      0
+    );
+  }, [filteredNdfs, totaux, indemnitesPerso]);
 
   // Pour le total général (admin)
   useEffect(() => {
@@ -303,7 +309,7 @@ export default function ClientAdminNdf() {
           style={{ borderBottomRightRadius: "10px", borderBottomLeftRadius: tab === "all" ? "10px" : "0px" }}
           onClick={() => setTab("all")}
         >
-          Toutes les notes de frais
+          Recherche notes de frais
         </button>
       </div>
     );
@@ -469,11 +475,24 @@ export default function ClientAdminNdf() {
                       }`}>
                       {ndf.statut}
                     </span>
-                    <span className="ml-3 text-sm text-blue-700 font-bold">
-                      {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
-                        ? `${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)} € TTC`
-                        : ""}
-                    </span>
+                    <div className="flex flex-col gap-1 mt-2 ml-1">
+                      {/* Montant à rembourser */}
+                      <span className="text-sm text-blue-700 font-bold">
+                        {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
+                          ? `À rembourser : ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)} €`
+                          : ""}
+                      </span>
+                      {/* Total Detail TTC */}
+                      <span className="text-sm text-blue-700 font-semibold">
+                        Total TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
+                      </span>
+                      {/* Indemnités kilométriques */}
+                      <span className="text-sm text-blue-700 font-semibold">
+                        {typeof indemnitesPerso[ndf.uuid] === "number"
+                          ? `Indemnités kilométriques : ${indemnitesPerso[ndf.uuid].toFixed(2)} €`
+                          : ""}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex gap-3 flex-wrap justify-end">
                     <a href={`/note-de-frais/${ndf.uuid}`} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
@@ -614,8 +633,8 @@ export default function ClientAdminNdf() {
               </button>
             </div>
             <div className="mb-2 flex items-center gap-3">
-              <span className="font-semibold text-base text-gray-800">Total TTC affiché :</span>
-              <span className="text-lg font-bold text-blue-800">{totalTTCSomme.toFixed(2)} €</span>
+              <span className="font-semibold text-base text-gray-800">Total à rembourser affiché :</span>
+              <span className="text-lg font-bold text-blue-800">{totalARembourserSomme.toFixed(2)} €</span>
             </div>
             {loadingAll && (
               <div className="text-center py-4">
@@ -645,9 +664,24 @@ export default function ClientAdminNdf() {
                     <span className="ml-3 text-sm text-gray-600">
                       par <b className="text-gray-800">{ndf.name || ndf.user_id}</b>
                     </span>
-                    <span className="ml-3 text-sm text-blue-700 font-bold">
-                      {typeof totaux[ndf.uuid] === "number" ? `${totaux[ndf.uuid].toFixed(2)} € TTC` : ""}
-                    </span>
+                    <div className="flex flex-col gap-1 mt-2 ml-1">
+                      {/* Montant à rembourser */}
+                      <span className="ml-3 text-sm text-blue-700 font-bold">
+                        {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
+                          ? `à rembourser ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)}€`
+                          : ""}
+                      </span>
+                      {/* Total Detail TTC */}
+                      <span className="ml-3 text-sm text-blue-700 font-bold">
+                        Total TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
+                      </span>
+                      {/* Indemnités kilométriques */}
+                      <span className="ml-3 text-sm text-blue-700 font-bold">
+                        {typeof indemnitesPerso[ndf.uuid] === "number"
+                          ? `Indemnités : ${indemnitesPerso[ndf.uuid].toFixed(2)}€`
+                          : ""}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex gap-3 flex-wrap justify-end">
                     <a href={`/note-de-frais/${ndf.uuid}`} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
