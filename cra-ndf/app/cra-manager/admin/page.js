@@ -253,7 +253,30 @@ export default function AdminCRAPage() {
         );
       }
       const data = await response.json();
-      setMonthlyReports(data.data || []);
+      console.log("AdminCRAPage: Rapports mensuels bruts de l'API:", data.data);
+
+      const processedReports = (data.data || []).map(report => {
+        let normalizedReport = { ...report };
+        if (normalizedReport.status === "rejected") {
+          let reasonValue = normalizedReport.rejectionReason || normalizedReport.rejection_reason;
+          if (reasonValue === "nul") { // Convertir la chaîne "nul" en null
+            reasonValue = null;
+          }
+          // Assigner la raison normalisée à la propriété snake_case pour la cohérence
+          normalizedReport.rejection_reason = reasonValue;
+          // Assurer que la propriété camelCase est également cohérente si elle est la source primaire
+          if (normalizedReport.rejectionReason && normalizedReport.rejectionReason !== reasonValue) {
+              normalizedReport.rejectionReason = reasonValue;
+          }
+        } else {
+          // Si le rapport n'est pas rejeté, s'assurer qu'aucune raison de rejet n'est présente
+          normalizedReport.rejection_reason = null;
+          normalizedReport.rejectionReason = null;
+        }
+        return normalizedReport;
+      });
+      console.log("AdminCRAPage: Rapports mensuels normalisés pour l'état:", processedReports);
+      setMonthlyReports(processedReports);
     }
     catch (err) {
       console.error(
@@ -282,7 +305,7 @@ export default function AdminCRAPage() {
           await Promise.all([
             fetchClients(),
             fetchActivityTypes(),
-            fetchMonthlyReportsForUser(),
+            fetchMonthlyReportsForUser(), // Assurez-vous que cette fonction est appelée
           ]);
           if (activeTab === "craManager") {
             await fetchCraActivitiesForMonth(currentDisplayedMonth);
@@ -899,7 +922,12 @@ export default function AdminCRAPage() {
 
     // Nouvelle métrique: Total des jours de congés payés dans le mois
     const totalPaidLeaveDaysInMonth = craActivities.reduce((sum, activity) => {
-      if (activity.report_type === "Congé Payé") {
+      // Pour cette métrique, on devrait vérifier le type d'activité, pas le report_type qui est une prop de rapport
+      // Il faut trouver l'ID du type "Congé Payé"
+      const paidLeaveType = activityTypeDefinitions.find(
+        (type) => type.name && type.name.toLowerCase().includes("congé payé")
+      );
+      if (paidLeaveType && String(activity.type_activite) === String(paidLeaveType.id)) {
         return sum + (parseFloat(activity.duree_jours) || 0);
       }
       return sum;
@@ -1001,143 +1029,122 @@ export default function AdminCRAPage() {
           <div className="border-l-2 border-indigo-600 mx-6 h-auto self-stretch"></div>
 
           <button
-            onClick={() => setActiveTab("gestion")}
-            className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
-              activeTab === "gestion"
-                ? "bg-blue-600 text-white shadow-lg"
-                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-            }`}
-          >
-            Gestion
-          </button>
-          <button
             onClick={() => setActiveTab("receivedCras")}
-            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
+            className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
               activeTab === "receivedCras"
                 ? "bg-blue-600 text-white shadow-lg"
-                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
           >
-            CRA Reçus
+            CRAs Reçus
           </button>
           <button
             onClick={() => setActiveTab("overview")}
             className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
               activeTab === "overview"
                 ? "bg-blue-600 text-white shadow-lg"
-                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
           >
             Vue d'ensemble
           </button>
-          {currentUserRole === "admin" && (
-            <Link
-              href="/cra-manager/admin"
-              className="bg-purple-700 text-white px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 hover:bg-purple-800 shadow-lg ml-4"
-            >
-              Administration
-            </Link>
-          )}
+          <button
+            onClick={() => setActiveTab("unifiedManager")}
+            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
+              activeTab === "unifiedManager"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            Gestion Unifiée
+          </button>
         </div>
 
-        {loadingAppData ? (
-          <div className="flex justify-center items-center h-64">
-            <p className="text-gray-600 text-lg">Chargement des données...</p>
-          </div>
-        ) : (
-          <>
-            {activeTab === "craManager" && (
-              <CraBoard
-                activities={craActivities}
-                activityTypeDefinitions={activityTypeDefinitions}
-                clientDefinitions={clientDefinitions}
-                onAddActivity={handleAddCraActivity}
-                onUpdateActivity={handleUpdateCraActivity}
-                onDeleteActivity={handleDeleteActivity}
-                fetchActivitiesForMonth={fetchCraActivitiesForMonth}
-                userId={currentUserId}
-                userFirstName={currentUserName}
-                showMessage={showMessage}
-                currentMonth={currentDisplayedMonth}
-                onMonthChange={setCurrentDisplayedMonth}
-                monthlyReports={monthlyReports}
-                onSendMonthlyReport={handleSendMonthlyReport}
-                onOpenReportPopup={handleShowDetailedReport}
-              />
-            )}
+        {activeTab === "craManager" && (
+          <CraBoard
+            userId={currentUserId}
+            userFirstName={currentUserName}
+            currentMonth={currentDisplayedMonth}
+            onMonthChange={setCurrentDisplayedMonth}
+            activities={craActivities}
+            activityTypeDefinitions={activityTypeDefinitions}
+            clientDefinitions={clientDefinitions}
+            onAddActivity={handleAddCraActivity}
+            onUpdateActivity={handleUpdateCraActivity}
+            onDeleteActivity={handleDeleteActivity}
+            fetchActivitiesForMonth={fetchCraActivitiesForMonth}
+            showMessage={showMessage}
+            monthlyReports={monthlyReports} // Passe les rapports normalisés
+            onSendMonthlyReport={handleSendMonthlyReport}
+            // Pas de prop 'rejectionReason' directe ici, elle est gérée par monthlyReports
+          />
+        )}
 
-            {activeTab === "sentCraHistory" && (
-              <CraHistory
-                userId={currentUserId}
-                userName={currentUserName}
-                showMessage={showMessage}
-                clientDefinitions={clientDefinitions}
-                activityTypeDefinitions={activityTypeDefinitions}
-              />
-            )}
+        {activeTab === "sentCraHistory" && (
+          <CraHistory
+            userId={currentUserId}
+            userFirstName={currentUserName}
+            showMessage={showMessage}
+            monthlyReports={monthlyReports} // Passe les rapports normalisés
+            onDeleteMonthlyReport={requestDeleteReportConfirmation}
+            onShowDetailedReport={handleShowDetailedReport}
+          />
+        )}
 
-            {activeTab === "gestion" && (
-              <UnifiedManager
-                clientDefinitions={clientDefinitions}
-                onAddClient={handleAddClient}
-                onUpdateClient={handleUpdateClient}
-                onDeleteClient={handleDeleteClient}
-                activityTypeDefinitions={activityTypeDefinitions}
-                onAddActivityType={handleAddActivityType}
-                onUpdateActivityType={handleUpdateActivityType}
-                onDeleteActivityType={handleDeleteActivityType}
-                showMessage={showMessage}
-                currentUserRole={currentUserRole}
-              />
-            )}
+        {activeTab === "receivedCras" && (
+          <ReceivedCras
+            userId={currentUserId}
+            userFirstName={currentUserName}
+            userRole={currentUserRole}
+            showMessage={showMessage}
+            clientDefinitions={clientDefinitions}
+            activityTypeDefinitions={activityTypeDefinitions}
+            monthlyReports={monthlyReports} // Passe les rapports normalisés pour le filtre initial
+            onDeleteMonthlyReport={requestDeleteReportConfirmation}
+          />
+        )}
 
-            {activeTab === "receivedCras" && (
-              <ReceivedCras
-                userId={currentUserId}
-                userName={currentUserName}
-                userRole={currentUserRole}
-                showMessage={showMessage}
-                clientDefinitions={clientDefinitions}
-                activityTypeDefinitions={activityTypeDefinitions}
-                monthlyReports={monthlyReports}
-                onDeleteMonthlyReport={requestDeleteReportConfirmation}
-              />
-            )}
+        {activeTab === "overview" && (
+          <OverviewBoard
+            activityTypeDefinitions={activityTypeDefinitions}
+            clientDefinitions={clientDefinitions}
+            showMessage={showMessage}
+            userRole={currentUserRole}
+          />
+        )}
 
-            {activeTab === "overview" && (
-              <OverviewBoard
-                activityTypeDefinitions={activityTypeDefinitions}
-                clientDefinitions={clientDefinitions}
-                showMessage={showMessage}
-                userRole={currentUserRole}
-              />
-            )}
-          </>
+        {activeTab === "unifiedManager" && (
+          <UnifiedManager
+            clientDefinitions={clientDefinitions}
+            activityTypeDefinitions={activityTypeDefinitions}
+            onAddClient={handleAddClient}
+            onUpdateClient={handleUpdateClient}
+            onDeleteClient={handleDeleteClient}
+            onAddActivityType={handleAddActivityType}
+            onUpdateActivityType={handleUpdateActivityType}
+            onDeleteActivityType={handleDeleteActivityType}
+            showMessage={showMessage}
+          />
         )}
       </div>
 
-      <ToastMessage
-        message={toastMessage.message}
-        type={toastMessage.type}
-        isVisible={toastMessage.isVisible}
-        onClose={hideMessage}
-      />
+      <ToastMessage {...toastMessage} onClose={hideMessage} />
 
       {showDeleteReportConfirmModal && reportToDelete && (
         <ConfirmationModal
           isOpen={showDeleteReportConfirmModal}
           onClose={cancelDeleteReportConfirmation}
           onConfirm={confirmDeleteReportAction}
-          title="Confirmer la suppression du rapport"
           message={`Êtes-vous sûr de vouloir supprimer le rapport de ${
-            reportToDelete.userName
-          } pour ${format(
+            reportToDelete.report_type === "paid_leave"
+              ? "Congés Payés"
+              : "CRA"
+          } pour ${reportToDelete.userName || "cet utilisateur"} pour ${format(
             new Date(reportToDelete.year, reportToDelete.month - 1),
             "MMMM yyyy",
             { locale: fr }
-          )} ? Cela supprimera également toutes les activités associées à ce rapport. Cette action est irréversible.`}
-          confirmButtonText="Supprimer définitivement"
-          cancelButtonText="Annuler"
+          )}? Cette action supprimera également toutes les activités associées à ce rapport.`}
+          title="Confirmer la suppression du rapport"
         />
       )}
 
@@ -1145,16 +1152,7 @@ export default function AdminCRAPage() {
         <DetailedCraReportModal
           isOpen={showDetailedReportModal}
           onClose={() => setShowDetailedReportModal(false)}
-          month={detailedReportData.currentMonth}
-          activities={detailedReportData.activities}
-          activityTypeDefinitions={detailedReportData.activityTypeDefinitions}
-          clientDefinitions={detailedReportData.clientDefinitions}
-          totalWorkingDays={detailedReportData.totalWorkingDaysInMonth}
-          totalActivitiesTime={detailedReportData.totalActivitiesTimeInMonth}
-          totalWorkingDaysActivitiesTime={detailedReportData.totalWorkingDaysActivitiesTime} // New prop
-          totalPaidLeaveDaysInMonth={detailedReportData.totalPaidLeaveDaysInMonth} // New prop
-          timeDifference={detailedReportData.timeDifference}
-          userFirstName={detailedReportData.userName}
+          reportData={detailedReportData}
         />
       )}
     </div>

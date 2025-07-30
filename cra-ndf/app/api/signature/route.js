@@ -3,12 +3,10 @@
 import { MongoClient } from 'mongodb';
 import { NextResponse } from 'next/server'; // Import NextResponse for App Router
 
-// Replace with your actual MongoDB connection URI from .env.local
+// Variables lues depuis .env.local
 const uri = process.env.MONGODB_URI;
-// Replace with your actual database name
-const dbName = 'your-database-name'; 
-// Replace with your actual collection name for signatures
-const collectionName = 'signatures'; 
+const dbName = process.env.MONGODB_DB || 'cra-ndf'; // Utilise MONGODB_DB, avec 'cra-ndf' comme fallback
+const collectionName = 'signatures'; // Nom de la collection pour les signatures
 
 let cachedClient = null;
 let cachedDb = null;
@@ -21,13 +19,13 @@ async function connectToDatabase() {
   if (!uri) {
     throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
   }
-
+  
   const client = await MongoClient.connect(uri, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   });
 
-  const db = client.db(dbName);
+  const db = client.db(dbName); // Utilise le dbName lu depuis l'environnement
 
   cachedClient = client;
   cachedDb = db;
@@ -39,7 +37,7 @@ async function connectToDatabase() {
 export async function GET(request) {
   try {
     const { db } = await connectToDatabase();
-    const signaturesCollection = db.collection(collectionName);
+    const signaturesCollection = db.collection(collectionName); // Utilise le collectionName global
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
@@ -61,7 +59,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { db } = await connectToDatabase();
-    const signaturesCollection = db.collection(collectionName);
+    const signaturesCollection = db.collection(collectionName); // Utilise le collectionName global
 
     const { userId, image } = await request.json();
 
@@ -86,7 +84,7 @@ export async function POST(request) {
 export async function DELETE(request) {
   try {
     const { db } = await connectToDatabase();
-    const signaturesCollection = db.collection(collectionName);
+    const signaturesCollection = db.collection(collectionName); // Utilise le collectionName global
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');

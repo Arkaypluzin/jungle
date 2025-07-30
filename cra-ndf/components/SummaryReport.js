@@ -5,6 +5,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { format, isValid, parseISO, isWeekend, eachDayOfInterval, isSameMonth, startOfMonth, endOfMonth, getDate } from "date-fns";
 import { fr } from "date-fns/locale";
 import jsPDF from "jspdf";
+// Les imports de MongoDB sont pour l'API, pas pour ce composant client.
+// import { MongoClient } from 'mongodb';
+// import { NextResponse } from 'next/server';
 
 export default function SummaryReport({
   isOpen,
@@ -26,7 +29,8 @@ export default function SummaryReport({
   const signatureCanvasRef = useRef(null);
   const signatureCtxRef = useRef(null);
   const [signatureData, setSignatureData] = useState(null); // Stocke la signature en base64
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false); // Keep this for potential UI updates
+  const isDrawingRef = useRef(false); // Ref to track drawing state for event handlers
   const [isSignatureLoading, setIsSignatureLoading] = useState(true); // État de chargement de la signature
 
   // Définition de monthName ici pour qu'il soit accessible partout
@@ -272,6 +276,7 @@ export default function SummaryReport({
 
   // Signature drawing logic
   useEffect(() => {
+    console.log("[SummaryReport] Signature canvas useEffect ran."); // Log for debugging
     const canvas = signatureCanvasRef.current;
     if (!canvas) return;
 
@@ -287,45 +292,48 @@ export default function SummaryReport({
 
     const getCoords = (e) => {
       const rect = canvas.getBoundingClientRect();
-      if (e.touches && e.touches.length > 0) {
-        return {
-          x: e.touches[0].clientX - rect.left,
-          y: e.touches[0].clientY - rect.top
-        };
-      }
+      // Use clientX/Y for mouse events, touches[0].clientX/Y for touch events
+      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        x: clientX - rect.left,
+        y: clientY - rect.top
       };
     };
 
     const startDrawing = (e) => {
-      setIsDrawing(true);
+      isDrawingRef.current = true; // Update the ref
+      setIsDrawing(true); // Update the state for potential UI changes
       const { x, y } = getCoords(e);
       lastX = x;
       lastY = y;
       ctx.beginPath();
       ctx.moveTo(lastX, lastY);
+      console.log("startDrawing: x,y", x, y); // Debug log
     };
 
     const draw = (e) => {
-      if (!isDrawing) return;
+      if (!isDrawingRef.current) return; // Check the ref's current value
       const { x, y } = getCoords(e);
       ctx.lineTo(x, y);
       ctx.stroke();
       lastX = x;
       lastY = y;
+      console.log("drawing: x,y", x, y); // Debug log
     };
 
     const stopDrawing = () => {
-      setIsDrawing(false);
+      isDrawingRef.current = false; // Update the ref
+      setIsDrawing(false); // Update the state for potential UI changes
       ctx.closePath();
       // When drawing stops, update the signatureData state for PDF generation
       if (signatureCanvasRef.current) {
         setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
       }
+      console.log("stopDrawing"); // Debug log
     };
 
+    // Attach event listeners
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
@@ -344,6 +352,7 @@ export default function SummaryReport({
     canvas.addEventListener('touchcancel', stopDrawing); // Handle touch being interrupted
 
     return () => {
+      // Cleanup: remove event listeners when component unmounts or effect re-runs
       canvas.removeEventListener('mousedown', startDrawing);
       canvas.removeEventListener('mousemove', draw);
       canvas.removeEventListener('mouseup', stopDrawing);
@@ -354,7 +363,7 @@ export default function SummaryReport({
       canvas.removeEventListener('touchend', stopDrawing);
       canvas.removeEventListener('touchcancel', stopDrawing);
     };
-  }, [isDrawing]); // Depend on isDrawing to re-attach listeners if it changes
+  }, []); // <--- IMPORTANT: Empty dependency array ensures this runs only once on mount
 
   // Load signature from API when modal opens
   useEffect(() => {
@@ -628,7 +637,7 @@ export default function SummaryReport({
                   textColor = [22, 101, 52]; // rgb(22, 101, 52) - Dark green
                 }
 
-                // Construct activity text line
+                // Construction de la ligne de texte de l'activité
                 let activityLine = `${activityTypeName} (${parseFloat(activity.temps_passe).toFixed(1)}j)`;
                 if (clientName !== "Client Inconnu") {
                   activityLine += ` - Client: ${clientName}`;
@@ -653,8 +662,8 @@ export default function SummaryReport({
 
                 // Draw activity text
                 pdf.setTextColor(textColor[0], textColor[1], textColor[2]);
-                pdf.text(splitText, textX, yPos + activityRectPadding); // Adjust yPos for text padding
-                yPos += rectHeight + itemSpacing; // Adjust yPos based on rectangle height
+                pdf.text(splitText, textX, yPos + activityRectPadding); // Ajuster yPos pour le padding du texte
+                yPos += rectHeight + itemSpacing; // Ajuster yPos en fonction de la hauteur du rectangle
               });
             } else {
               // Display "No activity recorded" for days without activities
@@ -732,7 +741,7 @@ export default function SummaryReport({
             <p className="text-gray-600">Chargement de la signature...</p>
           ) : (
             <>
-              <div className="border border-gray-300 rounded-md bg-white overflow-hidden" style={{ width: '100%', height: '150px' }}>
+              <div className="border border-gray-300 rounded-md bg-gray-100 overflow-hidden" style={{ width: '100%', height: '150px' }}> {/* Added bg-gray-100 */}
                 <canvas
                   ref={signatureCanvasRef}
                   width={400} // Increased canvas resolution for better quality
