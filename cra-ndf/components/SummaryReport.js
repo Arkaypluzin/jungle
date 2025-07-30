@@ -1,17 +1,16 @@
 // components/SummaryReport.js
 "use client";
 
-import React, { useMemo, useRef, useCallback, useEffect } from "react";
-import { format, isValid, parseISO, isWeekend, eachDayOfInterval, isSameMonth } from "date-fns";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { format, isValid, parseISO, isWeekend, eachDayOfInterval, isSameMonth, startOfMonth, endOfMonth, getDate } from "date-fns";
 import { fr } from "date-fns/locale";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 export default function SummaryReport({
   isOpen,
   onClose,
-  month,
-  activities,
+  month, // Le mois pour lequel générer le rapport
+  activities, // La prop activities est de nouveau utilisée ici
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
@@ -24,6 +23,19 @@ export default function SummaryReport({
   publicHolidays,
 }) {
   const reportRef = useRef();
+  const signatureCanvasRef = useRef(null);
+  const signatureCtxRef = useRef(null);
+  const [signatureData, setSignatureData] = useState(null); // Stocke la signature en base64
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [isSignatureLoading, setIsSignatureLoading] = useState(true); // État de chargement de la signature
+
+  // Définition de monthName ici pour qu'il soit accessible partout
+  const monthName = useMemo(() => {
+    if (isValid(month)) {
+      return format(month, "MMMM yyyy", { locale: fr });
+    }
+    return "Mois Inconnu";
+  }, [month]);
 
   const isPublicHoliday = useCallback(
     (date) => {
@@ -52,7 +64,7 @@ export default function SummaryReport({
     return client ? client.nom_client : "Client Inconnu";
   }, [clientDefinitions]);
 
-  // Calcul des totaux
+  // Calcul des totaux (utilise la prop activities)
   const totals = useMemo(() => {
     if (!isValid(month)) {
       return {
@@ -60,26 +72,44 @@ export default function SummaryReport({
         totalActivitiesTime: 0,
         totalWorkingDaysActivitiesTime: 0,
         totalPaidLeaveDaysInMonth: 0,
+        nonWorkingDaysWorked: 0,
+        totalOvertimeHours: 0,
         timeDifference: "0.00",
       };
     }
 
-    const monthStart = format(month, 'yyyy-MM-01');
-    const monthEnd = format(month, 'yyyy-MM-t');
-    const allDaysInMonth = eachDayOfInterval({ start: new Date(monthStart), end: new Date(monthEnd) });
+    const monthStart = startOfMonth(month);
+    const monthEnd = endOfMonth(month);
+    const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+    // --- Débogage de la liste des jours du mois ---
+    console.log(`[Totals Debug] Month: ${format(month, 'yyyy-MM-dd')}`);
+    console.log(`[Totals Debug] All days in month (${allDaysInMonth.length}):`, allDaysInMonth.map(d => format(d, 'yyyy-MM-dd')));
+
 
     const totalWorkingDays = allDaysInMonth.filter(
-      (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
+      (day) => {
+        const isWknd = isWeekend(day, { weekStartsOn: 1 });
+        const isPubHol = isPublicHoliday(day);
+        // --- Débogage de chaque jour ---
+        console.log(`[Totals Debug] Day: ${format(day, 'yyyy-MM-dd')}, isWeekend: ${isWknd}, isPublicHoliday: ${isPubHol}, isWorkingDay: ${!isWknd && !isPubHol}`);
+        return !isWknd && !isPubHol;
+      }
     ).length || 0;
 
     let totalActivitiesTime = 0;
     let totalWorkingDaysActivitiesTime = 0;
     let totalPaidLeaveDaysInMonth = 0;
+    let nonWorkingDaysWorked = 0;
+    let totalOvertimeHours = 0;
 
     const paidLeaveType = activityTypeDefinitions.find(t => t.name && t.name.toLowerCase().includes("congé payé"));
     const paidLeaveTypeId = paidLeaveType ? paidLeaveType.id : null;
 
-    activities.forEach(activity => {
+    const overtimeType = activityTypeDefinitions.find(t => t.is_overtime);
+    const overtimeTypeId = overtimeType ? overtimeType.id : null;
+
+    activities.forEach(activity => { // Use activities prop here
       const duration = parseFloat(activity.temps_passe) || 0;
       totalActivitiesTime += duration;
 
@@ -90,42 +120,62 @@ export default function SummaryReport({
         dateObj = new Date(activity.date_activite);
       }
 
-      if (isValid(dateObj)) {
-        if (!isWeekend(dateObj, { weekStartsOn: 1 }) && !isPublicHoliday(dateObj)) {
+      if (isValid(dateObj) && isSameMonth(dateObj, month)) {
+        const isNonWorkingDay = isWeekend(dateObj, { weekStartsOn: 1 }) || isPublicHoliday(dateObj);
+
+        if (isNonWorkingDay && duration > 0) {
+          nonWorkingDaysWorked += duration;
+        }
+
+        if (!isNonWorkingDay) {
           totalWorkingDaysActivitiesTime += duration;
         }
 
         if (String(activity.type_activite) === String(paidLeaveTypeId)) {
           totalPaidLeaveDaysInMonth += duration;
         }
+
+        if (String(activity.type_activite) === String(overtimeTypeId)) {
+            totalOvertimeHours += duration;
+        }
       }
     });
 
     const timeDifference = (totalActivitiesTime - totalWorkingDays).toFixed(2);
+
+    console.log("[SummaryReport - Totals Final] Month:", format(month, 'yyyy-MM'));
+    console.log("[SummaryReport - Totals Final] Calculated Total Working Days:", totalWorkingDays);
+    console.log("[SummaryReport - Totals Final] Non-Working Days Worked:", nonWorkingDaysWorked);
+    console.log("[SummaryReport - Totals Final] Total Overtime Hours:", totalOvertimeHours);
+
 
     return {
       totalWorkingDays,
       totalActivitiesTime,
       totalWorkingDaysActivitiesTime,
       totalPaidLeaveDaysInMonth,
+      nonWorkingDaysWorked,
+      totalOvertimeHours,
       timeDifference,
     };
-  }, [month, activities, isPublicHoliday, activityTypeDefinitions]);
+  }, [month, activities, isPublicHoliday, activityTypeDefinitions]); // Depend on activities prop
 
   const {
     totalWorkingDays,
     totalActivitiesTime,
     totalWorkingDaysActivitiesTime,
     totalPaidLeaveDaysInMonth,
+    nonWorkingDaysWorked,
+    totalOvertimeHours,
     timeDifference,
   } = totals;
 
-  // Effect pour le débogage
+  // Effect for debugging
   useEffect(() => {
     if (isOpen) {
       console.log("[SummaryReport] Component is open. Props received:", {
         month: isValid(month) ? format(month, 'yyyy-MM-dd') : month,
-        activitiesCount: activities.length,
+        activitiesCount: activities.length, // Use activities prop here
         activityTypeDefinitionsCount: activityTypeDefinitions.length,
         clientDefinitionsCount: clientDefinitions.length,
         publicHolidaysCount: publicHolidays ? publicHolidays.length : 0,
@@ -138,7 +188,7 @@ export default function SummaryReport({
       });
     }
   }, [
-    isOpen, month, activities, activityTypeDefinitions, clientDefinitions,
+    isOpen, month, activities, activityTypeDefinitions, clientDefinitions, // Depend on activities prop
     publicHolidays, craReportStatus, paidLeaveReportStatus, craReport,
     paidLeaveReport, userFirstName, totals
   ]);
@@ -147,18 +197,19 @@ export default function SummaryReport({
     return null;
   }
 
+  // Initial check for essential data
   if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
     console.error("[SummaryReport] Essential data missing or invalid for report rendering.", { month, activities, clientDefinitions, activityTypeDefinitions, publicHolidays });
     return (
-      <div className="fixed inset-0" style={{ backgroundColor: 'rgba(100, 100, 100, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem' }}>
-        <div style={{ backgroundColor: '#ffffff', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '28rem', position: 'relative' }}>
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
           <button
             onClick={onClose}
-            style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', color: '#9ca3af', fontSize: '1.5rem', fontWeight: 'bold' }}
+            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
           >
             &times;
           </button>
-          <p style={{ color: '#b91c1c', textAlign: 'center' }}>
+          <p className="text-red-700 text-center">
             Erreur: Impossible d'afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
           </p>
         </div>
@@ -166,206 +217,634 @@ export default function SummaryReport({
     );
   }
 
-  const monthName = format(month, "MMMM yyyy", { locale: fr });
-
-  const handleDownloadPdf = async () => {
-    const input = reportRef.current;
-    if (!input) {
-      console.error("PDF Generation Error: Report element not found.");
-      showMessage("Une erreur est survenue lors de la génération du PDF. Élément du rapport introuvable.", "error");
-      return;
-    }
-
-    // Temporairement ajuster les styles pour une meilleure capture
-    const originalInputStyle = input.style.cssText;
-    input.style.padding = '20px';
-    input.style.boxShadow = 'none';
-    input.style.backgroundColor = 'rgb(255, 255, 255)';
-    input.style.color = 'rgb(51, 51, 51)';
-
-    try {
-      // Log the outerHTML before converting to canvas
-      console.log("HTML content before html2canvas:", input.outerHTML);
-
-      const canvas = await html2canvas(input, {
-        scale: 2,
-        useCORS: true,
-        windowWidth: input.scrollWidth,
-        windowHeight: input.scrollHeight,
-        logging: true,
-        ignoreElements: (element) => element.classList.contains('do-not-print')
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const imgWidth = 210;
-      const pageHeight = 297;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      const monthYear = format(month, "MMMM_yyyy", { locale: fr });
-      pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
-      showMessage("PDF généré avec succès !", "success");
-    } catch (error) {
-      console.error("PDF Generation Error (Detailed): ", error);
-      showMessage(
-        `Une erreur est survenue lors de la génération du PDF. Détails: ${error.message || error}. ` +
-        `Si l'erreur mentionne "oklch", cela signifie que des couleurs modernes non supportées par le générateur de PDF sont utilisées. ` +
-        `Veuillez vérifier votre configuration Tailwind CSS (tailwind.config.js) ou vos fichiers CSS globaux pour remplacer les couleurs "oklch" par des formats comme "rgb()" ou des codes hexadécimaux.`,
-        "error"
-      );
-    } finally {
-      // Restaurer les styles originaux
-      input.style.cssText = originalInputStyle;
-    }
-  };
-
-  // Group activities by day and sort them for display
+  // Group activities by day and sort them for display (now includes ALL days of the month)
   const allDaysWithActivities = useMemo(() => {
-    const groups = {};
-    activities.forEach((activity) => {
-      let dateObj = null;
-      if (typeof activity.date_activite === "string") {
-        dateObj = parseISO(activity.date_activite);
-      } else if (activity.date_activite) {
-        dateObj = new Date(activity.date_activite);
-      }
+    if (!isValid(month)) return [];
 
-      if (isValid(dateObj) && isSameMonth(dateObj, month)) {
-        const dateKey = format(dateObj, "yyyy-MM-dd");
-        if (!groups[dateKey]) {
-          groups[dateKey] = [];
+    const monthStart = startOfMonth(month);
+    const monthEnd = endOfMonth(month);
+    const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+    // Create a map for quick lookup of activities by date
+    const activitiesMap = new Map(); // Map<dateKey (YYYY-MM-DD), Array<Activity>>
+    activities.forEach(activity => { // Use activities prop here
+        let dateObj = null;
+        if (typeof activity.date_activite === "string") {
+            dateObj = parseISO(activity.date_activite);
+        } else if (activity.date_activite) {
+            dateObj = new Date(activity.date_activite);
         }
-        groups[dateKey].push({ ...activity, date_activite: dateObj });
-      } else {
-        console.warn("[SummaryReport] Ignoring activity with invalid date_activite or out of month:", activity);
-      }
+
+        if (isValid(dateObj) && isSameMonth(dateObj, month)) {
+            const dateKey = format(dateObj, "yyyy-MM-dd");
+            if (!activitiesMap.has(dateKey)) {
+                activitiesMap.set(dateKey, []);
+            }
+            activitiesMap.get(dateKey).push({ ...activity, date_activite: dateObj });
+        }
     });
 
-    return Object.keys(groups)
-      .sort()
-      .map(dateKey => {
-        const day = parseISO(dateKey);
-        const dailyActivities = groups[dateKey] || [];
+    // Sort activities within each day
+    activitiesMap.forEach(dailyActivities => {
+        dailyActivities.sort((a, b) => {
+            const dateA = a.date_activite.getTime();
+            const dateB = b.date_activite.getTime();
+            return dateA - dateB;
+        });
+    });
+
+    // Now, iterate over all days in the month
+    return allDaysInMonth.map(day => {
+        const dateKey = format(day, "yyyy-MM-dd");
+        const dailyActivities = activitiesMap.get(dateKey) || [];
         const totalDailyTime = dailyActivities.reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
         const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
         return { day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay };
-      });
-  }, [activities, month, isPublicHoliday]);
+    });
+  }, [activities, month, isPublicHoliday]); // Depend on activities prop
 
-  // Déterminer l'ID du type "Congé Payé" une seule fois
+  // Determine the ID of the "Congé Payé" type once
   const paidLeaveTypeId = useMemo(() => {
     const type = activityTypeDefinitions.find(t => t.name && t.name.toLowerCase().includes("congé payé"));
     return type ? type.id : null;
   }, [activityTypeDefinitions]);
 
 
+  // Signature drawing logic
+  useEffect(() => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    signatureCtxRef.current = ctx;
+
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000000'; // Black color for signature
+
+    let lastX = 0;
+    let lastY = 0;
+
+    const getCoords = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      if (e.touches && e.touches.length > 0) {
+        return {
+          x: e.touches[0].clientX - rect.left,
+          y: e.touches[0].clientY - rect.top
+        };
+      }
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    };
+
+    const startDrawing = (e) => {
+      setIsDrawing(true);
+      const { x, y } = getCoords(e);
+      lastX = x;
+      lastY = y;
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+    };
+
+    const draw = (e) => {
+      if (!isDrawing) return;
+      const { x, y } = getCoords(e);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lastX = x;
+      lastY = y;
+    };
+
+    const stopDrawing = () => {
+      setIsDrawing(false);
+      ctx.closePath();
+      // When drawing stops, update the signatureData state for PDF generation
+      if (signatureCanvasRef.current) {
+        setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
+      }
+    };
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing); // Stop drawing if mouse leaves canvas
+
+    // For touch devices
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // Prevent scrolling
+      startDrawing(e);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault(); // Prevent scrolling
+      draw(e);
+    }, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing);
+    canvas.addEventListener('touchcancel', stopDrawing); // Handle touch being interrupted
+
+    return () => {
+      canvas.removeEventListener('mousedown', startDrawing);
+      canvas.removeEventListener('mousemove', draw);
+      canvas.removeEventListener('mouseup', stopDrawing);
+      canvas.removeEventListener('mouseout', stopDrawing);
+
+      canvas.removeEventListener('touchstart', startDrawing);
+      canvas.removeEventListener('touchmove', draw);
+      canvas.removeEventListener('touchend', stopDrawing);
+      canvas.removeEventListener('touchcancel', stopDrawing);
+    };
+  }, [isDrawing]); // Depend on isDrawing to re-attach listeners if it changes
+
+  // Load signature from API when modal opens
+  useEffect(() => {
+    const loadSignatureFromApi = async () => {
+      if (!isOpen) {
+        // Clear canvas and data when modal closes
+        setSignatureData(null);
+        if (signatureCanvasRef.current) {
+          const ctx = signatureCanvasRef.current.getContext('2d');
+          ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+        }
+        setIsSignatureLoading(true); // Reset loading state for next open
+        return;
+      }
+
+      setIsSignatureLoading(true);
+      try {
+        // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
+        const response = await fetch(`/api/signature?userId=${userFirstName}`); 
+        if (response.ok) {
+          const data = await response.json();
+          if (data.image) {
+            setSignatureData(data.image);
+            if (signatureCanvasRef.current) {
+              const ctx = signatureCanvasRef.current.getContext('2d');
+              const img = new Image();
+              img.onload = () => {
+                ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+                ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+              };
+              img.src = data.image;
+            }
+          } else {
+            setSignatureData(null);
+            if (signatureCanvasRef.current) {
+              const ctx = signatureCanvasRef.current.getContext('2d');
+              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+            }
+          }
+        } else {
+          console.error("Failed to load signature from API:", response.status, response.statusText);
+          setSignatureData(null); // Ensure no old signature is shown
+          if (signatureCanvasRef.current) {
+            const ctx = signatureCanvasRef.current.getContext('2d');
+            ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching signature:", error);
+        showMessage("Erreur lors du chargement de la signature: " + error.message, "error");
+        setSignatureData(null);
+        if (signatureCanvasRef.current) {
+          const ctx = signatureCanvasRef.current.getContext('2d');
+          ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+        }
+      } finally {
+        setIsSignatureLoading(false);
+      }
+    };
+
+    loadSignatureFromApi();
+  }, [isOpen, userFirstName, showMessage]); // Reload when modal opens or user changes
+
+
+  const clearSignature = async () => {
+    if (signatureCanvasRef.current) {
+      const ctx = signatureCanvasRef.current.getContext('2d');
+      ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+      setSignatureData(null); // Clear stored data as well
+
+      try {
+        // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
+        const response = await fetch(`/api/signature?userId=${userFirstName}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          showMessage("Signature effacée !", "info");
+        } else {
+          const errorData = await response.json();
+          console.error("Failed to delete signature from API:", response.status, errorData.message);
+          showMessage("Erreur lors de l'effacement de la signature: " + (errorData.message || response.statusText), "error");
+        }
+      } catch (error) {
+        console.error("Error deleting signature:", error);
+        showMessage("Erreur lors de l'effacement de la signature: " + error.message, "error");
+      }
+    }
+  };
+
+  const saveSignature = async () => {
+    if (signatureCanvasRef.current) {
+      const dataURL = signatureCanvasRef.current.toDataURL('image/png');
+      setSignatureData(dataURL); // Update local state immediately
+
+      try {
+        // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
+        const response = await fetch('/api/signature', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId: userFirstName, image: dataURL }), 
+        });
+        if (response.ok) {
+          showMessage("Signature enregistrée avec succès !", "success");
+        } else {
+          const errorData = await response.json();
+          console.error("Failed to save signature to API:", response.status, errorData.message);
+          showMessage("Erreur lors de l'enregistrement de la signature: " + (errorData.message || response.statusText), "error");
+        }
+      } catch (error) {
+        console.error("Error saving signature:", error);
+        showMessage("Erreur lors de l'enregistrement de la signature: " + error.message, "error");
+      }
+    }
+  };
+
+
+  const handleDownloadPdf = async () => {
+    if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
+      showMessage("Impossible de générer le PDF: Données essentielles manquantes ou invalides.", "error");
+      return;
+    }
+
+    try {
+      const pdf = new jsPDF("p", "mm", "a4");
+      let yPos = 10; // Starting Y position
+      const margin = 15; // Increased margins for better readability
+      const defaultLineHeight = 5; // Reduced line height for more content
+      const sectionSpacing = 8; // Spacing between sections
+      const itemSpacing = 1; // Spacing between list items
+      const pageHeight = pdf.internal.pageSize.height;
+      const pageWidth = pdf.internal.pageSize.width;
+      const contentWidth = pageWidth - 2 * margin; // Content area width
+      const activityRectPadding = 2; // Internal padding for activity rectangles (slightly reduced)
+
+      // Report Title
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(16);
+      pdf.setTextColor(31, 41, 55); // dark-gray-800 - rgb(31, 41, 55)
+      pdf.text(`Rapport de Synthèse - ${monthName} (${userFirstName})`, pageWidth / 2, yPos, { align: 'center' }); // Added user name
+      yPos += defaultLineHeight * 2;
+
+      // General Information
+      pdf.setFontSize(12);
+      pdf.setTextColor(30, 64, 175); // blue-800 - rgb(30, 64, 175)
+      pdf.text("Informations Générales", margin, yPos);
+      yPos += defaultLineHeight;
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(51, 51, 51); // Dark gray - rgb(51, 51, 51)
+      pdf.text(`Mois du rapport : ${monthName}`, margin + 5, yPos);
+      yPos += defaultLineHeight;
+      pdf.text(`Total jours ouvrés dans le mois : ${totalWorkingDays} jours`, margin + 5, yPos);
+      yPos += defaultLineHeight;
+      pdf.text(`Total jours d'activités sur jours ouvrés : ${totalWorkingDaysActivitiesTime.toFixed(1)} jours`, margin + 5, yPos);
+      yPos += defaultLineHeight;
+      pdf.text(`Total jours de congés payés : ${totalPaidLeaveDaysInMonth.toFixed(1)} jours`, margin + 5, yPos);
+      yPos += defaultLineHeight;
+      // Always display these fields, even if they are zero
+      pdf.text(`Jours non ouvrés travaillés : ${nonWorkingDaysWorked.toFixed(1)} jours`, margin + 5, yPos);
+      yPos += defaultLineHeight;
+      pdf.text(`Heures Supplémentaires : ${totalOvertimeHours.toFixed(1)} jours`, margin + 5, yPos);
+      yPos += defaultLineHeight;
+      pdf.text(`Écart (Activités - Jours ouvrés) : ${timeDifference} jours`, margin + 5, yPos);
+      yPos += sectionSpacing;
+
+      // Activity Details
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12);
+      pdf.setTextColor(31, 41, 55); // dark-gray-800 - rgb(31, 41, 55)
+      pdf.text("Détail des Activités", margin, yPos);
+      yPos += defaultLineHeight;
+
+      if (allDaysWithActivities.length > 0) {
+        // Grouping days by 10
+        const daysGrouped = [];
+        let currentGroup = [];
+        allDaysWithActivities.forEach((dayData, index) => {
+          currentGroup.push(dayData);
+          if ((index + 1) % 10 === 0 || (index + 1) === allDaysWithActivities.length) {
+            daysGrouped.push(currentGroup);
+            currentGroup = [];
+          }
+        });
+
+        daysGrouped.forEach((group, groupIndex) => {
+          if (groupIndex > 0) { // Add a small space between groups, but not before the first group
+            yPos += sectionSpacing / 2;
+          }
+
+          const startDay = getDate(group[0].day);
+          const endDay = getDate(group[group.length - 1].day);
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(11);
+          pdf.setTextColor(75, 85, 99); // gray-600
+          pdf.text(`Jours ${startDay} - ${endDay} :`, margin, yPos);
+          yPos += defaultLineHeight;
+
+
+          group.forEach(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => {
+            // Day header height
+            const dayHeaderHeight = defaultLineHeight;
+            let estimatedActivitiesContentHeight = 0;
+
+            // Estimate height for each activity, considering splitTextToSize
+            dailyActivities.forEach(activity => {
+              const clientName = getClientName(activity.client_id);
+              const activityTypeName = getActivityTypeName(activity.type_activite);
+              
+              let activityTextContent = `${activityTypeName} (${parseFloat(activity.temps_passe).toFixed(1)}j)`;
+              if (clientName !== "Client Inconnu") {
+                activityTextContent += ` - Client: ${clientName}`;
+              }
+              if (activity.description) {
+                activityTextContent += ` - "${activity.description}"`;
+              }
+              
+              // Calculate text height for the rectangle
+              const textWidthForRect = contentWidth - (2 * activityRectPadding);
+              const splitText = pdf.splitTextToSize(activityTextContent, textWidthForRect);
+              estimatedActivitiesContentHeight += (splitText.length * defaultLineHeight) + itemSpacing + activityRectPadding; // Add padding for each item
+            });
+
+            // If no activities, plan a line for the "No activity" message
+            if (dailyActivities.length === 0) {
+              estimatedActivitiesContentHeight += defaultLineHeight + (2 * activityRectPadding) + itemSpacing; // Height for the message
+            }
+            
+            const totalHeightNeededForDayBlock = dayHeaderHeight + estimatedActivitiesContentHeight + itemSpacing; // Adjusted to be tighter
+
+            // Check if a new page is needed before drawing the day block
+            if (yPos + totalHeightNeededForDayBlock > pageHeight - margin) {
+              pdf.addPage();
+              yPos = margin; // Reset Y position for new page
+              pdf.setFont("helvetica", "bold");
+              pdf.setFontSize(12);
+              pdf.setTextColor(31, 41, 55);
+              pdf.text("Détail des Activités (suite)", margin, yPos);
+              yPos += defaultLineHeight;
+              // Re-add group header on new page if it's a new group
+              pdf.setFont("helvetica", "bold");
+              pdf.setFontSize(11);
+              pdf.setTextColor(75, 85, 99);
+              pdf.text(`Jours ${startDay} - ${endDay} (suite) :`, margin, yPos);
+              yPos += defaultLineHeight;
+            }
+
+            // Draw day header
+            pdf.setFontSize(10);
+            pdf.setTextColor(0, 0, 0); // Black
+            let dayText = `${format(day, "EEEE dd MMMM yyyy", { locale: fr })} (${totalDailyTime.toFixed(1)}j)`;
+            if (isWeekendDay) dayText += " (Week-end)";
+            if (isPublicHoliday(day)) dayText += " (Jour Férié)";
+            pdf.text(dayText, margin + 5, yPos);
+            yPos += defaultLineHeight;
+
+            // Draw daily activities or "No activity" message
+            if (dailyActivities.length > 0) {
+              dailyActivities.forEach((activity) => {
+                const clientName = getClientName(activity.client_id);
+                const activityTypeName = getActivityTypeName(activity.type_activite);
+                const isLeaveActivity = String(activity.type_activite) === String(paidLeaveTypeId);
+
+                // Background and text colors for activity "boxes"
+                let rectFillColor = [239, 246, 255]; // rgb(239, 246, 255) - Very light blue
+                let textColor = [30, 64, 175]; // rgb(30, 64, 175) - Dark blue
+
+                if (isLeaveActivity) {
+                  rectFillColor = [220, 252, 231]; // rgb(220, 252, 231) - Very light green
+                  textColor = [22, 101, 52]; // rgb(22, 101, 52) - Dark green
+                }
+
+                // Construct activity text line
+                let activityLine = `${activityTypeName} (${parseFloat(activity.temps_passe).toFixed(1)}j)`;
+                if (clientName !== "Client Inconnu") {
+                  activityLine += ` - Client: ${clientName}`;
+                }
+                if (activity.description) {
+                  activityLine += ` - "${activity.description}"`; // Description after client
+                }
+
+                // Use splitTextToSize to determine actual text height
+                const textX = margin + 5 + activityRectPadding;
+                const rectX = margin + 5;
+                const rectWidth = contentWidth - 5; // Rectangle width (contentWidth - internal padding)
+                const textMaxWidth = rectWidth - (2 * activityRectPadding); // Max width for text in rectangle
+
+                const splitText = pdf.splitTextToSize(activityLine, textMaxWidth);
+                const actualTextHeight = splitText.length * defaultLineHeight;
+                const rectHeight = actualTextHeight + (2 * activityRectPadding); // Rectangle height based on text + padding
+
+                // Draw background rectangle
+                pdf.setFillColor(rectFillColor[0], rectFillColor[1], rectFillColor[2]);
+                pdf.rect(rectX, yPos - itemSpacing, rectWidth, rectHeight, 'F'); // Draw filled rectangle
+
+                // Draw activity text
+                pdf.setTextColor(textColor[0], textColor[1], textColor[2]);
+                pdf.text(splitText, textX, yPos + activityRectPadding); // Adjust yPos for text padding
+                yPos += rectHeight + itemSpacing; // Adjust yPos based on rectangle height
+              });
+            } else {
+              // Display "No activity recorded" for days without activities
+              const rectX = margin + 5;
+              const rectWidth = contentWidth - 5;
+              const rectHeight = defaultLineHeight + (2 * activityRectPadding); // Height for the message
+              
+              pdf.setFillColor(240, 240, 240); // Very light gray for days without activities
+              pdf.rect(rectX, yPos - itemSpacing, rectWidth, rectHeight, 'F');
+
+              pdf.setTextColor(150, 150, 150); // Light gray
+              pdf.text("Aucune activité enregistrée", margin + 5 + activityRectPadding, yPos + activityRectPadding);
+              yPos += rectHeight + itemSpacing;
+            }
+            yPos += itemSpacing; // Small margin between days
+          });
+          yPos += sectionSpacing / 2; // Extra space after each group
+        });
+      }
+      else { // This else block corresponds to `if (allDaysWithActivities.length > 0)`
+        pdf.setFontSize(10);
+        pdf.setTextColor(150, 150, 150); // Light gray
+        pdf.text("Aucune activité enregistrée pour ce mois.", margin + 5, yPos);
+        yPos += defaultLineHeight;
+      }
+
+      // Add signature at the bottom
+      if (signatureData) {
+        const signatureHeight = 40; // Fixed height for signature image
+        const signatureWidth = 100; // Fixed width for signature image
+        const signatureX = pageWidth - margin - signatureWidth; // Align right
+        let signatureY = pageHeight - margin - signatureHeight; // Position from bottom
+
+        // Check if signature fits on current page, if not, add new page
+        if (signatureY < yPos + sectionSpacing) { // If signature overlaps with content
+          pdf.addPage();
+          yPos = margin; // Reset yPos for new page
+          signatureY = pageHeight - margin - signatureHeight;
+        }
+
+        pdf.addImage(signatureData, 'PNG', signatureX, signatureY, signatureWidth, signatureHeight);
+        pdf.setFontSize(10);
+        pdf.setTextColor(51, 51, 51);
+        pdf.text(`Signature de ${userFirstName}`, signatureX + signatureWidth / 2, signatureY + signatureHeight + 5, { align: 'center' });
+      }
+
+
+      const monthYear = format(month, "MMMM_yyyy", { locale: fr });
+      pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
+      showMessage("PDF généré avec succès !", "success");
+    } catch (error) {
+      console.error("PDF Generation Error (Detailed): ", error);
+      showMessage(`Une erreur est survenue lors de la génération du PDF: ${error.message || error}.`, "error");
+    }
+  };
+
+
   return (
-    <div className="fixed inset-0" style={{ backgroundColor: 'rgba(100, 100, 100, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 50, padding: '1rem', overflowY: 'auto' }}>
-      <div ref={reportRef} style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '64rem', maxHeight: '90vh', overflowY: 'auto', position: 'relative', padding: '1.5rem' }}>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4 overflow-y-auto">
+      <div ref={reportRef} className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative p-6 sm:p-8">
         <button
           onClick={onClose}
-          style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', color: '#9ca3af', fontSize: '1.5rem', fontWeight: 'bold' }}
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
         >
           &times;
         </button>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1.5rem', textAlign: 'center' }}>
-          Rapport de Synthèse - {monthName}
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+          Rapport de Synthèse - {monthName} ({userFirstName})
         </h2>
 
-        <div style={{ marginBottom: '1.5rem' }}>
+        {/* Section de la signature */}
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">Signature</h3>
+          {isSignatureLoading ? (
+            <p className="text-gray-600">Chargement de la signature...</p>
+          ) : (
+            <>
+              <div className="border border-gray-300 rounded-md bg-white overflow-hidden" style={{ width: '100%', height: '150px' }}>
+                <canvas
+                  ref={signatureCanvasRef}
+                  width={400} // Increased canvas resolution for better quality
+                  height={150}
+                  className="w-full h-full"
+                  style={{ touchAction: 'none' }} // Prevent scrolling on touch
+                ></canvas>
+              </div>
+              <div className="flex justify-end space-x-2 mt-3">
+                <button
+                  onClick={clearSignature}
+                  className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors duration-200"
+                >
+                  Effacer Signature
+                </button>
+                <button
+                  onClick={saveSignature}
+                  className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors duration-200"
+                >
+                  Enregistrer Signature
+                </button>
+              </div>
+              {signatureData && (
+                <p className="text-sm text-gray-600 mt-2 text-right">Signature chargée. Dessinez pour la modifier ou effacez-la.</p>
+              )}
+            </>
+          )}
+        </div>
+
+
+        <div className="space-y-6">
           {/* Section Informations Générales */}
-          <div style={{ backgroundColor: '#eff6ff', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #bfdbfe' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#1e40af', marginBottom: '0.5rem' }}>Informations Générales</h3>
-            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Mois du rapport :</strong> {monthName}</p>
-            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime} jours</p>
-            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth} jours</p>
-            <p style={{ marginBottom: '0.25rem' }}><strong style={{ fontWeight: 'bold' }}>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <h3 className="text-lg font-semibold text-blue-800 mb-2">Informations Générales</h3>
+            <p><strong>Mois du rapport :</strong> {monthName}</p>
+            <p><strong>Total jours ouvrés dans le mois :</strong> {totalWorkingDays} jours</p>
+            <p><strong>Total jours d'activités sur jours ouvrés :</strong> {totalWorkingDaysActivitiesTime.toFixed(1)} jours</p>
+            <p><strong>Total jours de congés payés :</strong> {totalPaidLeaveDaysInMonth.toFixed(1)} jours</p>
+            <p><strong>Jours non ouvrés travaillés :</strong> {nonWorkingDaysWorked.toFixed(1)} jours</p>
+            <p><strong>Heures Supplémentaires :</strong> {totalOvertimeHours.toFixed(1)} jours</p>
+            <p><strong>Écart (Activités - Jours ouvrés) :</strong> {timeDifference} jours</p>
           </div>
 
           {/* Section Détail des Activités */}
-          <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', marginTop: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '0.5rem' }}>Détail des Activités</h3>
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Détail des Activités</h3>
             {allDaysWithActivities.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="space-y-4">
+                {/* The grouping logic is now in the handleDownloadPdf function */}
                 {allDaysWithActivities.map(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => (
-                  <div key={format(day, 'yyyy-MM-dd')} style={{ padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.375rem', backgroundColor: '#ffffff', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
-                    <p style={{ fontWeight: 'bold', color: '#1f2937', marginBottom: '0.25rem' }}>
-                      {format(day, "EEEE dd MMMM yyyy", { locale: fr })} ({totalDailyTime}j)
-                      {isWeekendDay && <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem', color: '#6b7280' }}>(Week-end)</span>}
-                      {isPublicHoliday(day) && <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem', color: '#6b7280' }}>(Jour Férié)</span>}
+                  <div key={format(day, 'yyyy-MM-dd')} className="p-3 border border-gray-200 rounded-md bg-white shadow-sm">
+                    <p className="font-bold text-gray-800 mb-1">
+                      {format(day, "EEEE dd MMMM yyyy", { locale: fr })} ({totalDailyTime.toFixed(1)}j)
+                      {isWeekendDay && <span className="ml-2 text-sm text-gray-500">(Week-end)</span>}
+                      {isPublicHoliday(day) && <span className="ml-2 text-sm text-gray-500">(Jour Férié)</span>}
                     </p>
-                    <ul style={{ listStyleType: 'disc', paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', color: '#4b5563' }}>
-                      {dailyActivities.map((activity) => {
-                        const clientName = getClientName(activity.client_id);
-                        const activityTypeName = getActivityTypeName(activity.type_activite);
-                        
-                        let activityLineBgColor = '#eff6ff'; // Default (blue-50)
-                        let activityLineTextColor = '#1e40af'; // Default (blue-800)
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                      {dailyActivities.length > 0 ? (
+                        dailyActivities.map((activity) => {
+                          const clientName = getClientName(activity.client_id);
+                          const activityTypeName = getActivityTypeName(activity.type_activite);
+                          const isLeaveActivity = String(activity.type_activite) === String(paidLeaveTypeId);
 
-                        if (String(activity.type_activite) === String(paidLeaveTypeId)) {
-                          activityLineBgColor = 'transparent'; // No specific background for leave
-                          activityLineTextColor = '#4b5563'; // Revert to default text color
-                        }
+                          let activityLineBgClass = 'bg-blue-50';
+                          let activityLineTextColorClass = 'text-blue-800';
 
-                        return (
-                          <li key={activity.id} style={{ display: 'flex', flexWrap: 'wrap', padding: '0.25rem', borderRadius: '0.125rem', backgroundColor: activityLineBgColor, color: activityLineTextColor }}>
-                            <span style={{ fontWeight: 'medium' }}>{activityTypeName} ({parseFloat(activity.temps_passe) || 0}j)</span>
-                            {/* Conditionnel pour afficher le client et le tiret précédent */}
-                            {clientName !== "Client Inconnu" && (
-                              <>
-                                <span style={{ margin: '0 0.25rem' }}>-</span>
-                                <span>Client: {clientName}</span>
-                              </>
-                            )}
-                            <span style={{ margin: '0 0.25rem' }}>-</span>
+                          if (isLeaveActivity) {
+                            activityLineBgClass = 'bg-green-100'; // Light green for leaves
+                            activityLineTextColorClass = 'text-green-800'; // Dark green for leaves
+                          }
 
-                            {activity.description && (
-                              <>
-                                <span style={{ margin: '0 0.25rem' }}>-</span>
-                                <span style={{ fontStyle: 'italic' }}>"{activity.description}"</span>
-                              </>
-                            )}
-                          </li>
-                        );
-                      })}
+                          return (
+                            <li key={activity.id} className={`flex flex-wrap p-1 rounded-sm ${activityLineBgClass} ${activityLineTextColorClass}`}>
+                              <span className="font-medium">{activityTypeName} ({parseFloat(activity.temps_passe).toFixed(1)}j)</span>
+                              {clientName !== "Client Inconnu" && (
+                                <>
+                                  <span className="mx-1">-</span>
+                                  <span>Client: {clientName}</span>
+                                </>
+                              )}
+                              {activity.description && (
+                                <>
+                                  <span className="mx-1">-</span>
+                                  <span className="italic">"{activity.description}"</span>
+                                </>
+                              )}
+                            </li>
+                          );
+                        })
+                      ) : (
+                        <li className="text-gray-500 italic">Aucune activité enregistrée</li>
+                      )}
                     </ul>
                   </div>
                 ))}
               </div>
             ) : (
-              <p style={{ color: '#6b7280', fontStyle: 'italic' }}>Aucune activité enregistrée pour ce mois.</p>
+              <p className="text-gray-500 italic">Aucune activité enregistrée pour ce mois.</p>
             )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', gap: '0.75rem' }}>
+        <div className="flex justify-end mt-6 space-x-3">
           <button
             onClick={handleDownloadPdf}
-            className="do-not-print" // Garde la classe pour l'ignorer lors de la capture
-            style={{ backgroundColor: '#dc2626', color: '#ffffff', fontWeight: 'bold', padding: '0.5rem 1rem', borderRadius: '0.5rem', outline: 'none', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)', transitionProperty: 'background-color', transitionDuration: '200ms' }}
-            onMouseOver={e => e.currentTarget.style.backgroundColor = '#b91c1c'}
-            onMouseOut={e => e.currentTarget.style.backgroundColor = '#dc2626'}
+            className="bg-red-600 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200 do-not-print"
           >
             Télécharger PDF
           </button>
           <button
             onClick={onClose}
-            style={{ backgroundColor: '#d1d5db', color: '#1f2937', fontWeight: 'bold', padding: '0.5rem 1rem', borderRadius: '0.5rem', outline: 'none', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)', transitionProperty: 'background-color', transitionDuration: '200ms' }}
-            onMouseOver={e => e.currentTarget.style.backgroundColor = '#9ca3af'}
-            onMouseOut={e => e.currentTarget.style.backgroundColor = '#d1d5db'}
+            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200"
           >
             Fermer
           </button>

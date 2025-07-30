@@ -302,20 +302,18 @@
     }, [craReportStatus, paidLeaveReportStatus]);
 
     const overallRejectionReason = useMemo(() => {
-      if (
-        craReportStatus === "rejected" &&
-        craReport &&
-        craReport.rejection_reason
-      )
-        return craReport.rejection_reason;
-      if (
-        paidLeaveReportStatus === "rejected" &&
-        paidLeaveReport &&
-        paidLeaveReport.rejection_reason
-      )
-        return paidLeaveReport.rejection_reason;
-      return null;
+      let reason = null;
+      if (craReportStatus === "rejected" && craReport && craReport.rejection_reason) {
+        reason = craReport.rejection_reason;
+        console.log("[CraBoard - overallRejectionReason] Raison CRA trouvée:", reason);
+      } else if (paidLeaveReportStatus === "rejected" && paidLeaveReport && paidLeaveReport.rejection_reason) {
+        reason = paidLeaveReport.rejection_reason;
+        console.log("[CraBoard - overallRejectionReason] Raison Congés Payés trouvée:", reason);
+      }
+      console.log("[CraBoard - overallRejectionReason] Résultat final:", reason);
+      return reason;
     }, [craReportStatus, paidLeaveReportStatus, craReport, paidLeaveReport]);
+  
 
     // Déterminer si les activités CRA sont éditables
     const isCraEditable = useMemo(() => {
@@ -353,7 +351,9 @@
       "[CraBoard] Current Report Status (Paid Leave):",
       paidLeaveReportStatus
     );
-
+    console.log("[DEBUG CraBoard] overallReportStatus:", overallReportStatus);
+    console.log("[DEBUG CraBoard] overallRejectionReason:", overallRejectionReason);
+  
     const daysInMonth = useMemo(() => {
       const start = startOfMonth(currentMonth);
       const end = endOfMonth(currentMonth);
@@ -1428,18 +1428,6 @@
           localShowMessage(
             "Impossible de démarrer une sélection multiple de congés payés. Le rapport de congés payés est verrouillé.",
             "info"
-          );
-          return;
-        }
-
-        // Autoriser le démarrage de la sélection multiple UNIQUEMENT si le jour est un jour ouvré (sauf si c'est le mode congé payé)
-        if (multiSelectType === "activity" && isNonWorkingDay(day)) {
-          localShowMessage(
-            "Impossible de démarrer une sélection multiple d'activité sur un week-end ou jour férié. Changez de mode ou choisissez un jour ouvré.",
-            "info"
-          );
-          console.log(
-            "[CraBoard - handleMouseDownMultiSelect] Bloqué par un jour non ouvré pour la multi-sélection d'activité."
           );
           return;
         }

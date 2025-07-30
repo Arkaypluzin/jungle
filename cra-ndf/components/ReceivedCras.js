@@ -107,6 +107,7 @@ export default function ReceivedCras({
       if (data && Array.isArray(data.data)) {
         const processedReports = data.data.map((report) => {
           // Normaliser rejectionReason/rejection_reason pour l'affichage dans le tableau
+          // Ceci est pour la liste des rapports dans ReceivedCras, pas pour le CraBoard modal
           if (
             report.status === "rejected" &&
             report.rejectionReason &&
@@ -328,44 +329,26 @@ export default function ReceivedCras({
         );
         console.log("--- FIN DIAGNOSTIC API BRUTE ---");
 
-        // Déterminer la raison de rejet à passer, en priorisant rejectionReason (camelCase) si le rapport est rejeté
-        const computedRejectionReason =
-          detailedReport.status === "rejected"
-            ? detailedReport.rejectionReason ||
-              detailedReport.rejection_reason ||
-              null
-            : null;
-
-        // Normaliser detailedReport pour l'affichage dans le tableau si nécessaire
-        // (Ceci est pour le cas où detailedReport serait utilisé ailleurs dans ReceivedCras,
-        // mais pour le CraBoard, nous utilisons computedRejectionReason directement)
-        if (
-          detailedReport.status === "rejected" &&
-          detailedReport.rejectionReason &&
-          !detailedReport.rejection_reason
-        ) {
-          detailedReport = {
-            ...detailedReport,
-            rejection_reason: detailedReport.rejectionReason,
-          };
-        } else if (
-          detailedReport.status === "rejected" &&
-          detailedReport.rejection_reason === undefined &&
-          detailedReport.rejectionReason
-        ) {
-          detailedReport = {
-            ...detailedReport,
-            rejection_reason: detailedReport.rejectionReason,
-          };
-        } else if (
-          detailedReport.status !== "rejected" &&
-          detailedReport.rejection_reason !== null
-        ) {
-          detailedReport = {
-            ...detailedReport,
-            rejection_reason: null,
-          };
+        // Normalisation de la raison de rejet sur l'objet detailedReport lui-même
+        if (detailedReport.status === "rejected") {
+          let reasonValue = detailedReport.rejectionReason || detailedReport.rejection_reason;
+          if (reasonValue === "nul") { // Gérer la chaîne "nul" en la convertissant en null
+            reasonValue = null;
+          }
+          // Assigner la raison normalisée à la propriété snake_case pour la cohérence
+          detailedReport.rejection_reason = reasonValue;
+          // Assurer que la propriété camelCase est également cohérente si elle est la source primaire
+          if (detailedReport.rejectionReason && detailedReport.rejectionReason !== reasonValue) {
+              detailedReport.rejectionReason = reasonValue;
+          }
+        } else {
+          // Si le rapport n'est pas rejeté, s'assurer qu'aucune raison de rejet n'est présente
+          detailedReport.rejection_reason = null;
+          detailedReport.rejectionReason = null;
         }
+
+        // computedRejectionReason est maintenant simplement la valeur normalisée
+        const computedRejectionReason = detailedReport.rejection_reason;
 
         console.log(
           "--- DIAGNOSTIC RAISON DE REJET (handleViewCra APRÈS NORMALISATION) ---"
@@ -379,7 +362,7 @@ export default function ReceivedCras({
           detailedReport.rejection_reason
         );
         console.log(
-          "Computed rejectionReason pour prop:",
+          "Computed rejectionReason pour prop (should be same as detailedReport.rejection_reason):",
           computedRejectionReason
         );
         console.log(

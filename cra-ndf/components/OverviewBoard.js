@@ -15,8 +15,6 @@ import {
   subMonths,
   startOfWeek,
   endOfWeek,
-  addWeeks,
-  subWeeks,
   addDays,
   subDays,
   parseISO,
@@ -29,8 +27,13 @@ export default function OverviewBoard({
   activityTypeDefinitions,
   clientDefinitions,
   showMessage,
-  userRole, 
+  userRole,
 }) {
+  // LOG IMMÉDIAT : Vérifier la prop activityTypeDefinitions dès le début
+  console.log("--- activityTypeDefinitions (LOG IMMÉDIAT) ---");
+  console.log(JSON.stringify(activityTypeDefinitions, null, 2));
+  console.log("--- Fin activityTypeDefinitions (LOG IMMÉDIAT) ---");
+
   // Tous les appels useState au tout début
   const [loading, setLoading] = useState(true);
   const [allActivities, setAllActivities] = useState([]);
@@ -39,7 +42,7 @@ export default function OverviewBoard({
   const [viewMode, setViewMode] = useState("month"); // 'month', 'week', 'day'
   const [publicHolidays, setPublicHolidays] = useState([]);
   const [allMonthlyReports, setAllMonthlyReports] = useState([]);
-  
+
   // État pour le filtre utilisateur global (tableau d'IDs pour multi-sélection)
   const [selectedUserIdsFilter, setSelectedUserIdsFilter] = useState([]);
 
@@ -62,12 +65,31 @@ export default function OverviewBoard({
   }, [allUsers, selectedUserIdsFilter]);
 
 
-  const paidLeaveTypeId = useMemo(() => {
-    const type = activityTypeDefinitions.find(
-      (t) => t.name && t.name.toLowerCase().includes("congé payé")
-    );
-    return type ? type.id : null;
+  // MODIFICATION ICI: Collecter TOUS les IDs de types d'activités liés aux congés/absences
+  const leaveActivityTypeIds = useMemo(() => {
+    // Liste plus complète et robuste de mots-clés pour les congés et absences
+    const leaveKeywords = [
+      "congé", "absence", "maladie", "formation", "vacances",
+      "rtt", "arrêt", "maternité", "paternité", "familial",
+      "exceptionnel", "ferié", "férié", "repos", "indisponibilité"
+    ];
+    const ids = new Set();
+
+    if (!activityTypeDefinitions || activityTypeDefinitions.length === 0) {
+      console.warn("leaveActivityTypeIds: activityTypeDefinitions est vide ou non défini. Impossible d'identifier les types de congés.");
+      return ids;
+    }
+
+    activityTypeDefinitions.forEach(type => {
+      // Vérifier si le nom existe et si l'un des mots-clés est inclus (insensible à la casse)
+      if (type.name && leaveKeywords.some(keyword => type.name.toLowerCase().includes(keyword.toLowerCase()))) {
+        ids.add(type.id);
+      }
+    });
+    console.log("leaveActivityTypeIds: IDs de types d'activités de congé/absence identifiés:", Array.from(ids));
+    return ids;
   }, [activityTypeDefinitions]);
+
 
   const fetchAndParse = useCallback(async (url, resourceName, options = {}) => {
     const res = await fetch(url, options);
@@ -114,6 +136,9 @@ export default function OverviewBoard({
         id: user.azureAdUserId,
         name: user.fullName,
       }));
+      console.log("--- fetchAllUsers: Utilisateurs formatés chargés ---");
+      formattedUsers.forEach(user => console.log(`  User ID: ${user.id}, Name: ${user.name}`));
+      console.log("--- Fin fetchAllUsers ---");
       return formattedUsers;
     } catch (err) {
       console.error("OverviewBoard: Erreur lors du chargement des utilisateurs:", err);
@@ -148,6 +173,9 @@ export default function OverviewBoard({
             };
           })
           .filter((activity) => activity.date_activite !== null);
+        console.log("--- fetchActivitiesForRange: Activités traitées chargées ---");
+        processedActivities.forEach(activity => console.log(`  Activity ID: ${activity.id}, User ID: ${activity.userAzureAdId || activity.user_id}, Date: ${activity.date_activite ? format(activity.date_activite, 'yyyy-MM-dd') : 'N/A'}, Type: ${activity.type_activite}, Status: ${activity.status}`));
+        console.log("--- Fin fetchActivitiesForRange ---");
         return processedActivities;
       } catch (err) {
         console.error("OverviewBoard: Erreur lors du chargement des activités globales:", err);
@@ -279,7 +307,7 @@ export default function OverviewBoard({
         );
         setAllActivities(activitiesData);
         console.log("useEffect: Activités initiales chargées:", activitiesData.length);
-        
+
         await fetchPublicHolidays(currentViewStart.getFullYear());
         console.log("useEffect: Jours fériés chargés.");
 
@@ -300,7 +328,19 @@ export default function OverviewBoard({
     fetchActivitiesForRange,
     fetchPublicHolidays,
     fetchAllMonthlyReports,
-  ]); // Dépendances minimales pour le chargement initial
+    // activityTypeDefinitions // Garder cette dépendance pour que le useMemo leaveActivityTypeIds se recalcule si activityTypeDefinitions change
+  ]);
+
+  // NOUVEL EFFET : Pour s'assurer que activityTypeDefinitions est loggé quand il est disponible
+  useEffect(() => {
+    if (activityTypeDefinitions && activityTypeDefinitions.length > 0) {
+      console.log("--- activityTypeDefinitions (useEffect) ---");
+      console.log(JSON.stringify(activityTypeDefinitions, null, 2));
+      console.log("--- Fin activityTypeDefinitions (useEffect) ---");
+    } else {
+      console.log("--- activityTypeDefinitions (useEffect) --- : Pas encore disponible ou vide.");
+    }
+  }, [activityTypeDefinitions]);
 
 
   const activitiesByDayAndUser = useMemo(() => {
@@ -345,11 +385,19 @@ export default function OverviewBoard({
 
   // NOUVEAU USEMEMO: Résumé des jours de congés pris par plusieurs personnes pour la période affichée
   const multiPersonLeaveDaysSummary = useMemo(() => {
-    console.log("multiPersonLeaveDaysSummary useMemo: Début du calcul pour la vue actuelle.");
+    console.log("--- Début du calcul multiPersonLeaveDaysSummary ---");
+    console.log("  Filtre de statut sélectionné (commonLeaveStatusFilter):", commonLeaveStatusFilter);
+    console.log("  Afficher congés communs seulement (showCommonLeavesOnly):", showCommonLeavesOnly);
+    console.log("  Nombre total d'activités (allActivities.length):", allActivities.length);
+    console.log("  IDs des types de congé/absence (leaveActivityTypeIds):", Array.from(leaveActivityTypeIds));
+    console.log("  Utilisateurs chargés (allUsers.length):", allUsers.length);
+    // console.log("  IDs des utilisateurs chargés:", allUsers.map(u => u.id));
+
+
     const leaveDaysByDate = new Map(); // Map<dateKey (YYYY-MM-DD), Set<userId>>
 
-    if (!paidLeaveTypeId) {
-      console.warn("multiPersonLeaveDaysSummary: paidLeaveTypeId non défini.");
+    if (leaveActivityTypeIds.size === 0) {
+      console.warn("multiPersonLeaveDaysSummary: Aucun type d'activité de congé/absence identifié. Le résumé des congés sera vide.");
       return [];
     }
 
@@ -360,60 +408,88 @@ export default function OverviewBoard({
     } else {
       statusesToInclude.push(commonLeaveStatusFilter);
     }
-    console.log(`  Filtre de statut des congés communs: ${commonLeaveStatusFilter}. Statuts inclus: ${statusesToInclude.join(', ')}`);
+    console.log(`  Statuts inclus pour le filtre: [${statusesToInclude.join(', ')}]`);
+
+    // Première passe: itérer sur TOUTES les activités pour trouver les congés pertinents
+    allActivities.forEach(activity => {
+      const isLeaveActivity = leaveActivityTypeIds.has(String(activity.type_activite));
+      const isValidDate = isValid(activity.date_activite);
+      const userId = activity.userAzureAdId || activity.user_id;
+      const hasUserId = !!userId; // Convertir en booléen
+      const statusMatches = statusesToInclude.includes(activity.status);
+      const dateKey = activity.date_activite ? format(activity.date_activite, "yyyy-MM-dd") : 'Invalid Date';
+
+      // Log détaillé pour chaque activité examinée
+      console.log(`    Examinant activité ID: ${activity.id || 'N/A'}, Date: ${dateKey}, User ID: ${userId || 'N/A'}, Status: ${activity.status}, Type: ${activity.type_activite}`);
+      console.log(`      Conditions: IsLeaveActivity=${isLeaveActivity}, IsValidDate=${isValidDate}, HasUserId=${hasUserId}, StatusMatches=${statusMatches}`);
 
 
-    // Parcourir les jours de la vue actuelle (mois, semaine, jour)
-    daysInView.forEach(day => {
-      allUsers.forEach(user => {
-        const dateKey = format(day, "yyyy-MM-dd");
-        const activitiesForUserDay = activitiesByDayAndUser.get(user.id)?.get(dateKey) || [];
-        
-        activitiesForUserDay.forEach(activity => {
-          // Vérifier si c'est une activité de congé payé, si la date est valide, et si le statut correspond au filtre
-          if (
-            String(activity.type_activite) === String(paidLeaveTypeId) &&
-            isValid(activity.date_activite) &&
-            (activity.userAzureAdId || activity.user_id) &&
-            statusesToInclude.includes(activity.status) // Applique le filtre de statut
-          ) {
-            const userId = activity.userAzureAdId || activity.user_id;
+      if (isLeaveActivity && isValidDate && hasUserId && statusMatches) {
+        // Vérifier si l'utilisateur de l'activité est dans la liste allUsers
+        const userExistsInAllUsers = allUsers.some(u => String(u.id) === String(userId));
+        console.log(`      Vérification utilisateur: User ID ${userId} existe dans allUsers? ${userExistsInAllUsers}`);
 
-            if (!leaveDaysByDate.has(dateKey)) {
-              leaveDaysByDate.set(dateKey, new Set());
-            }
-            leaveDaysByDate.get(dateKey).add(userId);
+        if (userExistsInAllUsers) {
+          if (!leaveDaysByDate.has(dateKey)) {
+            leaveDaysByDate.set(dateKey, new Set());
           }
-        });
-      });
-    });
-
-    const summary = [];
-    leaveDaysByDate.forEach((userIdsSet, dateKey) => {
-      // Logique de bascule pour les congés communs ou individuels
-      if (showCommonLeavesOnly) {
-        if (userIdsSet.size > 1) { // Congés communs (plus d'une personne)
-          summary.push({
-            date: parseISO(dateKey),
-            userIds: Array.from(userIdsSet), // Stocke les IDs des utilisateurs pour l'affichage
-          });
+          leaveDaysByDate.get(dateKey).add(userId);
+          console.log(`      -> Ajouté : Jour ${dateKey}, Utilisateur ${userId}. Set actuel: [${Array.from(leaveDaysByDate.get(dateKey)).join(', ')}]`);
+        } else {
+          console.warn(`    WARNING: Activité de congé (${activity.id}) pour utilisateur INCONNU (${userId}) à la date ${dateKey}. Cette activité sera ignorée pour le résumé des congés.`);
         }
       } else {
-        if (userIdsSet.size === 1) { // Congés individuels (exactement une personne)
-          summary.push({
-            date: parseISO(dateKey),
-            userIds: Array.from(userIdsSet),
-          });
-        }
+        // console.log(`    Activité ID: ${activity.id || 'N/A'} ignorée car ne correspond pas aux critères de congé filtré.`);
       }
     });
 
-    // Trier le résumé par date (du plus ancien au plus nouveau)
+    console.log("  leaveDaysByDate après agrégation (clé: date, valeur: [userIds]):", Object.fromEntries(
+      Array.from(leaveDaysByDate.entries()).map(([date, userSet]) => [date, Array.from(userSet)])
+    ));
+
+
+    const summary = [];
+    // Deuxième passe: itérer sur les jours de la vue actuelle et appliquer la logique commun/individuel
+    daysInView.forEach(day => {
+      const dateKey = format(day, "yyyy-MM-dd");
+      const userIdsSet = leaveDaysByDate.get(dateKey);
+
+      console.log(`  Traitement du jour de la vue: ${dateKey}. Set d'utilisateurs pour ce jour: ${userIdsSet ? Array.from(userIdsSet).join(', ') : 'Aucun'}. Taille: ${userIdsSet ? userIdsSet.size : 0}`);
+
+      if (userIdsSet) {
+        if (showCommonLeavesOnly) {
+          if (userIdsSet.size > 1) { // Congés communs (plus d'une personne)
+            console.log(`    Jour ${dateKey} est un congé COMMUN (taille: ${userIdsSet.size}). Ajouté au résumé.`);
+            summary.push({
+              date: day, // Utilise l'objet Date réel de daysInView
+              userIds: Array.from(userIdsSet),
+            });
+          } else {
+            console.log(`    Jour ${dateKey} n'est PAS un congé COMMUN (taille: ${userIdsSet.size}).`);
+          }
+        } else {
+          if (userIdsSet.size === 1) { // Congés individuels (exactement une personne)
+            console.log(`    Jour ${dateKey} est un congé INDIVIDUEL (taille: ${userIdsSet.size}). Ajouté au résumé.`);
+            summary.push({
+              date: day, // Utilise l'objet Date réel de daysInView
+              userIds: Array.from(userIdsSet),
+            });
+          } else {
+            console.log(`    Jour ${dateKey} n'est PAS un congé INDIVIDUEL (taille: ${userIdsSet.size}).`);
+          }
+        }
+      } else {
+        console.log(`    Jour ${dateKey} n'a PAS de congés filtrés.`);
+      }
+    });
+
+    // Trier le résumé par date
     summary.sort((a, b) => a.date.getTime() - b.date.getTime());
 
+    console.log("--- Fin du calcul multiPersonLeaveDaysSummary ---");
     console.log("multiPersonLeaveDaysSummary (résultat final):", summary);
     return summary;
-  }, [activitiesByDayAndUser, daysInView, paidLeaveTypeId, allUsers, commonLeaveStatusFilter, showCommonLeavesOnly]); // Ajout de showCommonLeavesOnly comme dépendance
+  }, [allActivities, daysInView, leaveActivityTypeIds, allUsers, commonLeaveStatusFilter, showCommonLeavesOnly]);
 
 
   // NOUVEAU USEMEMO: Calcul des résumés d'activités par utilisateur pour la période affichée
@@ -422,7 +498,7 @@ export default function OverviewBoard({
     const summaries = new Map();
 
     // Calculer le nombre total de jours ouvrés dans la période de vue actuelle
-    const workingDaysCount = daysInView.filter(day => 
+    const workingDaysCount = daysInView.filter(day =>
       !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
     ).length;
     console.log(`  Calculated total working days in view: ${workingDaysCount}`);
@@ -436,7 +512,7 @@ export default function OverviewBoard({
             draftLeaveDays: 0, // Congés brouillons (status: 'draft')
             rejectedLeaveDays: 0, // Congés refusés (status: 'rejected')
             billableDays: 0,
-            overtimeDays: 0, 
+            overtimeDays: 0,
             totalWorkingDaysInView: workingDaysCount, // Ajout du nouveau champ
         });
     });
@@ -450,52 +526,53 @@ export default function OverviewBoard({
             if (userSummary) {
                 activitiesForUserDay.forEach(activity => {
                     const activityTypeObj = activityTypeDefinitions.find(
-                        (type) => String(type.id) === String(activity.type_activite)
+                      (type) => String(type.id) === String(activity.type_activite)
                     );
-                    const tempsPasse = parseFloat(activity.temps_passe) || 0; 
+                    const tempsPasse = parseFloat(activity.temps_passe) || 0;
 
-                    const isPaidLeave = String(activity.type_activite) === String(paidLeaveTypeId);
+                    // MODIFICATION ICI: Utiliser leaveActivityTypeIds pour vérifier si c'est une activité de congé
+                    const isLeaveActivity = leaveActivityTypeIds.has(String(activity.type_activite));
                     const isAbsence = activityTypeObj?.name?.toLowerCase().includes("absence");
                     const isOvertime = activityTypeObj?.is_overtime;
 
-                    console.log(`--- Activity Debug ---`);
-                    console.log(`  Activity ID: ${activity.id}, User: ${user.name}, Date: ${dateKey}`);
-                    console.log(`  Type: ${activityTypeObj?.name || 'Unknown'}, Status: ${activity.status}, Temps Passé: ${tempsPasse}`);
-                    console.log(`  Is Paid Leave: ${isPaidLeave}`);
+                    // console.log(`--- Activity Debug ---`);
+                    // console.log(`  Activity ID: ${activity.id}, User: ${user.name}, Date: ${dateKey}`);
+                    // console.log(`  Type: ${activityTypeObj?.name || 'Unknown'}, Status: ${activity.status}, Temps Passé: ${tempsPasse}`);
+                    // console.log(`  Is Leave Activity: ${isLeaveActivity}`);
 
                     // Jours de congés
-                    if (isPaidLeave) {
+                    if (isLeaveActivity) { // Utiliser isLeaveActivity ici
                         if (activity.status === "validated") {
                             userSummary.leaveDays += tempsPasse;
-                            console.log(`  -> Categorized as VALIDATED. Current leaveDays: ${userSummary.leaveDays}`);
+                            // console.log(`  -> Categorized as VALIDATED. Current leaveDays: ${userSummary.leaveDays}`);
                         } else if (activity.status === "pending_review") {
                             userSummary.pendingReviewLeaveDays += tempsPasse;
-                            console.log(`  -> Categorized as PENDING_REVIEW. Current pendingReviewLeaveDays: ${userSummary.pendingReviewLeaveDays}`);
+                            // console.log(`  -> Categorized as PENDING_REVIEW. Current pendingReviewLeaveDays: ${userSummary.pendingReviewLeaveDays}`);
                         } else if (activity.status === "draft") {
                             userSummary.draftLeaveDays += tempsPasse;
-                            console.log(`  -> Categorized as DRAFT. Current draftLeaveDays: ${userSummary.draftLeaveDays}`);
+                            // console.log(`  -> Categorized as DRAFT. Current draftLeaveDays: ${userSummary.draftLeaveDays}`);
                         } else if (activity.status === "rejected") {
                             userSummary.rejectedLeaveDays += tempsPasse;
-                            console.log(`  -> Categorized as REJECTED. Current rejectedLeaveDays: ${userSummary.rejectedLeaveDays}`);
+                            // console.log(`  -> Categorized as REJECTED. Current rejectedLeaveDays: ${userSummary.rejectedLeaveDays}`);
                         } else {
-                            console.log(`  -> Paid leave with unexpected status: ${activity.status}`);
+                            // console.log(`  -> Leave activity with unexpected status: ${activity.status}`);
                         }
                     } else {
                         // Heures supp (en jours)
                         if (isOvertime) {
                             userSummary.overtimeDays += tempsPasse;
-                            console.log(`  -> Added ${tempsPasse} to overtimeDays. Current: ${userSummary.overtimeDays}`);
+                            // console.log(`  -> Added ${tempsPasse} to overtimeDays. Current: ${userSummary.overtimeDays}`);
                         }
 
                         // Jours facturables (utilise maintenant is_billable du type d'activité)
-                        if (activityTypeObj?.is_billable) { 
+                        if (activityTypeObj?.is_billable) {
                             userSummary.billableDays += tempsPasse;
-                            console.log(`  -> Added ${tempsPasse} to billableDays. Current: ${userSummary.billableDays}`);
+                            // console.log(`  -> Added ${tempsPasse} to billableDays. Current: ${userSummary.billableDays}`);
                         }
                         // Note: totalAccountedDays n'est plus affiché directement dans le résumé,
                         // mais la logique de calcul peut être conservée si nécessaire pour d'autres usages.
                         if (!isAbsence) {
-                            console.log(`  -> Activity is not absence, accounted for. (Not directly shown in summary)`);
+                            // console.log(`  -> Activity is not absence, accounted for. (Not directly shown in summary)`);
                         }
                     }
                 });
@@ -506,7 +583,7 @@ export default function OverviewBoard({
     const result = Array.from(summaries.values());
     console.log("userActivitySummaries (résultat final):", result);
     return result;
-  }, [allUsers, activitiesByDayAndUser, daysInView, paidLeaveTypeId, activityTypeDefinitions, isPublicHoliday]);
+  }, [allUsers, activitiesByDayAndUser, daysInView, leaveActivityTypeIds, activityTypeDefinitions, isPublicHoliday]);
 
 
   const navigateView = useCallback(
@@ -747,7 +824,7 @@ export default function OverviewBoard({
                       <div className="font-semibold">
                         {format(day, "EEE", { locale: fr })}
                       </div>
-                      <div className="font-semibold">{format(day, "d")}</div> 
+                      <div className="font-semibold">{format(day, "d")}</div>
                     </div>
                   );
                 })}
@@ -848,29 +925,29 @@ export default function OverviewBoard({
                     key={format(day, "yyyy-MM-dd")}
                     className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
                     title={
-                      isNonWorkingDay
-                        ? isWeekendDay && isHoliday
-                          ? "Week-end & Férié"
-                          : isWeekendDay
-                          ? "Week-end"
-                          : "Jour Férié"
-                        : ""
-                    }
+                        isNonWorkingDay
+                          ? isWeekendDay && isHoliday
+                            ? "Week-end & Férié"
+                            : isWeekendDay
+                            ? "Week-end"
+                            : "Jour Férié"
+                          : ""
+                      }
                   >
                     <div className="font-semibold">
                       {format(day, "EEE", { locale: fr })}
                     </div>
-                    <div className="font-semibold">{format(day, "d")}</div> 
+                    <div className="font-semibold">{format(day, "d")}</div>
                   </div>
                 );
               })}
             </div>
 
             {/* Rows for each user */}
-            {filteredUsersForCalendar.map((user) => { 
+            {filteredUsersForCalendar.map((user) => {
               const userSummary = userActivitySummaries.find(s => s.userId === user.id);
               return (
-                <div key={user.id} className="mb-4"> 
+                <div key={user.id} className="mb-4">
                   <div
                     className="grid grid-flow-col auto-cols-[100px] gap-1 mb-1"
                   >
@@ -926,14 +1003,12 @@ export default function OverviewBoard({
                                 let activityStatusIcon = "";
                                 let activityTitle = "";
 
-                                if (
-                                  String(activity.type_activite) ===
-                                  String(paidLeaveTypeId)
-                                ) {
+                                // MODIFICATION ICI: Utiliser leaveActivityTypeIds pour la coloration et les icônes
+                                if (leaveActivityTypeIds.has(String(activity.type_activite))) {
                                   if (activity.status === "pending_review") {
                                     activityColorClass = "bg-yellow-200 text-yellow-800";
                                     activityStatusIcon = "⏳";
-                                    activityTitle = "Congé en attente de révision"; 
+                                    activityTitle = "Congé en attente de révision";
                                   } else if (activity.status === "validated") {
                                     activityColorClass = "bg-green-200 text-green-800";
                                     activityStatusIcon = "✅";
@@ -948,7 +1023,7 @@ export default function OverviewBoard({
                                     activityTitle = "Congé brouillon";
                                   } else {
                                     activityColorClass = "bg-lime-200 text-lime-800";
-                                    activityTitle = "Congé payé";
+                                    activityTitle = "Congé"; // Généralisé
                                   }
                                 } else if (
                                   activityTypeLabel.toLowerCase().includes("absence")
