@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import CreateNdfModal from "@/components/NDF/NDF_ACTIONS/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
@@ -13,6 +13,68 @@ const MONTHS = [
   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
 ];
 
+// --- Composant MultiSelect pour Mois ---
+function MultiMonthSelect({ label, options, selected, setSelected }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+
+  // Fermer dropdown si click dehors
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (ref.current && !ref.current.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggleMonth = (month) => {
+    setSelected((prev) =>
+      prev.includes(month) ? prev.filter((m) => m !== month) : [...prev, month]
+    );
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <button
+        type="button"
+        className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 text-left"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {selected.length === 0 ? "Tous" : selected.join(", ")}
+        <span className="float-right">&#x25BC;</span>
+      </button>
+      {open && (
+        <div className="absolute z-10 mt-2 w-full bg-white border border-gray-300 rounded-md shadow-lg p-2 max-h-64 overflow-auto">
+          <div>
+            <label className="flex items-center cursor-pointer mb-1">
+              <input
+                type="checkbox"
+                checked={selected.length === 0}
+                onChange={() => setSelected([])}
+                className="mr-2"
+              />
+              Tous
+            </label>
+            {options.map((m) => (
+              <label key={m} className="flex items-center cursor-pointer mb-1">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(m)}
+                  onChange={() => toggleMonth(m)}
+                  className="mr-2"
+                />
+                {m}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ---
+
 export default function ClientAdminNdf() {
   const { data: session } = useSession();
   const [tab, setTab] = useState("mes");
@@ -20,14 +82,14 @@ export default function ClientAdminNdf() {
   const [loading, setLoading] = useState(true);
   const [filterYearPerso, setFilterYearPerso] = useState("");
   const [sortYearPerso, setSortYearPerso] = useState("desc");
-  const [filterMonthPerso, setFilterMonthPerso] = useState("");
+  const [filterMonthsPerso, setFilterMonthsPerso] = useState([]); // Multi-mois perso
   const [sortMonthPerso, setSortMonthPerso] = useState("asc");
   const [filterStatutPerso, setFilterStatutPerso] = useState("");
   const [allNdfs, setAllNdfs] = useState([]);
   const [loadingAll, setLoadingAll] = useState(true);
   const [filterYear, setFilterYear] = useState("");
   const [sortYear, setSortYear] = useState("desc");
-  const [filterMonth, setFilterMonth] = useState("");
+  const [filterMonths, setFilterMonths] = useState([]); // Multi-mois all
   const [sortMonth, setSortMonth] = useState("asc");
   const [filterUser, setFilterUser] = useState("");
   const [filterStatut, setFilterStatut] = useState("");
@@ -71,9 +133,11 @@ export default function ClientAdminNdf() {
   const yearOptionsPerso = Array.from(new Set(ndfList.map((n) => n.year))).sort((a, b) => b - a);
   const monthOptionsPerso = MONTHS.filter((m) => ndfList.some((ndf) => ndf.month === m));
   const statutOptionsPerso = ["Provisoire", "Déclaré", "Validé", "Remboursé"];
+
+  // ------ FILTRAGE avec MULTI-MOIS ------
   let filteredNdfList = ndfList
     .filter((ndf) => !filterYearPerso || String(ndf.year) === String(filterYearPerso))
-    .filter((ndf) => !filterMonthPerso || ndf.month === filterMonthPerso)
+    .filter((ndf) => filterMonthsPerso.length === 0 || filterMonthsPerso.includes(ndf.month))
     .filter((ndf) => !filterStatutPerso || ndf.statut === filterStatutPerso);
   filteredNdfList = filteredNdfList.sort((a, b) => {
     if (sortYearPerso === "asc") {
@@ -85,14 +149,17 @@ export default function ClientAdminNdf() {
     const idxB = MONTHS.indexOf(b.month);
     return sortMonthPerso === "asc" ? idxA - idxB : idxB - idxA;
   });
+  // ------
 
   const yearOptions = Array.from(new Set(allNdfs.map((n) => n.year))).sort((a, b) => b - a);
   const monthOptions = MONTHS.filter((m) => allNdfs.some((ndf) => ndf.month === m));
   const userOptions = Array.from(new Set(allNdfs.map((n) => n.name || n.user_id))).filter(Boolean).sort();
   const statutOptions = ["Déclaré", "Validé", "Remboursé"];
+
+  // ------ FILTRAGE avec MULTI-MOIS ------
   let filteredNdfs = allNdfs
     .filter((ndf) => !filterYear || String(ndf.year) === String(filterYear))
-    .filter((ndf) => !filterMonth || ndf.month === filterMonth)
+    .filter((ndf) => filterMonths.length === 0 || filterMonths.includes(ndf.month))
     .filter((ndf) => !filterUser || ndf.name === filterUser || ndf.user_id === filterUser)
     .filter((ndf) => !filterStatut || ndf.statut === filterStatut);
   filteredNdfs = filteredNdfs.sort((a, b) => {
@@ -105,18 +172,10 @@ export default function ClientAdminNdf() {
     const idxB = MONTHS.indexOf(b.month);
     return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
   });
+  // ------
 
-  // Additionne tout ce qui est à rembourser pour la recherche (onglet all)
-  const totalARembourserSomme = useMemo(() => {
-    return filteredNdfs.reduce(
-      (acc, ndf) =>
-        acc +
-        ((totaux[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)),
-      0
-    );
-  }, [filteredNdfs, totaux, indemnitesPerso]);
+  // ... Les useEffect pour les totaux restent inchangés ...
 
-  // Pour le total général (admin)
   useEffect(() => {
     let isMounted = true;
     async function getTotals() {
@@ -158,7 +217,6 @@ export default function ClientAdminNdf() {
     return () => { isMounted = false; };
   }, [JSON.stringify(filteredNdfs.map(ndf => ndf.uuid))]);
 
-  // Pour le total perso
   useEffect(() => {
     let isMounted = true;
     async function getTotalsPerso() {
@@ -209,7 +267,6 @@ export default function ClientAdminNdf() {
         if (!res.ok) continue;
         const rows = await res.json();
 
-        // Copié de NdfKiloTable.js :
         function calcIndemniteVoiture(cv, total) {
           total = parseFloat(total);
           if (isNaN(total) || !cv) return 0;
@@ -273,7 +330,6 @@ export default function ClientAdminNdf() {
           return 0;
         }
 
-        // Calcule la somme pour cette note de frais
         const totalIndemnites = rows.reduce(
           (acc, r) => acc + (parseFloat(calcIndemnite(r.type_vehicule, r.cv, r.total_euro)) || 0),
           0
@@ -314,6 +370,16 @@ export default function ClientAdminNdf() {
       </div>
     );
   }
+
+  // Pour le total général (admin)
+  const totalARembourserSomme = useMemo(() => {
+    return filteredNdfs.reduce(
+      (acc, ndf) =>
+        acc +
+        ((totaux[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)),
+      0
+    );
+  }, [filteredNdfs, totaux, indemnitesPerso]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
@@ -371,42 +437,13 @@ export default function ClientAdminNdf() {
                 </div>
               </div>
               <div className="flex-grow">
-                <label htmlFor="filterMonthPerso" className="block text-sm font-medium text-gray-700 mb-1">Mois</label>
-                <div className="flex items-center">
-                  <select
-                    id="filterMonthPerso"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterMonthPerso}
-                    onChange={(e) => setFilterMonthPerso(e.target.value)}
-                  >
-                    <option value="">Tous</option>
-                    {monthOptionsPerso.map((m, idx) => (
-                      <option key={`${m}-${idx}`} value={m}>{m}</option>
-                    ))}
-                  </select>
-                  <button
-                    className={`ml-2 p-2 rounded-full transition-colors duration-200 ${sortMonthPerso === "asc"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    onClick={() => setSortMonthPerso("asc")}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7l4-4m0 0l4 4m-4-4v18" />
-                    </svg>
-                  </button>
-                  <button
-                    className={`ml-1 p-2 rounded-full transition-colors duration-200 ${sortMonthPerso === "desc"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    onClick={() => setSortMonthPerso("desc")}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l-4 4m0 0l-4-4m4 4V3" />
-                    </svg>
-                  </button>
-                </div>
+                {/* MultiMonthSelect Perso */}
+                <MultiMonthSelect
+                  label="Mois"
+                  options={monthOptionsPerso}
+                  selected={filterMonthsPerso}
+                  setSelected={setFilterMonthsPerso}
+                />
               </div>
               <div className="flex-grow">
                 <label htmlFor="filterStatutPerso" className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
@@ -427,7 +464,7 @@ export default function ClientAdminNdf() {
                 onClick={() => {
                   setFilterYearPerso("");
                   setSortYearPerso("desc");
-                  setFilterMonthPerso("");
+                  setFilterMonthsPerso([]); // reset multi-mois
                   setSortMonthPerso("asc");
                   setFilterStatutPerso("");
                 }}
@@ -553,42 +590,13 @@ export default function ClientAdminNdf() {
                 </div>
               </div>
               <div className="flex-grow">
-                <label htmlFor="filterMonth" className="block text-sm font-medium text-gray-700 mb-1">Mois</label>
-                <div className="flex items-center">
-                  <select
-                    id="filterMonth"
-                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterMonth}
-                    onChange={(e) => setFilterMonth(e.target.value)}
-                  >
-                    <option value="">Tous</option>
-                    {monthOptions.map((m, idx) => (
-                      <option key={`${m}-${idx}`} value={m}>{m}</option>
-                    ))}
-                  </select>
-                  <button
-                    className={`ml-2 p-2 rounded-full transition-colors duration-200 ${sortMonth === "asc"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    onClick={() => setSortMonth("asc")}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7l4-4m0 0l4 4m-4-4v18" />
-                    </svg>
-                  </button>
-                  <button
-                    className={`ml-1 p-2 rounded-full transition-colors duration-200 ${sortMonth === "desc"
-                      ? "bg-blue-600 text-white shadow-md"
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    onClick={() => setSortMonth("desc")}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l-4 4m0 0l-4-4m4 4V3" />
-                    </svg>
-                  </button>
-                </div>
+                {/* MultiMonthSelect All */}
+                <MultiMonthSelect
+                  label="Mois"
+                  options={monthOptions}
+                  selected={filterMonths}
+                  setSelected={setFilterMonths}
+                />
               </div>
               <div className="flex-grow">
                 <label htmlFor="filterUser" className="block text-sm font-medium text-gray-700 mb-1">Utilisateur</label>
@@ -623,7 +631,7 @@ export default function ClientAdminNdf() {
                 onClick={() => {
                   setFilterYear("");
                   setSortYear("desc");
-                  setFilterMonth("");
+                  setFilterMonths([]); // reset multi-mois
                   setSortMonth("asc");
                   setFilterUser("");
                   setFilterStatut("");
