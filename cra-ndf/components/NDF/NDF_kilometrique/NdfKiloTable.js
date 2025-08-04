@@ -9,7 +9,7 @@ const TRAJET_TYPES = [
     { label: "Aller-Retour", value: 2 }
 ];
 
-// ===== Helpers barème indemnités =====
+// ==== Helpers indemnités ====
 function calcIndemniteVoiture(cv, total) {
     total = parseFloat(total);
     if (isNaN(total) || !cv) return "";
@@ -78,14 +78,12 @@ function toYYYYMMDD(date) {
     const d = new Date(date);
     return d.toISOString().slice(0, 10);
 }
-
 function isDateInvalid(dateDebut, dateFin) {
     if (!dateDebut || !dateFin) return false;
     return new Date(dateDebut) > new Date(dateFin);
 }
 
 export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = false, reloadRows }) {
-    // --- plus de gestion de rows ici ---
     const [editRow, setEditRow] = useState(null);
     const [editForm, setEditForm] = useState(null);
     const [editLoading, setEditLoading] = useState(false);
@@ -94,7 +92,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
 
     function exportKiloPDF() {
         const doc = new jsPDF({ orientation: "landscape" });
-
         const title = "Note de frais - Kilométriques";
         doc.setFontSize(20);
         doc.setTextColor(20, 20, 20);
@@ -103,17 +100,8 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
         autoTable(doc, {
             startY: 30,
             head: [[
-                "Date début",
-                "Date fin",
-                "Départ",
-                "Arrivée",
-                "Véhicule",
-                "Chevaux Fiscaux",
-                "km",
-                "Trajet",
-                "Motif",
-                "Total km",
-                "Indemnités (€)"
+                "Date début", "Date fin", "Départ", "Arrivée", "Véhicule", "Chevaux Fiscaux",
+                "km", "Trajet", "Motif", "Total km", "Indemnités (€)"
             ]],
             body: rows.map(row => [
                 toYYYYMMDD(row.date_debut),
@@ -124,15 +112,13 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                 row.type_vehicule === "moto"
                     ? (row.cv === "1" ? "1 CV"
                         : row.cv === "2-3-4-5" ? "2, 3, 4 ou 5 CV"
-                            : row.cv === "plus5" ? "Plus de 5 CV"
-                                : "")
+                            : row.cv === "plus5" ? "Plus de 5 CV" : "")
                     : row.type_vehicule === "voiture"
                         ? (row.cv === "3-" ? "3 CV et moins"
                             : row.cv === "4" ? "4 CV"
                                 : row.cv === "5" ? "5 CV"
                                     : row.cv === "6" ? "6 CV"
-                                        : row.cv === "7+" ? "7 CV et plus"
-                                            : "")
+                                        : row.cv === "7+" ? "7 CV et plus" : "")
                         : "",
                 row.distance,
                 TRAJET_TYPES.find(t => t.value === row.type_trajet)?.label,
@@ -187,14 +173,12 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
         });
         setEditError("");
     }
-
     function closeEditModal() {
         setEditRow(null);
         setEditForm(null);
         setEditError("");
         setEditLoading(false);
     }
-
     function calculateTotal(distance, type_trajet) {
         const d = parseFloat(distance);
         const t = parseInt(type_trajet);
@@ -203,7 +187,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
         }
         return "";
     }
-
     function handleEditFormChange(field, value) {
         setEditForm(form => {
             const updated = { ...form, [field]: value };
@@ -213,11 +196,9 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
             return updated;
         });
     }
-
     async function handleEditSubmit(e) {
         e.preventDefault();
         setEditError("");
-
         if (
             editForm.date_debut &&
             editForm.date_fin &&
@@ -226,7 +207,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
             setEditError("La date de début ne peut pas être supérieure à la date de fin.");
             return;
         }
-
         setEditLoading(true);
         try {
             const res = await fetch(`/api/ndf_kilo/${editRow.uuid}`, {
@@ -246,11 +226,9 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
             setEditLoading(false);
         }
     }
-
     function askDelete(uuid) {
         setDeleteTarget(uuid);
     }
-
     async function confirmDelete() {
         const uuid = deleteTarget;
         setDeleteTarget(null);
@@ -258,11 +236,9 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
         await fetch(`/api/ndf_kilo/${uuid}`, { method: "DELETE" });
         if (reloadRows) reloadRows();
     }
-
     function cancelDelete() {
         setDeleteTarget(null);
     }
-
     function totalKm() {
         return rows.reduce((acc, r) => acc + (parseFloat(r.distance) || 0), 0);
     }
@@ -279,39 +255,56 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
     }
 
     return (
-        <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
-            <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 border">
-                    <thead className="bg-gray-50">
+        <div className="bg-white p-6 rounded-3xl shadow-xl my-8 mx-auto max-w-6xl border border-blue-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
+                <h2 className="text-2xl font-bold text-blue-700 mb-2">Lignes kilométriques</h2>
+                <button
+                    onClick={exportKiloPDF}
+                    disabled={ndfStatut === "Provisoire"}
+                    title={ndfStatut === "Provisoire"
+                        ? "Impossible d'exporter une note de frais kilométrique au statut Provisoire."
+                        : "Exporter le tableau kilométrique en PDF"}
+                    className={`inline-flex items-center px-6 py-2 rounded-lg font-semibold transition-colors duration-200 shadow-md
+            ${ndfStatut === "Provisoire"
+                            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                            : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                        }`}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    PDF Kilométrique
+                </button>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-200 shadow">
+                <table className="min-w-full divide-y divide-blue-100">
+                    <thead className="bg-blue-50 sticky top-0 z-10">
                         <tr>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date début</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date fin</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Départ</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Arrivée</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Véhicule</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Cheveaux Fiscaux</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">km</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Trajet</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Motif</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Total km</th>
-                            <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Indemnités</th>
+                            {[
+                                "Date début", "Date fin", "Départ", "Arrivée", "Véhicule", "CV",
+                                "km", "Trajet", "Motif", "Total km", "Indemnités"
+                            ].map((h, i) => (
+                                <th key={i} className="py-3 px-3 text-center text-xs font-semibold text-blue-800 uppercase tracking-wider">
+                                    {h}
+                                </th>
+                            ))}
                             {ndfStatut === "Provisoire" && (
-                                <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
+                                <th className="py-3 px-3 text-center text-xs font-semibold text-blue-800 uppercase tracking-wider">Actions</th>
                             )}
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-white divide-y divide-blue-50">
                         {loading ? (
                             <tr>
-                                <td colSpan={12} className="py-8 text-center text-gray-400">Chargement...</td>
+                                <td colSpan={12} className="py-10 text-center text-gray-400">Chargement…</td>
                             </tr>
                         ) : rows.length === 0 ? (
                             <tr>
-                                <td colSpan={12} className="py-8 text-center text-gray-400">Aucune ligne kilométrique.</td>
+                                <td colSpan={12} className="py-10 text-center text-gray-400">Aucune ligne kilométrique.</td>
                             </tr>
                         ) : (
                             rows.map(row => (
-                                <tr key={row.uuid} className="hover:bg-gray-50 text-gray-900">
+                                <tr key={row.uuid} className="hover:bg-blue-50 transition-colors">
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_debut)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{toYYYYMMDD(row.date_fin)}</td>
                                     <td className="px-2 py-2 text-sm text-center">{row.depart}</td>
@@ -351,55 +344,55 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                                     </td>
                                     <td className="px-2 py-2 text-sm text-center">{row.motif}</td>
                                     <td className="px-2 py-2 text-sm text-center font-bold">{parseFloat(row.total_euro).toFixed(2)} km</td>
-                                    <td className="px-2 py-2 text-sm text-center font-bold">
-                                        {calcIndemnite(row.type_vehicule, row.cv, row.total_euro)} €
-                                    </td>
+                                    <td className="px-2 py-2 text-sm text-center font-bold">{calcIndemnite(row.type_vehicule, row.cv, row.total_euro)} €</td>
                                     {ndfStatut === "Provisoire" && (
-                                        <td className="px-2 py-2 text-center flex gap-2 justify-center">
-                                            <button
-                                                className="text-blue-600 hover:bg-blue-100 rounded-full p-1 transition"
-                                                onClick={() => handleEdit(row)}
-                                                title="Éditer"
-                                                aria-label="Éditer"
-                                            >
-                                                <Pencil size={18} />
-                                            </button>
-                                            <button
-                                                className="text-red-600 hover:bg-red-100 rounded-full p-1 transition"
-                                                onClick={() => askDelete(row.uuid)}
-                                                title="Supprimer"
-                                                aria-label="Supprimer"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
+                                        <td className="px-2 py-2 text-center">
+                                            <div className="flex gap-2 justify-center">
+                                                <button
+                                                    className="text-blue-600 hover:bg-blue-100 rounded-full p-1 transition"
+                                                    onClick={() => handleEdit(row)}
+                                                    title="Éditer"
+                                                    aria-label="Éditer"
+                                                >
+                                                    <Pencil size={18} />
+                                                </button>
+                                                <button
+                                                    className="text-red-600 hover:bg-red-100 rounded-full p-1 transition"
+                                                    onClick={() => askDelete(row.uuid)}
+                                                    title="Supprimer"
+                                                    aria-label="Supprimer"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
                                         </td>
                                     )}
                                 </tr>
                             ))
                         )}
                     </tbody>
-                    <tfoot className="bg-gray-100 border-t-2 border-gray-300">
+                    <tfoot className="bg-blue-50 border-t-2 border-blue-100">
                         <tr>
-                            <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                            <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-blue-900">
                                 Total km
                             </td>
-                            <td colSpan={2} className="py-3 px-4 text-right text-base font-bold text-gray-900">
+                            <td colSpan={2} className="py-3 px-4 text-right text-base font-bold text-blue-900">
                                 {totalEuro().toFixed(2)}
                             </td>
-                            <td colSpan={1} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                            <td colSpan={1} className="py-3 px-4 text-left text-base font-bold text-blue-900">
                                 km
                             </td>
                             <td colSpan={6}></td>
                             {ndfStatut === "Provisoire" && <td></td>}
                         </tr>
                         <tr>
-                            <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                            <td colSpan={2} className="py-3 px-4 text-left text-base font-bold text-blue-900">
                                 Total indemnités
                             </td>
-                            <td colSpan={2} className="py-3 px-4 text-right text-base font-bold text-gray-900">
+                            <td colSpan={2} className="py-3 px-4 text-right text-base font-bold text-blue-900">
                                 {totalIndemnites().toFixed(2)}
                             </td>
-                            <td colSpan={1} className="py-3 px-4 text-left text-base font-bold text-gray-900">
+                            <td colSpan={1} className="py-3 px-4 text-left text-base font-bold text-blue-900">
                                 €
                             </td>
                             <td colSpan={6}></td>
@@ -408,45 +401,11 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                     </tfoot>
                 </table>
             </div>
-            <div className="mt-8 text-center">
-                <div className="mt-8 flex flex-col items-center justify-center">
-                    <button
-                        onClick={exportKiloPDF}
-                        disabled={ndfStatut === "Provisoire"}
-                        title={ndfStatut === "Provisoire"
-                            ? "Impossible d'exporter une note de frais kilométrique au statut Provisoire."
-                            : "Exporter le tableau kilométrique en PDF"}
-                        className={`inline-flex items-center px-8 py-3 rounded-lg font-semibold transition-colors duration-200 shadow-md
-            ${ndfStatut === "Provisoire"
-                                ? "bg-gray-300 text-gray-600 cursor-not-allowed opacity-75"
-                                : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                            }`}
-                    >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-5 w-5 mr-3"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                        >
-                            <path
-                                fillRule="evenodd"
-                                d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
-                                clipRule="evenodd"
-                            />
-                        </svg>
-                        Exporter le tableau kilométrique en PDF
-                    </button>
-                    {ndfStatut === "Provisoire" && (
-                        <p className="text-sm text-gray-500 mt-4 italic text-center">
-                            Le statut doit être autre que Provisoire pour permettre l’export PDF.
-                        </p>
-                    )}
-                </div>
-            </div>
-            
+
+            {/* --- Edit Modal --- */}
             {editRow && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto text-gray-900">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto text-gray-900">
                         <button
                             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
                             onClick={closeEditModal}
@@ -498,7 +457,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                                     />
                                 </div>
                             </div>
-                            {/* Type de véhicule */}
+                            {/* Type véhicule */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Type de véhicule</label>
                                 <select
@@ -507,7 +466,6 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                                     value={editForm.type_vehicule || ""}
                                     onChange={e => {
                                         handleEditFormChange("type_vehicule", e.target.value);
-                                        // Réinitialise le champ CV lors du changement de type de véhicule
                                         handleEditFormChange("cv", "");
                                     }}
                                 >
@@ -516,8 +474,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                                     <option value="moto">Moto</option>
                                 </select>
                             </div>
-
-                            {/* Champ CV, qui change selon le type de véhicule */}
+                            {/* Champ CV, selon type */}
                             {editForm.type_vehicule === "moto" && (
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">CV (Moto)</label>
@@ -624,7 +581,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                 </div>
             )}
 
-            {/* --- Modal de confirmation suppression --- */}
+            {/* --- Modal confirmation suppression --- */}
             {deleteTarget && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                     <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm relative text-gray-900">
@@ -636,7 +593,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                             <X size={24} />
                         </button>
                         <h2 className="text-lg font-bold mb-4">Supprimer la ligne ?</h2>
-                        <p className="mb-6 text-gray-700">Voulez-vous vraiment supprimer cette ligne kilométrique ? Cette action est irréversible.</p>
+                        <p className="mb-6 text-gray-700">Voulez-vous vraiment supprimer cette ligne kilométrique ? Cette action est irréversible.</p>
                         <div className="flex justify-end gap-3">
                             <button
                                 className="px-5 py-2 bg-gray-200 text-gray-700 rounded-md shadow-sm font-medium hover:bg-gray-300"

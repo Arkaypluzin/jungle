@@ -62,9 +62,8 @@ function MultiMonthSelect({ label, options, selected, setSelected }) {
           {options.map((m) => (
             <label
               key={m}
-              className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-blue-50 ${
-                selected.includes(m) ? "font-bold text-blue-600" : "text-gray-800"
-              }`}
+              className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-blue-50 ${selected.includes(m) ? "font-bold text-blue-600" : "text-gray-800"
+                }`}
             >
               <input
                 type="checkbox"
@@ -461,15 +460,14 @@ export default function ClientAdminNdf() {
                           </svg>
                         )}
                       </span>
-                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${
-                        ndf.statut === "Provisoire"
+                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${ndf.statut === "Provisoire"
                           ? "bg-blue-100 text-blue-800"
                           : ndf.statut === "Déclaré"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : ndf.statut === "Validé"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-purple-100 text-purple-800"
-                      }`}>
+                            ? "bg-yellow-100 text-yellow-800"
+                            : ndf.statut === "Validé"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-purple-100 text-purple-800"
+                        }`}>
                         {ndf.statut}
                       </span>
                       <div className="flex flex-col gap-1 mt-2 ml-1">
@@ -602,13 +600,12 @@ export default function ClientAdminNdf() {
                   <li key={ndf.uuid} className="bg-white p-5 rounded-xl shadow-md border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:shadow-xl transition">
                     <div className="flex-grow">
                       <span className="font-bold text-lg text-gray-900">{ndf.month} {ndf.year}</span>
-                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${
-                        ndf.statut === "Déclaré"
+                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${ndf.statut === "Déclaré"
                           ? "bg-yellow-100 text-yellow-800"
                           : ndf.statut === "Validé"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-purple-100 text-purple-800"
-                      }`}>
+                            ? "bg-green-100 text-green-800"
+                            : "bg-purple-100 text-purple-800"
+                        }`}>
                         {ndf.statut}
                       </span>
                       <span className="ml-3 text-sm text-gray-600">par <b className="text-gray-800">{ndf.name || ndf.user_id}</b></span>

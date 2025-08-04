@@ -5,8 +5,7 @@ import DeleteNdfDetailButton from "@/components/NDF/NDF_ACTIONS/DeleteNdfDetailB
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-// ------------------- UTILS -------------------
-
+// ---------- UTILS ----------
 function getTvaArray(tva, montant) {
   if (Array.isArray(tva)) return tva;
   if (typeof tva === "string" && tva.includes("/")) {
@@ -38,7 +37,6 @@ function formatTvaPdf(detail) {
   let arr = Array.isArray(detail.tva)
     ? detail.tva
     : getTvaArray(detail.tva, detail.montant);
-
   if (!arr.length || arr.length === 1) {
     let tvaUnique = arr[0];
     if (tvaUnique && tvaUnique.taux !== undefined) {
@@ -59,8 +57,7 @@ function formatTvaPdf(detail) {
     )
     .join('\n');
 }
-
-// ------------------------------------------------
+// ---------------------------
 
 export default function NdfDetailTable({
   details: initialDetails,
@@ -74,7 +71,6 @@ export default function NdfDetailTable({
   const [clients, setClients] = useState([]);
   const [projets, setProjets] = useState([]);
 
-  // --------- CHARGEMENT DES CLIENTS/PROJETS ----------
   useEffect(() => {
     fetch("/api/client")
       .then((res) => res.json())
@@ -96,10 +92,9 @@ export default function NdfDetailTable({
     const p = projets.find((p) => (p.id || p.uuid) === projet_id);
     return p ? p.nom : "";
   }
-
   const refresh = () => window.location.reload();
 
-  // --------- TRI AUTOMATIQUE PAR DATE (ASC) ----------
+  // --- FILTERED AND SORTED ---
   const filteredDetails = useMemo(() => {
     let current = details.filter((detail) => {
       const lower = search.toLowerCase();
@@ -113,19 +108,15 @@ export default function NdfDetailTable({
         String(detail.montant).toLowerCase().includes(lower)
       );
     });
-
-    // TRI PAR DATE (du plus ancien au plus récent)
-    current = [...current].sort((a, b) => {
+    return [...current].sort((a, b) => {
       if (!a.date_str && !b.date_str) return 0;
       if (!a.date_str) return 1;
       if (!b.date_str) return -1;
       return new Date(a.date_str) - new Date(b.date_str);
     });
-
-    return current;
   }, [details, search, clients, projets]);
 
-  // --------- TOTAUX -----------
+  // --- TOTALS ---
   const totalHT = useMemo(
     () => filteredDetails.reduce((acc, d) => acc + (parseFloat(d.montant) || 0), 0),
     [filteredDetails]
@@ -137,12 +128,11 @@ export default function NdfDetailTable({
   const totalTVA = useMemo(() => {
     return filteredDetails.reduce((acc, d) => {
       let tvaArr = Array.isArray(d.tva) ? d.tva : getTvaArray(d.tva, d.montant);
-      const totalLigne = tvaArr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
-      return acc + totalLigne;
+      return acc + tvaArr.reduce((sum, tvaObj) => sum + (parseFloat(tvaObj.valeur_tva) || 0), 0);
     }, 0);
   }, [filteredDetails]);
 
-  // --------- EXPORT PDF -----------
+  // --- EXPORT PDF ---
   const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: "landscape" });
     let titleText = "Note de frais";
@@ -162,31 +152,18 @@ export default function NdfDetailTable({
         doc.internal.pageSize.getHeight() - 10
       );
     };
-
     addHeaderAndFooter(1);
 
     doc.setFontSize(20);
     doc.setTextColor(20, 20, 20);
     doc.text(titleText, 14, 25);
 
-    const head = [
-      [
-        "Date",
-        "Nature",
-        "Description",
-        "Client",
-        "Projet",
-        "Moyen de paiement",
-        "Montant HT",
-        "TVA",
-        "Montant TTC",
-        "Justificatif",
-      ],
-    ];
-
-    const rows = [];
-    filteredDetails.forEach((detail) => {
-      rows.push([
+    autoTable(doc, {
+      head: [[
+        "Date", "Nature", "Description", "Client", "Projet", "Moyen de paiement",
+        "Montant HT", "TVA", "Montant TTC", "Justificatif"
+      ]],
+      body: filteredDetails.map(detail => [
         detail.date_str,
         detail.nature,
         detail.description,
@@ -197,12 +174,7 @@ export default function NdfDetailTable({
         formatTvaPdf(detail),
         `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
         detail.img_url ? "Oui" : "Non",
-      ]);
-    });
-
-    autoTable(doc, {
-      head,
-      body: rows,
+      ]),
       startY: 40,
       margin: { left: 10, right: 10 },
       styles: {
@@ -276,192 +248,159 @@ export default function NdfDetailTable({
     );
   };
 
-  // --------- RENDU TABLEAU -----------
+  // ----------- RENDER --------------
   return (
-    <div className="bg-white p-6 rounded-xl shadow-lg my-8 mx-auto max-w-6xl">
-      <div className="overflow-x-auto rounded-lg shadow-sm border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+    <div className="bg-white p-6 rounded-3xl shadow-xl my-8 mx-auto max-w-6xl border border-blue-100">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
+        <h2 className="text-2xl font-bold text-blue-700 mb-2">Détail de la note de frais</h2>
+        <div className="flex items-center gap-3">
+          <input
+            className="rounded-md border border-gray-300 px-3 py-1 shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm text-black"
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Recherche rapide..."
+            aria-label="Recherche"
+          />
+          <button
+            onClick={exportToPDF}
+            disabled={ndfStatut === "Provisoire"}
+            title={
+              ndfStatut === "Provisoire"
+                ? "Impossible d'exporter une note de frais au statut Provisoire."
+                : "Exporter le tableau en PDF"
+            }
+            className={`inline-flex items-center px-5 py-2 rounded-lg font-semibold transition-colors duration-200 shadow-md
+              ${ndfStatut === "Provisoire"
+                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+            PDF
+          </button>
+        </div>
+      </div>
+      {ndfStatut === "Provisoire" && (
+        <p className="text-sm text-gray-500 mb-3 italic">
+          Le statut doit être autre que Provisoire pour permettre l’export PDF.
+        </p>
+      )}
+      <div className="overflow-x-auto rounded-xl border border-gray-200 shadow">
+        <table className="min-w-full divide-y divide-blue-100">
+          <thead className="bg-blue-50">
             <tr>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Date</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Nature</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Description</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Client</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Projet</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Moyen de paiement</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Montant HT</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">TVA</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Montant TTC</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Justificatif</th>
-              <th className="py-3 px-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
+              {[
+                "Date", "Nature", "Description", "Client", "Projet",
+                "Moyen de paiement", "Montant HT", "TVA", "Montant TTC", "Justificatif", "Actions"
+              ].map((h, i) => (
+                <th key={i} className="py-3 px-3 text-center text-xs font-semibold text-blue-800 uppercase tracking-wider">{h}</th>
+              ))}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-100">
+          <tbody className="bg-white divide-y divide-blue-50">
             {filteredDetails.length === 0 ? (
               <tr>
-                <td colSpan={11} className="py-8 text-center text-gray-400">
+                <td colSpan={11} className="py-10 text-center text-gray-400">
                   Aucune dépense pour cette note de frais.
                 </td>
               </tr>
             ) : (
               filteredDetails.map((detail) => (
-                <React.Fragment key={detail.uuid}>
-                  <tr className="hover:bg-gray-50 transition-colors duration-150">
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                      {detail.date_str}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">
-                      {detail.nature}
-                    </td>
-                    <td className="py-3 px-3 text-sm text-gray-800 max-w-xs overflow-hidden text-ellipsis">
-                      {detail.description}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                      {getClientName(detail.client_id) || <span className="italic text-gray-400">-</span>}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                      {getProjetName(detail.projet_id) || <span className="italic text-gray-400">-</span>}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                      {detail.moyen_paiement || <span className="italic text-gray-400">-</span>}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">
-                      {parseFloat(detail.montant).toFixed(2)}€
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                      {Array.isArray(detail.tva) ? (
-                        <div>
-                          {detail.tva.map((tvaObj, idx) => (
-                            <div key={idx} className="flex items-center gap-1">
-                              <span className="font-semibold">{tvaObj.taux}%</span>
-                              <span className="text-gray-500">
-                                {tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
-                                  ? <>⇒ +{parseFloat(tvaObj.valeur_tva).toFixed(2)}€</>
-                                  : null}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span>{detail.tva}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
-                      {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
-                        ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
-                        : (getTTCLineRounded(detail.montant, detail.tva).toFixed(2) + "€")}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      {detail.img_url ? (
-                        <a href={detail.img_url} target="_blank" rel="noopener noreferrer" className="inline-block">
-                          <img
-                            src={detail.img_url}
-                            alt="Justificatif"
-                            className="max-w-[80px] max-h-[60px] object-contain rounded-md shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200"
-                          />
-                        </a>
-                      ) : (
-                        <span className="text-gray-400 italic text-xs">
-                          Aucun
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-center whitespace-nowrap">
-                      {ndfStatut === "Provisoire" && (
-                        <div className="flex justify-center gap-2">
-                          {filteredDetails.map(detail => (
-                            <EditNdfDetailModal
-                              key={detail.uuid}
-                              detail={detail}
-                              onEdited={refresh}
-                              parentNdfMonth={month}
-                              parentNdfYear={year}
-                            />
-                          ))}
-                          <DeleteNdfDetailButton
-                            detailId={detail.uuid}
-                            onDeleted={refresh}
-                          />
-                        </div>
-                      )}
-                      {ndfStatut !== "Provisoire" && (
-                        <span className="text-gray-500 text-xs italic">
-                          Non modifiable
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                </React.Fragment>
+                <tr key={detail.uuid} className="hover:bg-blue-50 transition-colors">
+                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">{detail.date_str}</td>
+                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">{detail.nature}</td>
+                  <td className="py-3 px-3 text-sm text-gray-800 max-w-xs truncate">{detail.description}</td>
+                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                    {getClientName(detail.client_id) || <span className="italic text-gray-300">-</span>}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                    {getProjetName(detail.projet_id) || <span className="italic text-gray-300">-</span>}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                    {detail.moyen_paiement || <span className="italic text-gray-300">-</span>}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">{parseFloat(detail.montant).toFixed(2)}€</td>
+                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                    {Array.isArray(detail.tva) ? (
+                      <div>
+                        {detail.tva.map((tvaObj, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <span className="font-semibold">{tvaObj.taux}%</span>
+                            <span className="text-gray-500">
+                              {tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
+                                ? <>⇒ +{parseFloat(tvaObj.valeur_tva).toFixed(2)}€</>
+                                : null}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span>{detail.tva}</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
+                    {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
+                      ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
+                      : (getTTCLineRounded(detail.montant, detail.tva).toFixed(2) + "€")}
+                  </td>
+                  <td className="py-3 px-3 text-center">
+                    {detail.img_url ? (
+                      <a href={detail.img_url} target="_blank" rel="noopener noreferrer" className="inline-block">
+                        <img
+                          src={detail.img_url}
+                          alt="Justificatif"
+                          className="max-w-[80px] max-h-[60px] object-contain rounded-lg shadow border border-blue-100 hover:shadow-md transition-shadow"
+                        />
+                      </a>
+                    ) : (
+                      <span className="text-gray-300 italic text-xs">Aucun</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-3 text-center">
+                    {ndfStatut === "Provisoire" ? (
+                      <div className="flex justify-center gap-1">
+                        <EditNdfDetailModal
+                          detail={detail}
+                          onEdited={refresh}
+                          parentNdfMonth={month}
+                          parentNdfYear={year}
+                        />
+                        <DeleteNdfDetailButton
+                          detailId={detail.uuid}
+                          onDeleted={refresh}
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-xs italic">Non modifiable</span>
+                    )}
+                  </td>
+                </tr>
               ))
             )}
           </tbody>
-          <tfoot className="bg-gray-100 border-t-2 border-gray-300">
+          <tfoot className="bg-blue-50 border-t-2 border-blue-100">
             <tr>
-              <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                Total HT
-              </td>
-              <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                {totalHT.toFixed(2)}€
-              </td>
+              <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-blue-900">Total HT</td>
+              <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-blue-900">{totalHT.toFixed(2)}€</td>
             </tr>
             <tr>
-              <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
-                Total TVA
-              </td>
-              <td colSpan={8} className="py-3 px-4 text-left text-base font-semibold text-gray-900">
-                {totalTVA.toFixed(2)}€
-              </td>
+              <td colSpan={3} className="py-3 px-4 text-left text-base font-semibold text-blue-900">Total TVA</td>
+              <td colSpan={8} className="py-3 px-4 text-left text-base font-semibold text-blue-900">{totalTVA.toFixed(2)}€</td>
             </tr>
             <tr>
-              <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                Total TTC
-              </td>
-              <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-gray-900">
-                {totalTTC.toFixed(2)}€
-              </td>
+              <td colSpan={3} className="py-3 px-4 text-left text-base font-bold text-blue-900">Total TTC</td>
+              <td colSpan={8} className="py-3 px-4 text-left text-base font-bold text-blue-900">{totalTTC.toFixed(2)}€</td>
             </tr>
             <tr>
-              <td colSpan={11} className="py-2 px-4 text-center text-sm text-gray-700 font-medium">
+              <td colSpan={11} className="py-2 px-4 text-center text-sm text-blue-800 font-medium">
                 Nombre total de lignes : {filteredDetails.length}
               </td>
             </tr>
           </tfoot>
         </table>
-      </div>
-      <div className="mt-8 text-center">
-        <button
-          onClick={exportToPDF}
-          disabled={ndfStatut === "Provisoire"}
-          title={
-            ndfStatut === "Provisoire"
-              ? "Impossible d'exporter une note de frais au statut Provisoire."
-              : "Exporter le tableau en PDF"
-          }
-          className={`inline-flex items-center px-8 py-3 rounded-lg font-semibold transition-colors duration-200 shadow-md
-            ${ndfStatut === "Provisoire"
-              ? "bg-gray-300 text-gray-600 cursor-not-allowed opacity-75"
-              : "bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-            }`}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 mr-3"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-          Exporter le tableau en PDF
-        </button>
-        {ndfStatut === "Provisoire" && (
-          <p className="text-sm text-gray-500 mt-2 italic">
-            Le statut doit être autre que Provisoire pour permettre l’export PDF.
-          </p>
-        )}
       </div>
     </div>
   );
