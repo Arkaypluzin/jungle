@@ -108,7 +108,7 @@ export default function SummaryReport({
     const paidLeaveTypeId = paidLeaveType ? paidLeaveType.id : null;
 
     const overtimeType = activityTypeDefinitions.find(t => t.is_overtime);
-    const overtimeTypeId = overtimeType ? overtimeType.id : null;
+    const overtimeTypeId = overtimeType ? overtimeType.id : null; // FIX: Changed 't.id' to 'overtimeType.id'
 
     activities.forEach(activity => { // Use activities prop here
       const duration = parseFloat(activity.temps_passe) || 0;
@@ -273,23 +273,30 @@ export default function SummaryReport({
 
   // Signature drawing logic
   useEffect(() => {
-    console.log("[SummaryReport] Signature canvas useEffect ran."); // Log for debugging
+    console.log("[SummaryReport] Signature canvas useEffect ran.");
     const canvas = signatureCanvasRef.current;
     if (!canvas) {
       console.log("[SummaryReport] Canvas ref is null, cannot attach listeners.");
       return;
     }
+    console.log("[SummaryReport] Canvas ref is valid, attempting to attach listeners.");
+
+    // Reset drawing state on mount/remount
+    isDrawingRef.current = false; // Ensure it starts as not drawing
+    setIsDrawing(false);
 
     // Set canvas dimensions explicitly
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
+    console.log(`[SummaryReport] Canvas dimensions set: width=${canvas.width}, height=${canvas.height}`);
 
     const ctx = canvas.getContext('2d');
     signatureCtxRef.current = ctx;
     if (!ctx) {
-      console.log("[SummaryReport] Canvas context is null, cannot draw.");
+      console.error("[SummaryReport] Canvas context is null, cannot draw.");
       return;
     }
+    console.log("[SummaryReport] Canvas 2D context obtained successfully.");
 
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -300,7 +307,6 @@ export default function SummaryReport({
 
     const getCoords = (e) => {
       const rect = canvas.getBoundingClientRect();
-      // Use clientX/Y for mouse events, touches[0].clientX/Y for touch events
       const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
       const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       return {
@@ -310,20 +316,24 @@ export default function SummaryReport({
     };
 
     const startDrawing = (e) => {
-      isDrawingRef.current = true; // Update the ref first
-      setIsDrawing(true); // Update the state for potential UI changes
+      // Only start drawing if not currently loading
+      if (isSignatureLoading) {
+        console.log("[SummaryReport] Cannot start drawing: Signature is still loading.");
+        return;
+      }
+      isDrawingRef.current = true;
+      setIsDrawing(true);
       const { x, y } = getCoords(e);
       lastX = x;
       lastY = y;
-      ctx.beginPath(); // Start a new path for each stroke
+      ctx.beginPath();
       ctx.moveTo(lastX, lastY);
-      console.log(`startDrawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}, x,y: ${x},${y}`); // Debug log
+      console.log(`startDrawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}, x,y: ${x},${y}`);
     };
 
     const draw = (e) => {
       if (!isDrawingRef.current) {
-        // console.log(`drawing: Not drawing, isDrawingRef.current is false. Event type: ${e.type}`);
-        return; // Check the ref's current value
+        return;
       }
       if (!signatureCtxRef.current) {
         console.error("drawing: Canvas context is null, cannot draw.");
@@ -334,20 +344,19 @@ export default function SummaryReport({
       signatureCtxRef.current.stroke();
       lastX = x;
       lastY = y;
-      // console.log(`drawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}, x,y: ${x},${y}`); // Debug log
+      console.log(`drawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}, x,y: ${x},${y}`);
     };
 
     const stopDrawing = (e) => {
-      isDrawingRef.current = false; // Update the ref first
-      setIsDrawing(false); // Update the state for potential UI changes
+      isDrawingRef.current = false;
+      setIsDrawing(false);
       if (signatureCtxRef.current) {
-        signatureCtxRef.current.closePath(); // Close the current path
+        signatureCtxRef.current.closePath();
       }
-      // When drawing stops, update the signatureData state for PDF generation
       if (signatureCanvasRef.current) {
         setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
       }
-      console.log(`stopDrawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}`); // Debug log
+      console.log(`stopDrawing: event.type: ${e.type}, isDrawingRef.current: ${isDrawingRef.current}`);
     };
 
     // Attach event listeners
@@ -381,22 +390,12 @@ export default function SummaryReport({
       canvas.removeEventListener('touchend', stopDrawing);
       canvas.removeEventListener('touchcancel', stopDrawing);
     };
-  }, []); // <--- IMPORTANT: Empty dependency array ensures this runs only once on mount
+  }, [isSignatureLoading]); // FIX: Added isSignatureLoading to dependencies
+
 
   // Load signature from API when modal opens
   useEffect(() => {
     const loadSignatureFromApi = async () => {
-      if (!isOpen) {
-        // Clear canvas and data when modal closes
-        setSignatureData(null);
-        if (signatureCanvasRef.current) {
-          const ctx = signatureCanvasRef.current.getContext('2d');
-          ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-        }
-        setIsSignatureLoading(true); // Reset loading state for next open
-        return;
-      }
-
       setIsSignatureLoading(true);
       try {
         // Using userFirstName as a unique ID. In a real app, use a more robust user ID.
@@ -407,9 +406,9 @@ export default function SummaryReport({
             setSignatureData(data.image);
             if (signatureCanvasRef.current) {
               const ctx = signatureCanvasRef.current.getContext('2d');
+              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
               const img = new Image();
               img.onload = () => {
-                ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
                 ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
               };
               img.src = data.image;
@@ -442,8 +441,18 @@ export default function SummaryReport({
       }
     };
 
-    loadSignatureFromApi();
-  }, [isOpen, userFirstName, showMessage]); // Reload when modal opens or user changes
+    if (isOpen) {
+      loadSignatureFromApi();
+    } else {
+      // When modal closes, clear signature data and canvas
+      setSignatureData(null);
+      if (signatureCanvasRef.current) {
+        const ctx = signatureCanvasRef.current.getContext('2d');
+        ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+      }
+      setIsSignatureLoading(true); // Reset to true for next open
+    }
+  }, [isOpen, userFirstName, showMessage]);
 
 
   const clearSignature = async () => {
@@ -733,149 +742,211 @@ export default function SummaryReport({
       pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
       showMessage("PDF généré avec succès !", "success");
     } catch (error) {
-      console.error("PDF Generation Error:", error);
+      console.error("Erreur lors de la génération du PDF:", error);
       showMessage("Erreur lors de la génération du PDF: " + error.message, "error");
     }
   };
 
-
   return (
-    <div className={`fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4 font-inter ${isOpen ? "" : "hidden"}`}>
-      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative flex flex-col">
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
+      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl relative overflow-y-auto max-h-[90vh]">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
         >
           &times;
         </button>
+
         <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">
-          Rapport Mensuel de ${userFirstName} - {monthName}
+          Rapport Mensuel d'Activités
         </h2>
+        <p className="text-gray-600 text-center mb-6">
+          Rapport pour {userFirstName} - {monthName}
+        </p>
 
-        {/* Section de signature */}
-        <div className="flex flex-col items-center mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-          <h3 className="text-xl font-semibold text-gray-700 mb-3">Signature</h3>
-          {isSignatureLoading ? (
-            <div className="text-gray-500">Chargement de la signature...</div>
-          ) : (
-            <>
-              <div className="relative w-full max-w-md h-40 border border-gray-300 rounded-md overflow-hidden bg-white">
-                <canvas
-                  ref={signatureCanvasRef}
-                  className="w-full h-full"
-                  width={400} // Explicit width
-                  height={160} // Explicit height
-                ></canvas>
-                {!signatureData && (
-                  <div className="absolute inset-0 flex items-center justify-center text-gray-400 pointer-events-none">
-                    Dessinez votre signature ici
-                  </div>
-                )}
-              </div>
-              <div className="flex space-x-4 mt-4">
-                <button
-                  onClick={clearSignature}
-                  className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200"
-                >
-                  Effacer
-                </button>
-                <button
-                  onClick={saveSignature}
-                  className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors duration-200"
-                >
-                  Enregistrer
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Informations Générales */}
-        <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-          <h3 className="text-xl font-semibold text-gray-700 mb-3">Informations Générales</h3>
-          <p className="text-gray-700 mb-1">
-            <span className="font-medium">Mois du rapport :</span> {monthName}
-          </p>
-          <p className="text-gray-700 mb-1">
-            <span className="font-medium">Total jours ouvrés dans le mois :</span>{" "}
-            {totalWorkingDays} jours
-          </p>
-          <p className="text-gray-700 mb-1">
-            <span className="font-medium">Total jours d'activités sur jours ouvrés :</span>{" "}
-            {totalWorkingDaysActivitiesTime.toFixed(1)} jours
-          </p>
-          <p className="text-gray-700 mb-1">
-            <span className="font-medium">Total jours de congés payés :</span>{" "}
-            {totalPaidLeaveDaysInMonth.toFixed(1)} jours
-          </p>
-          <p className="text-gray-700 mb-1">
-            <span className="font-medium">Jours non ouvrés travaillés :</span>{" "}
-            {nonWorkingDaysWorked.toFixed(1)} jours
-          </p>
-          <p className="text-gray-700 mb-1">
-            <span className="font-medium">Heures Supplémentaires :</span>{" "}
-            {totalOvertimeHours.toFixed(1)} jours
-          </p>
-          <p className="text-gray-700">
-            <span className="font-medium">Écart (Activités - Jours ouvrés) :</span>{" "}
-            <span className={parseFloat(timeDifference) < 0 ? "text-red-600" : "text-green-600"}>
+        {/* Section Informations Générales */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner">
+          <h3 className="text-lg font-semibold text-gray-700 mb-3">
+            Informations Générales
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-gray-800">
+            <p>
+              <span className="font-medium">Mois du rapport :</span> {monthName}
+            </p>
+            <p>
+              <span className="font-medium">Total jours ouvrés dans le mois :</span>{" "}
+              {totalWorkingDays} jours
+            </p>
+            <p>
+              <span className="font-medium">Total jours d'activités sur jours ouvrés :</span>{" "}
+              {totalWorkingDaysActivitiesTime.toFixed(1)} jours
+            </p>
+            <p>
+              <span className="font-medium">Total jours de congés payés :</span>{" "}
+              {totalPaidLeaveDaysInMonth.toFixed(1)} jours
+            </p>
+            <p>
+              <span className="font-medium">Jours non ouvrés travaillés :</span>{" "}
+              {nonWorkingDaysWorked.toFixed(1)} jours
+            </p>
+            <p>
+              <span className="font-medium">Heures Supplémentaires :</span>{" "}
+              {totalOvertimeHours.toFixed(1)} jours
+            </p>
+            <p>
+              <span className="font-medium">Écart (Activités - Jours ouvrés) :</span>{" "}
               {timeDifference} jours
-            </span>
-          </p>
+            </p>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h4 className="text-md font-semibold text-gray-700 mb-2">Statuts des rapports :</h4>
+            <p>
+              <span className="font-medium">Statut CRA :</span>{" "}
+              <span
+                className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  craReportStatus === "pending_review"
+                    ? "bg-yellow-100 text-yellow-800"
+                    : craReportStatus === "validated"
+                    ? "bg-green-100 text-green-800"
+                    : craReportStatus === "rejected"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-gray-100 text-gray-800"
+                }`}
+              >
+                {craReportStatus === "pending_review"
+                  ? "En attente"
+                  : craReportStatus === "validated"
+                  ? "Validé"
+                  : craReportStatus === "rejected"
+                  ? "Rejeté"
+                  : "Brouillon"}
+              </span>
+              {craReportStatus === "rejected" && craReport?.rejection_reason && (
+                <span className="text-xs text-red-700 ml-2">
+                  (Raison : {craReport.rejection_reason})
+                </span>
+              )}
+            </p>
+            <p className="mt-2">
+              <span className="font-medium">Statut Congés Payés :</span>{" "}
+              <span
+                className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  paidLeaveReportStatus === "pending_review"
+                    ? "bg-yellow-100 text-yellow-800"
+                    : paidLeaveReportStatus === "validated"
+                    ? "bg-green-100 text-green-800"
+                    : paidLeaveReportStatus === "rejected"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-gray-100 text-gray-800"
+                }`}
+              >
+                {paidLeaveReportStatus === "pending_review"
+                  ? "En attente"
+                  : paidLeaveReportStatus === "validated"
+                  ? "Validé"
+                  : paidLeaveReportStatus === "rejected"
+                  ? "Rejeté"
+                  : "Brouillon"}
+              </span>
+              {paidLeaveReportStatus === "rejected" && paidLeaveReport?.rejection_reason && (
+                <span className="text-xs text-red-700 ml-2">
+                  (Raison : {paidLeaveReport.rejection_reason})
+                </span>
+              )}
+            </p>
+          </div>
         </div>
 
-        {/* Détail des Activités */}
-        <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50 flex-grow overflow-y-auto">
-          <h3 className="text-xl font-semibold text-gray-700 mb-3">Détail des Activités</h3>
-          {allDaysWithActivities.length > 0 ? (
-            <div className="space-y-4">
-              {allDaysWithActivities.map(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => (
-                <div key={format(day, "yyyy-MM-dd")} className="border-b border-gray-200 pb-2">
-                  <h4 className={`font-semibold text-lg ${isWeekendDay || isPublicHoliday(day) ? "text-gray-500" : "text-gray-800"}`}>
+        {/* Section Détail des Activités */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner">
+          <h3 className="text-lg font-semibold text-gray-700 mb-3">
+            Détail des Activités
+          </h3>
+          <div className="space-y-3">
+            {allDaysWithActivities.length > 0 ? (
+              allDaysWithActivities.map(({ day, activities: dailyActivities, totalDailyTime, isWeekend: isWeekendDay }) => (
+                <div key={format(day, "yyyy-MM-dd")} className="border-b border-gray-200 pb-2 last:border-b-0">
+                  <p className="font-semibold text-gray-800 text-sm mb-1">
                     {format(day, "EEEE dd MMMM yyyy", { locale: fr })} ({totalDailyTime.toFixed(1)}j)
                     {isWeekendDay && <span className="text-gray-500 ml-2">(Week-end)</span>}
                     {isPublicHoliday(day) && <span className="text-gray-500 ml-2">(Jour Férié)</span>}
-                  </h4>
-                  {dailyActivities.length > 0 ? (
-                    <ul className="list-disc pl-5 text-gray-700">
-                      {dailyActivities.map((activity) => {
-                        const activityType = getActivityTypeName(activity.type_activite);
-                        const clientName = getClientName(activity.client_id);
-                        const isPaidLeave = String(activity.type_activite) === String(paidLeaveTypeId);
-                        
-                        let itemClass = "";
-                        if (isPaidLeave) {
-                          itemClass = "text-green-700 font-medium";
-                        } else if (activityType.toLowerCase().includes("absence")) {
-                          itemClass = "text-red-700 font-medium";
-                        }
-
-                        return (
-                          <li key={activity.id} className={`text-sm ${itemClass}`}>
-                            {activityType} ({parseFloat(activity.temps_passe).toFixed(1)}j) - Client: {clientName}
-                            {activity.description && ` - "${activity.description}"`}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="text-gray-500 text-sm italic pl-5">Aucune activité enregistrée pour ce jour.</p>
-                  )}
+                  </p>
+                  <div className="pl-4 space-y-1">
+                    {dailyActivities.length > 0 ? (
+                      dailyActivities.map((activity) => (
+                        <p key={activity.id} className="text-sm text-gray-700">
+                          - {getActivityTypeName(activity.type_activite)} (
+                          {parseFloat(activity.temps_passe).toFixed(1)}j){" "}
+                          {activity.client_id &&
+                            `- Client: ${getClientName(activity.client_id)}`}
+                          {activity.description &&
+                            ` - "${activity.description}"`}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 italic">
+                        Aucune activité enregistrée
+                      </p>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 text-center">Aucune activité enregistrée pour ce mois.</p>
-          )}
+              ))
+            ) : (
+              <p className="text-gray-600 text-center py-4">
+                Aucune activité enregistrée pour ce mois.
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Bouton de téléchargement PDF */}
-        <div className="mt-6 flex justify-center">
+        {/* Section Signature */}
+        <div className="flex flex-col items-center mt-6">
+          <h4 className="text-lg font-semibold text-gray-700 mb-2">Signature:</h4>
+          <div className="relative w-full max-w-sm border border-gray-300 rounded-md overflow-hidden bg-white" style={{ height: '150px' }}>
+            {isSignatureLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
+                <p className="text-gray-500">Chargement de la signature...</p>
+              </div>
+            )}
+            <canvas
+              ref={signatureCanvasRef}
+              className="w-full h-full" // Tailwind classes for full width and height
+            ></canvas>
+            {signatureData && !isDrawing && !isSignatureLoading && (
+              <div className="absolute bottom-2 right-2 text-xs text-gray-500">
+                Signature chargée. Dessinez pour effacer.
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={clearSignature}
+              className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200 text-sm"
+            >
+              Effacer
+            </button>
+            <button
+              onClick={saveSignature}
+              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors duration-200 text-sm"
+            >
+              Enregistrer
+            </button>
+          </div>
+        </div>
+
+        {/* Boutons d'action */}
+        <div className="flex justify-end gap-4 mt-8">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors duration-200"
+          >
+            Fermer
+          </button>
           <button
             onClick={handleDownloadPdf}
-            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-200"
+            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
           >
-            Télécharger le Rapport PDF
+            Télécharger le PDF
           </button>
         </div>
       </div>

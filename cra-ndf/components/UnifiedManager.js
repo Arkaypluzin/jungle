@@ -151,6 +151,7 @@ export default function UnifiedManager({
     is_billable: false,
     requires_client: true,
     is_overtime: false,
+    is_absence: false, // NOUVEAU: Ajout de is_absence
   });
   const [editActivityTypeData, setEditActivityTypeData] = useState(null);
   const [isActivityTypeEditModalOpen, setIsActivityTypeEditModalOpen] =
@@ -185,6 +186,7 @@ export default function UnifiedManager({
         is_billable: false,
         requires_client: true,
         is_overtime: false,
+        is_absence: false, // Réinitialisation de is_absence
       });
     },
     [newActivityTypeData, onAddActivityType, showMessage]
@@ -255,6 +257,7 @@ export default function UnifiedManager({
       is_billable: activityType.is_billable ?? false,
       requires_client: activityType.requires_client ?? true,
       is_overtime: activityType.is_overtime ?? false,
+      is_absence: activityType.is_absence ?? false, // NOUVEAU: Récupération de is_absence
     });
     setIsActivityTypeEditModalOpen(true);
   }, []);
@@ -492,6 +495,29 @@ export default function UnifiedManager({
               />
               Heures supplémentaires
             </label>
+            {/* NOUVEAU CHAMP: is_absence */}
+            <label
+              htmlFor="is_absence"
+              className="flex items-center text-gray-700 font-medium px-2 py-1"
+            >
+              <input
+                type="checkbox"
+                id="is_absence"
+                name="is_absence"
+                checked={
+                  isActivityTypeEditModalOpen && editActivityTypeData
+                    ? editActivityTypeData.is_absence
+                    : newActivityTypeData.is_absence
+                }
+                onChange={
+                  isActivityTypeEditModalOpen
+                    ? handleEditActivityTypeChange
+                    : handleNewActivityTypeChange
+                }
+                className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+              />
+              Est une absence
+            </label>
             <button
               type="submit"
               className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 min-w-[120px]"
@@ -576,6 +602,24 @@ export default function UnifiedManager({
                       >
                         {" "}
                         (Non HS)
+                      </span>
+                    )}
+                    {/* NOUVEAU: Affichage de is_absence */}
+                    {type.is_absence ? (
+                      <span
+                        className="ml-2 text-orange-600 text-sm font-bold"
+                        title="Est une absence"
+                      >
+                        {" "}
+                        (Absence) 🏖️
+                      </span>
+                    ) : (
+                      <span
+                        className="ml-2 text-gray-500 text-sm"
+                        title="Est une présence"
+                      >
+                        {" "}
+                        (Présence) 💼
                       </span>
                     )}
                   </span>

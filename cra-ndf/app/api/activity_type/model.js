@@ -52,15 +52,16 @@ export async function getActivityTypeById(id) {
 
 // Fonction pour créer un nouveau type d'activité
 export async function createActivityType(data) {
-  const db = await getMongoDb();
   const newActivityType = {
     name: data.name,
     is_billable: Boolean(data.is_billable),
     requires_client: data.requires_client !== false,
     is_overtime: Boolean(data.is_overtime),
+    is_absence: Boolean(data.is_absence), // NOUVEAU: Ajout de is_absence
     created_at: new Date(),
     updated_at: new Date(),
   };
+  const db = await getMongoDb();
   try {
     console.log(
       "MongoDB Model: Tentative de création d'un type d'activité:",
@@ -113,6 +114,8 @@ export async function updateActivityType(id, updateData) {
     update.$set.requires_client = Boolean(updateData.requires_client);
   if (updateData.is_overtime !== undefined)
     update.$set.is_overtime = Boolean(updateData.is_overtime);
+  if (updateData.is_absence !== undefined) // NOUVEAU: Ajout de is_absence
+    update.$set.is_absence = Boolean(updateData.is_absence);
 
   try {
     const res = await db

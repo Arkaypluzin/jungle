@@ -1,12 +1,128 @@
 // components/ReceivedCras.js
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
+
+// PAS D'IMPORTS DIRECTS DE jspdf OU jspdf-autotable ICI.
+// Ils seront importés dynamiquement dans handleDownloadTableViewPdf.
+
 import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
 import ConfirmationModal from "./ConfirmationModal";
 import CraBoard from "./CraBoard";
+
+// Composant MultiSelectDropdown intégré directement
+function MultiSelectDropdown({
+  label,
+  options, // Array of { value: string, name: string }
+  selectedValues, // Array of string values
+  onSelectionChange, // Function (newSelectedValues: string[]) => void
+  placeholder = "Sélectionner...",
+  className = "", // For external styling
+  allSelectedLabel = "", // Nouveau prop pour le libellé "Tous les..."
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    // CORRECTION: Utiliser handleClickOutside au lieu de handleClick
+    document.removeEventListener('touchstart', handleClickOutside, { passive: false }); // Passive false for preventDefault
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside, { passive: false });
+    };
+  }, []);
+
+  const handleToggle = useCallback(() => {
+    setIsOpen(prev => !prev);
+  }, []);
+
+  const handleOptionClick = useCallback((value) => {
+    const newSelectedValues = selectedValues.includes(value)
+      ? selectedValues.filter(v => v !== value)
+      : [...selectedValues, value];
+    onSelectionChange(newSelectedValues);
+  }, [selectedValues, onSelectionChange]);
+
+  const displaySelected = useMemo(() => {
+    // MODIFIÉ: Si selectedValues est vide, cela signifie "tous"
+    if (selectedValues.length === 0) {
+      return allSelectedLabel || `Tous les ${label.toLowerCase().replace(':', '')}`;
+    }
+    // NOUVEAU: Si toutes les options sont sélectionnées, affiche le libellé "Tous les..."
+    if (selectedValues.length === options.length && options.length > 0) {
+      return allSelectedLabel || `Tous les ${label.toLowerCase().replace(':', '')}`;
+    }
+    const selectedNames = options
+      .filter(option => selectedValues.includes(option.value))
+      .map(option => option.name);
+    return selectedNames.join(', ');
+  }, [selectedValues, options, placeholder, label, allSelectedLabel]);
+
+  return (
+    <div className={`relative ${className}`} ref={dropdownRef}>
+      <label className="text-sm font-medium text-gray-700 mb-1 block">
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={handleToggle}
+        className="w-full px-4 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 flex justify-between items-center"
+      >
+        <span className="truncate">{displaySelected}</span>
+        <svg
+          className={`w-4 h-4 ml-2 transition-transform duration-200 ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M19 9l-7 7-7-7"
+          ></path>
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          {options.length === 0 ? (
+            <div className="px-4 py-2 text-gray-500">Aucune option disponible.</div>
+          ) : (
+            options.map(option => (
+              <label
+                key={option.value}
+                className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  value={option.value}
+                  checked={selectedValues.includes(option.value)}
+                  onChange={() => handleOptionClick(option.value)}
+                  className="form-checkbox h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <span className="ml-2 text-gray-800">{option.name}</span>
+              </label>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export default function ReceivedCras({
   userId,
@@ -23,20 +139,19 @@ export default function ReceivedCras({
   const [error, setError] = useState(null);
   const [allUsersForFilter, setAllUsersForFilter] = useState([]);
 
-  const [filterUserId, setFilterUserId] = useState("");
-  const [filterMonth, setFilterMonth] = useState("");
-  const [filterYear, setFilterYear] = useState("");
-  const [filterStatus, setFilterStatus] = useState(
-    "pending_review,validated,rejected"
-  );
-  const [filterReportType, setFilterReportType] = useState("");
+  // MODIFIÉ: filterUserIds et filterStatuses initialisés à vide.
+  // Un tableau vide signifie "tous" pour ces filtres.
+  const [filterUserIds, setFilterUserIds] = useState([]);
+  const [filterMonths, setFilterMonths] = useState([]);
+  const [filterYears, setFilterYears] = useState([]);
+  const [filterStatuses, setFilterStatuses] = useState([]);
 
   const [selectedReportForPreview, setSelectedReportForPreview] =
     useState(null);
   const [showMonthlyReportPreview, setShowMonthlyReportPreview] =
     useState(false);
 
-  const [reportToUpdate, setReportToUpdate] = useState(null);
+  const [reportToUpdate, setReportToUpdate] = useState(null); // Utilisé pour les actions Valider/Rejeter ET pour le PDF
   const [showValidationConfirmModal, setShowValidationConfirmModal] =
     useState(false);
   const [showRejectionConfirmModal, setShowRejectionConfirmModal] =
@@ -59,6 +174,7 @@ export default function ReceivedCras({
       }
       const data = await response.json();
       setAllUsersForFilter(data);
+      // NOUVEAU: Ne pas initialiser filterUserIds ici. Il reste vide par défaut pour signifier "tous".
     } catch (err) {
       console.error(
         "ReceivedCras: Erreur lors de la récupération des utilisateurs pour le filtre:",
@@ -76,16 +192,31 @@ export default function ReceivedCras({
     setError(null);
     try {
       let queryParams = new URLSearchParams();
-      if (filterUserId) queryParams.append("userId", filterUserId);
-      if (filterMonth) queryParams.append("month", filterMonth);
-      if (filterYear) queryParams.append("year", filterYear);
-      if (filterStatus) queryParams.append("status", filterStatus);
-      if (filterReportType) queryParams.append("reportType", filterReportType);
+      // MODIFIÉ: Si filterUserIds est vide, inclure TOUS les IDs d'utilisateurs disponibles.
+      // Sinon, inclure seulement les IDs sélectionnés.
+      const usersToFilter = filterUserIds.length > 0
+        ? filterUserIds
+        : allUsersForFilter.map(user => user.azureAdUserId);
+      
+      if (usersToFilter.length > 0) { // S'assure qu'il y a des utilisateurs à envoyer
+        queryParams.append("userId", usersToFilter.join(','));
+      }
+
+      if (filterMonths.length > 0) queryParams.append("month", filterMonths.join(','));
+      if (filterYears.length > 0) queryParams.append("year", filterYears.join(','));
+      
+      // MODIFIÉ: Si filterStatuses est vide, inclure TOUS les statuts disponibles.
+      // Sinon, inclure seulement les statuts sélectionnés.
+      const statusesToFilter = filterStatuses.length > 0
+        ? filterStatuses
+        : ["pending_review", "validated", "rejected", "draft"]; // Tous les statuts possibles
+      
+      if (statusesToFilter.length > 0) { // S'assure qu'il y a des statuts à envoyer
+        queryParams.append("status", statusesToFilter.join(','));
+      }
 
       console.log(
-        "[ReceivedCras] fetchMonthlyReports: Envoi de la requête avec filterReportType:",
-        filterReportType,
-        "et queryParams:",
+        "[ReceivedCras] fetchMonthlyReports: Envoi de la requête avec queryParams:",
         queryParams.toString()
       );
 
@@ -106,8 +237,6 @@ export default function ReceivedCras({
 
       if (data && Array.isArray(data.data)) {
         const processedReports = data.data.map((report) => {
-          // Normaliser rejectionReason/rejection_reason pour l'affichage dans le tableau
-          // Ceci est pour la liste des rapports dans ReceivedCras, pas pour le CraBoard modal
           if (
             report.status === "rejected" &&
             report.rejectionReason &&
@@ -144,11 +273,11 @@ export default function ReceivedCras({
     }
   }, [
     showMessage,
-    filterUserId,
-    filterMonth,
-    filterYear,
-    filterStatus,
-    filterReportType,
+    filterUserIds, // Mise à jour des dépendances
+    filterMonths,
+    filterYears,
+    filterStatuses,
+    allUsersForFilter // Ajouté pour que la logique "tous les utilisateurs" fonctionne
   ]);
 
   useEffect(() => {
@@ -163,11 +292,10 @@ export default function ReceivedCras({
   useEffect(() => {
     fetchMonthlyReports();
   }, [
-    filterUserId,
-    filterMonth,
-    filterYear,
-    filterStatus,
-    filterReportType,
+    filterUserIds,
+    filterMonths,
+    filterYears,
+    filterStatuses,
     fetchMonthlyReports,
   ]);
 
@@ -176,7 +304,7 @@ export default function ReceivedCras({
       !loading &&
       !error &&
       reports.length > 0 &&
-      filterStatus.includes("pending_review")
+      filterStatuses.includes("pending_review") // Vérifier si 'pending_review' est sélectionné dans le tableau
     ) {
       const pendingReportsCount = reports.filter(
         (report) => report.status === "pending_review"
@@ -188,7 +316,7 @@ export default function ReceivedCras({
         );
       }
     }
-  }, [reports, loading, error, filterStatus, showMessage]);
+  }, [reports, loading, error, filterStatuses, showMessage]);
 
   const handleOpenMonthlyReportPreview = useCallback((report) => {
     setSelectedReportForPreview(report);
@@ -293,8 +421,10 @@ export default function ReceivedCras({
     setRejectionReason("");
   }, []);
 
+  // NOUVEAU: Mettre à jour reportToUpdate lors de l'affichage des détails du CRA
   const handleViewCra = useCallback(
     async (report) => {
+      setReportToUpdate(report); // Définit le rapport actuel pour le PDF et autres actions
       console.log(
         "[ReceivedCras] handleViewCra appelé avec le rapport (initial):",
         report
@@ -307,9 +437,8 @@ export default function ReceivedCras({
             errorData.message || "Échec de la récupération du CRA détaillé."
           );
         }
-        let detailedReport = await response.json(); // Utilise 'let' pour pouvoir modifier l'objet
+        let detailedReport = await response.json();
 
-        // --- NOUVEAU LOG CRITIQUE : Contenu brut de la réponse API ---
         console.log("--- DIAGNOSTIC API BRUTE (handleViewCra) ---");
         console.log(
           "[ReceivedCras] detailedReport reçu de l'API (BRUT):",
@@ -329,25 +458,20 @@ export default function ReceivedCras({
         );
         console.log("--- FIN DIAGNOSTIC API BRUTE ---");
 
-        // Normalisation de la raison de rejet sur l'objet detailedReport lui-même
         if (detailedReport.status === "rejected") {
           let reasonValue = detailedReport.rejectionReason || detailedReport.rejection_reason;
-          if (reasonValue === "nul") { // Gérer la chaîne "nul" en la convertissant en null
+          if (reasonValue === "nul") {
             reasonValue = null;
           }
-          // Assigner la raison normalisée à la propriété snake_case pour la cohérence
           detailedReport.rejection_reason = reasonValue;
-          // Assurer que la propriété camelCase est également cohérente si elle est la source primaire
           if (detailedReport.rejectionReason && detailedReport.rejectionReason !== reasonValue) {
               detailedReport.rejectionReason = reasonValue;
           }
         } else {
-          // Si le rapport n'est pas rejeté, s'assurer qu'aucune raison de rejet n'est présente
           detailedReport.rejection_reason = null;
           detailedReport.rejectionReason = null;
         }
 
-        // computedRejectionReason est maintenant simplement la valeur normalisée
         const computedRejectionReason = detailedReport.rejection_reason;
 
         console.log(
@@ -477,16 +601,14 @@ export default function ReceivedCras({
           userFirstName: detailedReport.userName,
           currentMonth: craBoardCurrentMonth,
           activities: formattedActivities,
-          rejectionReason: computedRejectionReason, // Utilise la valeur calculée
-          monthlyReports: [detailedReport], // detailedReport a maintenant 'rejection_reason' si nécessaire
+          rejectionReason: computedRejectionReason,
+          monthlyReports: [detailedReport],
         };
 
-        // --- LOG FINAL AVANT SETSTATE ---
         console.log(
           "[ReceivedCras] Data prête à être passée à CraBoard (dataForCraBoard - before setState):",
           dataForCraBoard
         );
-        // --- FIN LOG FINAL ---
 
         setCraBoardReportData(dataForCraBoard);
       } catch (err) {
@@ -500,22 +622,20 @@ export default function ReceivedCras({
     [showMessage]
   );
 
-  // EFFECT POUR OUVRIR LA MODAL APRÈS QUE LES DONNÉES SOIENT PRÊTES
   useEffect(() => {
     if (craBoardReportData) {
-      // --- LOG CRITIQUE DANS L'EFFECT QUI OUVRE LA MODAL ---
       console.log(
         "[ReceivedCras] useEffect: craBoardReportData est prêt. RejectionReason depuis l'état (avant ouverture modal):",
         craBoardReportData.rejectionReason
       );
-      // --- FIN LOG CRITIQUE ---
       setShowCraBoardModal(true);
     }
   }, [craBoardReportData]);
 
   const handleCloseCraBoardModal = useCallback(() => {
     setShowCraBoardModal(false);
-    setCraBoardReportData(null); // Réinitialiser les données à la fermeture
+    setCraBoardReportData(null);
+    setReportToUpdate(null); // Réinitialiser reportToUpdate à la fermeture de la modale CRA Board
   }, []);
 
   const handleDeleteClick = useCallback(
@@ -527,14 +647,18 @@ export default function ReceivedCras({
     [onDeleteMonthlyReport]
   );
 
+  // Générer les années en fonction des rapports disponibles (reports)
   const yearOptions = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const years = [];
-    for (let i = currentYear - 2; i <= currentYear + 1; i++) {
-      years.push(i.toString());
-    }
-    return years;
-  }, []);
+    const years = new Set();
+    reports.forEach(report => {
+      if (report.year) {
+        years.add(report.year.toString());
+      }
+    });
+
+    const sortedYears = Array.from(years).sort((a, b) => parseInt(a) - parseInt(b));
+    return sortedYears.map(year => ({ value: year, name: year }));
+  }, [reports]);
 
   const monthOptions = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) =>
@@ -544,22 +668,119 @@ export default function ReceivedCras({
 
   const statusOptions = useMemo(
     () => [
-      { name: "Tous les statuts", value: "pending_review,validated,rejected" },
       { name: "En attente", value: "pending_review" },
       { name: "Validé", value: "validated" },
       { name: "Rejeté", value: "rejected" },
+      { name: "Brouillon", value: "draft" },
     ],
     []
   );
 
-  const reportTypeOptions = useMemo(
-    () => [
-      { name: "Tous les types", value: "" },
-      { name: "CRA", value: "cra" },
-      { name: "Congés Payés", value: "paid_leave" },
-    ],
-    []
-  );
+  // Fonction de réinitialisation des filtres
+  const handleResetFilters = useCallback(() => {
+    setFilterUserIds([]); // Vide la sélection des utilisateurs pour signifier "tous"
+    setFilterMonths([]); // Vide la sélection des mois
+    setFilterYears([]); // Vide la sélection des années
+    setFilterStatuses([]); // Vide la sélection des statuts pour signifier "tous"
+  }, []);
+
+  // NOUVEAU: Fonction pour télécharger la vue actuelle du tableau en PDF
+  const handleDownloadTableViewPdf = useCallback(async () => { // Rendre la fonction asynchrone
+    // Vérification du statut de validation du CRA
+    if (!reportToUpdate || reportToUpdate.status !== "validated") {
+        showMessage("Le rapport doit être validé pour être téléchargé en PDF.", "warning");
+        return;
+    }
+
+    try {
+      // Imports dynamiques pour jspdf et jspdf-autotable
+      // Assure que jspdf-autotable est chargé et étend jspdf avant l'instanciation
+      // La séquence est importante : d'abord le plugin, puis la classe jsPDF
+      // @ts-ignore
+      await import('jspdf-autotable'); // Importe et attache autoTable au prototype de jsPDF
+      // @ts-ignore
+      const { jsPDF } = await import('jspdf'); // Importe la classe jsPDF
+      
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text("Rapports Mensuels Filtrés", 14, 20);
+
+      const headers = [
+        "Utilisateur",
+        "Mois",
+        "Année",
+        "Jours travaillés",
+        "Jours facturables",
+        "Statut",
+      ];
+
+      const data = reports.map((report) => [
+        report.userName || "Utilisateur inconnu",
+        isValidDateFns(new Date(report.year, report.month - 1))
+          ? format(new Date(report.year, report.month - 1), "MMMM", { locale: fr })
+          : "Date invalide",
+        report.year,
+        report.total_days_worked?.toFixed(2) || "0.00",
+        report.total_billable_days?.toFixed(2) || "0.00",
+        report.status === "pending_review"
+          ? "En attente"
+          : report.status === "validated"
+          ? "Validé"
+          : report.status === "rejected"
+          ? `Rejeté (${report.rejection_reason || report.rejectionReason || 'N/A'})`
+          : "Brouillon",
+      ]);
+
+      console.log("Type of doc.autoTable (after dynamic import):", typeof doc.autoTable); // Debugging line
+
+      // @ts-ignore
+      doc.autoTable({
+        startY: 30,
+        head: [headers],
+        body: data,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [240, 240, 240], // Light gray header
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+        },
+        columnStyles: {
+          0: { cellWidth: 30 }, // Utilisateur
+          1: { cellWidth: 25 }, // Mois
+          2: { cellWidth: 15 }, // Année
+          3: { cellWidth: 25 }, // Jours travaillés
+          4: { cellWidth: 25 }, // Jours facturables
+          5: { cellWidth: 40 }, // Statut
+        },
+        didParseCell: function (data) {
+          // Style the status column text color based on status
+          if (data.column.index === 5 && data.cell.section === 'body') {
+            const statusText = data.cell.text[0];
+            if (statusText.startsWith('En attente')) {
+              data.cell.styles.textColor = [202, 138, 4]; // yellow-800
+            } else if (statusText.startsWith('Validé')) {
+              data.cell.styles.textColor = [22, 101, 52]; // green-800
+            } else if (statusText.startsWith('Rejeté')) {
+              data.cell.styles.textColor = [185, 28, 28]; // red-800
+            } else if (statusText.startsWith('Brouillon')) {
+              data.cell.styles.textColor = [75, 85, 99]; // gray-800
+            }
+          }
+        },
+      });
+
+      doc.save("rapports_mensuels_filtres.pdf");
+      showMessage("La vue du tableau a été téléchargée en PDF !", "success");
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      showMessage("Erreur lors de la génération du PDF: " + error.message, "error");
+    }
+  }, [reports, showMessage, reportToUpdate]);
+
 
   if (loading) {
     return (
@@ -580,117 +801,71 @@ export default function ReceivedCras({
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
       <h3 className="text-3xl font-bold text-gray-800 mb-6 text-center">
-        CRAM Reçus
+        Rapports Mensuels Reçus
       </h3>
 
       <div className="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner flex flex-wrap gap-4 justify-center items-center">
-        <div className="flex flex-col">
-          <label
-            htmlFor="filterUser"
-            className="text-sm font-medium text-gray-700 mb-1"
-          >
-            Utilisateur:
-          </label>
-          <select
-            id="filterUser"
-            value={filterUserId}
-            onChange={(e) => setFilterUserId(e.target.value)}
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Tous les utilisateurs</option>
-            {allUsersForFilter.map((user) => (
-              <option key={user.azureAdUserId} value={user.azureAdUserId}>
-                {user.fullName}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* MultiSelect pour Utilisateur(s) */}
+        <MultiSelectDropdown
+          label="Utilisateur(s):"
+          options={allUsersForFilter.map(user => ({ value: user.azureAdUserId, name: user.fullName }))}
+          selectedValues={filterUserIds}
+          onSelectionChange={setFilterUserIds}
+          placeholder="Sélectionner des utilisateurs" // Placeholder quand rien n'est sélectionné
+          allSelectedLabel="Tous les utilisateurs" // Libellé quand le tableau est vide (tous inclus)
+          className="min-w-[200px]"
+        />
 
-        <div className="flex flex-col">
-          <label
-            htmlFor="filterMonth"
-            className="text-sm font-medium text-gray-700 mb-1"
-          >
-            Mois:
-          </label>
-          <select
-            id="filterMonth"
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Tous les mois</option>
-            {monthOptions.map((month) => (
-              <option key={month.value} value={month.value}>
-                {month.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* MultiSelect pour Mois */}
+        <MultiSelectDropdown
+          label="Mois:"
+          options={monthOptions}
+          selectedValues={filterMonths}
+          onSelectionChange={setFilterMonths}
+          placeholder="Sélectionner des mois"
+          allSelectedLabel="Tous les mois"
+          className="min-w-[200px]"
+        />
 
-        <div className="flex flex-col">
-          <label
-            htmlFor="filterYear"
-            className="text-sm font-medium text-gray-700 mb-1"
-          >
-            Année:
-          </label>
-          <select
-            id="filterYear"
-            value={filterYear}
-            onChange={(e) => setFilterYear(e.target.value)}
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Toutes les années</option>
-            {yearOptions.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* MultiSelect pour Année */}
+        <MultiSelectDropdown
+          label="Année:"
+          options={yearOptions} // Utilise les années des rapports existants
+          selectedValues={filterYears}
+          onSelectionChange={setFilterYears}
+          placeholder="Sélectionner des années"
+          allSelectedLabel="Toutes les années"
+          className="min-w-[200px]"
+        />
 
-        <div className="flex flex-col">
-          <label
-            htmlFor="filterStatus"
-            className="text-sm font-medium text-gray-700 mb-1"
-          >
-            Statut:
-          </label>
-          <select
-            id="filterStatus"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >
-            {statusOptions.map((status) => (
-              <option key={status.value} value={status.value}>
-                {status.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* MultiSelect pour Statut */}
+        <MultiSelectDropdown
+          label="Statut:"
+          options={statusOptions}
+          selectedValues={filterStatuses}
+          onSelectionChange={setFilterStatuses}
+          placeholder="Sélectionner des statuts"
+          allSelectedLabel="Tous les statuts"
+          className="min-w-[200px]"
+        />
 
-        <div className="flex flex-col">
-          <label
-            htmlFor="filterReportType"
-            className="text-sm font-medium text-gray-700 mb-1"
-          >
-            Type de rapport:
-          </label>
-          <select
-            id="filterReportType"
-            value={filterReportType}
-            onChange={(e) => setFilterReportType(e.target.value)}
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >
-            {reportTypeOptions.map((type) => (
-              <option key={type.value} value={type.value}>
-                {type.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Bouton de réinitialisation */}
+        <button
+          onClick={handleResetFilters}
+          className="px-6 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200 self-end mb-1"
+        >
+          Réinitialiser les filtres
+        </button>
+
+        {/* NOUVEAU: Bouton pour télécharger la vue PDF du tableau */}
+        <button
+          onClick={handleDownloadTableViewPdf}
+          className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 self-end mb-1"
+          disabled={!reportToUpdate || reportToUpdate.status !== "validated"} // Désactivé si pas validé
+          title={!reportToUpdate || reportToUpdate.status !== "validated" ? "Le rapport doit être validé pour être téléchargé en PDF" : "Télécharger la vue PDF"}
+        >
+          Télécharger la vue PDF
+        </button>
       </div>
 
       {Array.isArray(reports) && reports.length === 0 ? (
@@ -703,12 +878,8 @@ export default function ReceivedCras({
             <thead className="bg-gray-100">
               <tr>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Type
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Utilisateur
-                </th>{" "}
-                {/* DÉPLACÉ : Colonne Utilisateur */}
+                </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                   Mois
                 </th>
@@ -739,22 +910,8 @@ export default function ReceivedCras({
                   className="border-b border-gray-200 hover:bg-gray-50"
                 >
                   <td className="py-3 px-4 text-sm text-gray-800">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        report.report_type === "paid_leave"
-                          ? "bg-teal-100 text-teal-800"
-                          : "bg-blue-100 text-blue-800"
-                      }`}
-                    >
-                      {report.report_type === "paid_leave"
-                        ? "Congés Payés"
-                        : "CRA"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
                     {report.userName || "Utilisateur inconnu"}
-                  </td>{" "}
-                  {/* DÉPLACÉ : Cellule Utilisateur */}
+                  </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {isValidDateFns(new Date(report.year, report.month - 1))
                       ? format(
@@ -792,7 +949,6 @@ export default function ReceivedCras({
                         : report.status === "rejected"
                         ? "Rejeté"
                         : "Brouillon"}{" "}
-                      {/* Ajout de "Brouillon" pour les statuts non gérés */}
                     </span>
                     {report.status === "rejected" &&
                       (report.rejection_reason || report.rejectionReason) && (
@@ -873,11 +1029,7 @@ export default function ReceivedCras({
         onConfirm={confirmValidation}
         message={
           reportToUpdate
-            ? `Confirmer la validation du rapport de ${
-                reportToUpdate.report_type === "paid_leave"
-                  ? "Congés Payés"
-                  : "CRA"
-              } pour ${
+            ? `Confirmer la validation de ce rapport mensuel pour ${
                 reportToUpdate.userName || "cet utilisateur"
               } pour ${format(
                 new Date(reportToUpdate.year, reportToUpdate.month - 1),
@@ -886,6 +1038,8 @@ export default function ReceivedCras({
               )}?`
             : `Confirmer la validation du rapport ?`
         }
+        confirmButtonText="Valider"
+        cancelButtonText="Annuler"
       />
 
       <ConfirmationModal
@@ -896,11 +1050,8 @@ export default function ReceivedCras({
           reportToUpdate ? (
             <div>
               <p className="mb-4">
-                Confirmer le rejet du rapport de{" "}
-                {reportToUpdate.report_type === "paid_leave"
-                  ? "Congés Payés"
-                  : "CRA"}{" "}
-                pour {reportToUpdate.userName || "cet utilisateur"} pour{" "}
+                Confirmer le rejet de ce rapport mensuel pour{" "}
+                {reportToUpdate.userName || "cet utilisateur"} pour{" "}
                 {format(
                   new Date(reportToUpdate.year, reportToUpdate.month - 1),
                   "MMMM yyyy",
@@ -929,6 +1080,12 @@ export default function ReceivedCras({
             </div>
           )
         }
+        confirmButtonText="Rejeter"
+        cancelButtonText="Annuler"
+        showInput={true}
+        inputValue={rejectionReason}
+        onInputChange={(e) => setRejectionReason(e.target.value)}
+        inputPlaceholder="Motif du rejet (obligatoire)"
       />
 
       {showCraBoardModal && craBoardReportData && (
@@ -960,6 +1117,8 @@ export default function ReceivedCras({
                 readOnly={true}
                 monthlyReports={craBoardReportData.monthlyReports}
                 rejectionReason={craBoardReportData.rejectionReason}
+                isReviewMode={true} // Indique que c'est en mode révision
+                onUpdateReportStatus={handleUpdateReportStatus}
               />
             </div>
           </div>

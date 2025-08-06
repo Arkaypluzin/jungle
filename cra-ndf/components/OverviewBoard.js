@@ -1099,9 +1099,6 @@ export default function OverviewBoard({
                           Congés Validés: {userSummary.totalLeaveDaysValidated.toFixed(1)}j
                         </div>
                         {/* Congés en Attente */}
-                        <div className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Congés en Attente: {userSummary.totalLeaveDaysPending.toFixed(1)}j
-                        </div>
                         {/* Congés Brouillons */}
                         <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
                           Congés Brouillons: {userSummary.totalLeaveDaysDraft.toFixed(1)}j
@@ -1120,7 +1117,7 @@ export default function OverviewBoard({
                         </div>
                         {/* Jours Ouvrés (Théoriques) */}
                         <div className="bg-gray-300 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Jours Ouvrés (Théoriques): {userSummary.totalWorkingDaysInView.toFixed(1)}j
+                          Jours Ouvrés: {userSummary.totalWorkingDaysInView.toFixed(1)}j
                         </div>
                       </div>
                     </div>
