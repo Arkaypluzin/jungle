@@ -1,12 +1,12 @@
-// components/ActivityModal.js
+// components/ActivityForm.js
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { format, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
 
-export default function ActivityModal({
-  onClose,
+export default function ActivityForm({ // Renommé de ActivityModal à ActivityForm
+  onClose, // Ce onClose sera appelé pour masquer le formulaire dans CraBoard
   onSave,
   onDelete,
   activity,
@@ -15,18 +15,21 @@ export default function ActivityModal({
   clientDefinitions = [],
   showMessage,
   readOnly = false,
-  paidLeaveTypeId,
   selectedDaysForMultiAdd = [], // Jours sélectionnés pour l'ajout multiple
   isNonWorkingDay = () => false, // Fonction pour vérifier si un jour est non ouvré
-  activitiesByDay, // <-- NOUVEAU: Reçoit la map des activités par jour
+  activitiesByDay, // Reçoit la map des activités par jour
+  initialActivityTypeFilter = 'activity', // 'activity' ou 'absence', par défaut 'activity'
+  absenceActivityTypeIds = new Set(), // Set des IDs des types d'activité considérés comme des absences
 }) {
   console.log(
-    "[ActivityModal] Composant ActivityModal rendu. Activity ID:",
+    "[ActivityForm] Composant ActivityForm rendu. Activity ID:",
     activity?.id || "N/A",
     "Initial Date:",
     initialDate ? format(initialDate, "yyyy-MM-dd") : "N/A",
     "Selected Days for Multi-Add:",
-    selectedDaysForMultiAdd.length
+    selectedDaysForMultiAdd.length,
+    "Initial Filter (prop):",
+    initialActivityTypeFilter
   );
 
   const isMultiDayAdd = selectedDaysForMultiAdd.length > 1;
@@ -54,30 +57,25 @@ export default function ActivityModal({
     );
   }, [isEditing, activity]);
 
-  // NOUVEAU: Calcul du temps disponible pour le jour/les jours
+  // Calcul du temps disponible pour le jour/les jours
   const availableTimeForDay = useMemo(() => {
     if (isMultiDayAdd) {
-      // En mode multi-sélection, chaque jour doit pouvoir prendre 1 jour.
-      // La vérification réelle de la capacité de chaque jour est faite en amont dans CraBoard
-      // lors de la sélection et lors de la soumission. Ici, on suppose 1 jour par défaut.
       return 1;
     }
 
     const targetDate =
       initialDate || (activity ? new Date(activity.date_activite) : null);
-    if (!targetDate || !isValid(targetDate)) return 1; // Par défaut 1 si date invalide
+    if (!targetDate || !isValid(targetDate)) return 1;
 
     const dateKey = format(targetDate, "yyyy-MM-dd");
     const activitiesOnTargetDay = activitiesByDay.get(dateKey) || [];
 
     let totalTimeOnDay = 0;
     if (isEditing) {
-      // Si on édite, on exclut l'activité en cours d'édition du total
       totalTimeOnDay = activitiesOnTargetDay
         .filter((act) => String(act.id) !== String(activity.id))
         .reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
     } else {
-      // Si on ajoute, on prend le total existant
       totalTimeOnDay = activitiesOnTargetDay.reduce(
         (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
         0
@@ -85,8 +83,26 @@ export default function ActivityModal({
     }
 
     const remainingTime = 1 - totalTimeOnDay;
-    return Math.max(0, remainingTime); // Ne jamais retourner de temps négatif
+    return Math.max(0, remainingTime);
   }, [initialDate, activity, isEditing, activitiesByDay, isMultiDayAdd]);
+
+  // Filtrer les types d'activité en fonction du filtre initial (ou de l'activité éditée)
+  const filteredActivityTypeDefinitions = useMemo(() => {
+    let effectiveFilterMode = initialActivityTypeFilter;
+
+    if (!effectiveFilterMode && isEditing && activity) {
+        effectiveFilterMode = absenceActivityTypeIds.has(String(activity.type_activite)) ? 'absence' : 'activity';
+    } else if (!effectiveFilterMode) {
+        effectiveFilterMode = 'activity'; // Default to 'activity' mode if no explicit filter and not editing
+    }
+
+    if (effectiveFilterMode === 'absence') {
+      return activityTypeDefinitions.filter(type => absenceActivityTypeIds.has(String(type.id)));
+    } else { // effectiveFilterMode === 'activity'
+      return activityTypeDefinitions.filter(type => !absenceActivityTypeIds.has(String(type.id)));
+    }
+  }, [activityTypeDefinitions, absenceActivityTypeIds, initialActivityTypeFilter, isEditing, activity]);
+
 
   useEffect(() => {
     // Réinitialise le formulaire quand la date initiale ou l'activité change
@@ -103,20 +119,25 @@ export default function ActivityModal({
       });
     } else {
       // Pour une nouvelle activité, initialise avec la date sélectionnée et des valeurs par défaut
+      // Tente de pré-sélectionner le premier type d'activité filtré correspondant au mode
+      const defaultTypeId = filteredActivityTypeDefinitions.length > 0
+        ? filteredActivityTypeDefinitions[0].id
+        : '';
+
       setFormData((prev) => ({
         ...prev,
         date_activite: initialDate || new Date(),
         name: "", // Réinitialise le nom
-        temps_passe: isMultiDayAdd ? 1 : availableTimeForDay === 0 ? 0 : 1, // NOUVEAU: 1 par défaut pour multi-add, ou 1 si dispo, sinon 0
+        temps_passe: isMultiDayAdd ? 1 : availableTimeForDay === 0 ? 0 : 1, // 1 par défaut pour multi-add, ou 1 si dispo, sinon 0
         description_activite: "",
-        type_activite: "",
+        type_activite: defaultTypeId, // Définit le type filtré par défaut
         client_id: "",
         override_non_working_day: false,
         status: "draft",
       }));
     }
     setFormErrors({}); // Toujours effacer les erreurs lors du changement d'activité/date
-  }, [activity, initialDate, isMultiDayAdd, availableTimeForDay]); // Added isMultiDayAdd, availableTimeForDay
+  }, [activity, initialDate, isMultiDayAdd, availableTimeForDay, filteredActivityTypeDefinitions, isEditing]);
 
   const handleChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
@@ -148,7 +169,7 @@ export default function ActivityModal({
       errors.temps_passe = "Le temps passé doit être supérieur à 0.";
     }
 
-    // NOUVEAU: Validation de temps_passe par rapport à availableTimeForDay
+    // Validation de temps_passe par rapport à availableTimeForDay
     const parsedTempsPasse = parseFloat(formData.temps_passe);
     if (!isMultiDayAdd && parsedTempsPasse > availableTimeForDay) {
       errors.temps_passe = `Le temps passé ne peut pas dépasser ${availableTimeForDay.toFixed(
@@ -159,20 +180,21 @@ export default function ActivityModal({
       errors.type_activite = "Le type d'activité est requis.";
     }
 
-    const isPaidLeave =
-      String(formData.type_activite) === String(paidLeaveTypeId);
+    // Utilise absenceActivityTypeIds pour vérifier si c'est une absence
+    const isAbsence = absenceActivityTypeIds.has(String(formData.type_activite));
 
-    if (!isPaidLeave && !formData.client_id) {
+    // Le client est requis si ce n'est PAS un type d'activité d'absence
+    if (!isAbsence && !formData.client_id) {
       errors.client_id = "Le client est requis pour ce type d'activité.";
     }
 
-    // Validation spécifique pour les jours non ouvrés si ce n'est pas un congé payé
+    // Validation spécifique pour les jours non ouvrés si ce n'est pas une absence
     // Cette validation s'applique si c'est un ajout/édition sur un seul jour
     if (
       selectedDaysForMultiAdd.length === 0 &&
       currentActivityDate &&
       isNonWorkingDay(currentActivityDate) &&
-      !isPaidLeave &&
+      !isAbsence && // Vérifie si ce n'est PAS une absence
       !formData.override_non_working_day
     ) {
       errors.date_activite =
@@ -186,12 +208,11 @@ export default function ActivityModal({
     return Object.keys(errors).length === 0;
   }, [
     formData,
-    activityTypeDefinitions,
-    paidLeaveTypeId,
+    absenceActivityTypeIds, // Utilise le nouveau Set
     isNonWorkingDay,
     selectedDaysForMultiAdd,
-    isMultiDayAdd, // Added
-    availableTimeForDay, // Added
+    isMultiDayAdd,
+    availableTimeForDay,
   ]);
 
   const handleSubmit = useCallback(
@@ -212,7 +233,7 @@ export default function ActivityModal({
           await onSave({ ...formData, id: activity?.id });
           onClose(); // Réinitialise le formulaire après sauvegarde réussie
         } catch (error) {
-          console.error("ActivityModal: Erreur lors de la sauvegarde:", error);
+          console.error("ActivityForm: Erreur lors de la sauvegarde:", error);
         }
       } else {
         showMessage(
@@ -234,7 +255,7 @@ export default function ActivityModal({
   );
 
   const handleDeleteActivity = useCallback(async () => {
-    console.log("[ActivityModal] handleDeleteActivity called.");
+    console.log("[ActivityForm] handleDeleteActivity called.");
 
     if (readOnly || isActivityLocked) {
       showMessage(
@@ -246,14 +267,14 @@ export default function ActivityModal({
 
     if (isEditing && activity && onDelete) {
       console.log(
-        `[ActivityModal] Attempting direct delete for activity ID: ${activity.id}`
+        `[ActivityForm] Tentative de suppression directe pour l'activité ID: ${activity.id}`
       );
       try {
         await onDelete(activity.id);
         onClose();
       } catch (error) {
         console.error(
-          "ActivityModal: Erreur lors de la suppression via bouton 'Supprimer':",
+          "ActivityForm: Erreur lors de la suppression via bouton 'Supprimer':",
           error
         );
       }
@@ -268,15 +289,18 @@ export default function ActivityModal({
     isActivityLocked,
   ]);
 
+  // Détermine si le champ client est requis en fonction du type d'activité sélectionné
   const isClientRequired = useMemo(() => {
     const selectedType = activityTypeDefinitions.find(
       (type) => String(type.id) === String(formData.type_activite)
     );
-    return selectedType && String(selectedType.id) !== String(paidLeaveTypeId);
-  }, [formData.type_activite, activityTypeDefinitions, paidLeaveTypeId]);
+    // Un client n'est PAS requis si le type sélectionné est un type d'absence
+    return selectedType && !absenceActivityTypeIds.has(String(selectedType.id));
+  }, [formData.type_activite, activityTypeDefinitions, absenceActivityTypeIds]);
 
   return (
-    <div className="w-full p-6 font-inter">
+    // Remplacé l'enveloppe de la modale par une simple div pour l'intégration directe
+    <div className="bg-white rounded-xl shadow-xl w-full p-6 sm:p-8 mt-6">
       <div className="flex justify-between items-center mb-4 border-b pb-3">
         <h2 className="text-2xl font-bold text-gray-800">
           {isEditing
@@ -319,187 +343,186 @@ export default function ActivityModal({
             </div>
           )}
 
-<div className="flex-grow mb-4">
-            <label
-              htmlFor="temps_passe"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Temps passé (jours):
-              {!isMultiDayAdd && availableTimeForDay < 1 && (
-                <span className="ml-2 text-gray-500 text-xs">
-                  (Max: {availableTimeForDay.toFixed(1)}j)
-                </span>
-              )}
-            </label>
-            <input
-              type="number"
-              id="temps_passe"
-              name="temps_passe"
-              step="0.1"
-              min="0.1"
-              max={isMultiDayAdd ? 1 : availableTimeForDay}
-              value={formData.temps_passe}
-              onChange={handleChange}
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              required
-              disabled={
-                readOnly ||
-                isActivityLocked 
-                // Ancienne condition: (isMultiDayAdd && formData.temps_passe === 1)
-                // Cette condition est retirée pour permettre l'édition en mode multi-jours
-              } 
-            />
-            {formErrors.temps_passe && (
-              <p className="text-red-500 text-xs mt-1">
-                {formErrors.temps_passe}
-              </p>
-            )}
-          </div>
-          <div className="flex-grow mb-4">
-            <label
-              htmlFor="type_activite"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Type d'activité:
-            </label>
-            <select
-              id="type_activite"
-              name="type_activite"
-              value={formData.type_activite}
-              onChange={handleChange}
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              required
-              disabled={readOnly || isActivityLocked}
-            >
-              <option value="">Sélectionner un type</option>
-              {activityTypeDefinitions.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
-            {formErrors.type_activite && (
-              <p className="text-red-500 text-xs mt-1">
-                {formErrors.type_activite}
-              </p>
-            )}
-          </div>
-
-          {isClientRequired && (
             <div className="flex-grow mb-4">
               <label
-                htmlFor="client_id"
+                htmlFor="temps_passe"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Client:
+                Temps passé (jours):
+                {!isMultiDayAdd && availableTimeForDay < 1 && (
+                  <span className="ml-2 text-gray-500 text-xs">
+                    (Max: {availableTimeForDay.toFixed(1)}j)
+                  </span>
+                )}
               </label>
-              <select
-                id="client_id"
-                name="client_id"
-                value={formData.client_id}
+              <input
+                type="number"
+                id="temps_passe"
+                name="temps_passe"
+                step="0.1"
+                min="0.1"
+                max={isMultiDayAdd ? 1 : availableTimeForDay}
+                value={formData.temps_passe}
                 onChange={handleChange}
                 className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                required={isClientRequired}
-                disabled={readOnly || isActivityLocked}
-              >
-                <option value="">Sélectionner un client</option>
-                {clientDefinitions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nom_client}
-                  </option>
-                ))}
-              </select>
-              {formErrors.client_id && (
+                required
+                disabled={
+                  readOnly ||
+                  isActivityLocked
+                }
+              />
+              {formErrors.temps_passe && (
                 <p className="text-red-500 text-xs mt-1">
-                  {formErrors.client_id}
+                  {formErrors.temps_passe}
                 </p>
               )}
             </div>
-          )}
+            <div className="flex-grow mb-4">
+              <label
+                htmlFor="type_activite"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Type d'activité:
+              </label>
+              <select
+                id="type_activite"
+                name="type_activite"
+                value={formData.type_activite}
+                onChange={handleChange}
+                className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                required
+                disabled={readOnly || isActivityLocked}
+              >
+                <option value="">Sélectionner un type</option>
+                {/* Utilise la liste filtrée des types d'activité */}
+                {filteredActivityTypeDefinitions.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name}
+                  </option>
+                ))}
+              </select>
+              {formErrors.type_activite && (
+                <p className="text-red-500 text-xs mt-1">
+                  {formErrors.type_activite}
+                </p>
+              )}
+            </div>
 
-          {/* Checkbox pour la dérogation des jours non ouvrés */}
-          {isValid(formData.date_activite) &&
-            isNonWorkingDay(formData.date_activite) &&
-            String(formData.type_activite) !== String(paidLeaveTypeId) && (
-              <div className="w-full mb-4 flex items-center">
-                <input
-                  type="checkbox"
-                  id="override_non_working_day"
-                  name="override_non_working_day"
-                  checked={formData.override_non_working_day}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  disabled={readOnly || isActivityLocked}
-                />
+            {isClientRequired && (
+              <div className="flex-grow mb-4">
                 <label
-                  htmlFor="override_non_working_day"
-                  className="ml-2 block text-sm text-gray-900"
+                  htmlFor="client_id"
+                  className="block text-sm font-medium text-gray-700 mb-1"
                 >
-                  Dérogation jour non ouvré (pour CRA exceptionnel)
+                  Client:
                 </label>
+                <select
+                  id="client_id"
+                  name="client_id"
+                  value={formData.client_id}
+                  onChange={handleChange}
+                  className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  required={isClientRequired}
+                  disabled={readOnly || isActivityLocked}
+                >
+                  <option value="">Sélectionner un client</option>
+                  {clientDefinitions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nom_client}
+                    </option>
+                  ))}
+                </select>
+                {formErrors.client_id && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {formErrors.client_id}
+                  </p>
+                )}
               </div>
             )}
 
-          <div className="w-full mb-6">
-            <label
-              htmlFor="description_activite"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Description:
-            </label>
-            <textarea
-              id="description_activite"
-              name="description_activite"
-              value={formData.description_activite}
-              onChange={handleChange}
-              rows="3"
-              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              disabled={readOnly || isActivityLocked}
-            ></textarea>
-          </div>
-        </div>
+            {/* Checkbox pour la dérogation des jours non ouvrés */}
+            {isValid(formData.date_activite) &&
+              isNonWorkingDay(formData.date_activite) &&
+              !absenceActivityTypeIds.has(String(formData.type_activite)) && (
+                <div className="w-full mb-4 flex items-center">
+                  <input
+                    type="checkbox"
+                    id="override_non_working_day"
+                    name="override_non_working_day"
+                    checked={formData.override_non_working_day}
+                    onChange={handleChange}
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    disabled={readOnly || isActivityLocked}
+                  />
+                  <label
+                    htmlFor="override_non_working_day"
+                    className="ml-2 block text-sm text-gray-900"
+                  >
+                    Dérogation jour non ouvré (pour CRA exceptionnel)
+                  </label>
+                </div>
+              )}
 
-        <div className="flex justify-end space-x-3">
-          {isEditing && (
+            <div className="w-full mb-6">
+              <label
+                htmlFor="description_activite"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Description:
+              </label>
+              <textarea
+                id="description_activite"
+                name="description_activite"
+                value={formData.description_activite}
+                onChange={handleChange}
+                rows="3"
+                className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                disabled={readOnly || isActivityLocked}
+              ></textarea>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3">
+            {isEditing && (
+              <button
+                type="button"
+                onClick={handleDeleteActivity}
+                className={`px-4 py-2 bg-red-600 text-white font-semibold rounded-md transition duration-200 ${
+                  readOnly || isActivityLocked
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-red-700"
+                }`}
+                disabled={readOnly || isActivityLocked}
+              >
+                Supprimer
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleDeleteActivity}
-              className={`px-4 py-2 bg-red-600 text-white font-semibold rounded-md transition duration-200 ${
-                readOnly || isActivityLocked
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:bg-red-700"
-              }`}
-              disabled={readOnly || isActivityLocked}
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-md hover:bg-gray-400 transition duration-200"
             >
-              Supprimer
+              Annuler
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-md hover:bg-gray-400 transition duration-200"
-          >
-            Annuler
-          </button>
-          <button
-            type="submit"
-            className={`px-4 py-2 bg-blue-600 text-white font-semibold rounded-md transition duration-200 ${
-              readOnly ||
-              isActivityLocked ||
-              (availableTimeForDay === 0 && !isEditing) // Disable if no time left and not editing
-                ? "opacity-50 cursor-not-allowed"
-                : "hover:bg-blue-700"
-            }`}
-            disabled={
-              readOnly ||
-              isActivityLocked ||
-              (availableTimeForDay === 0 && !isEditing)
-            }
-          >
-            {isEditing ? "Modifier" : "Ajouter"}
-          </button>
-        </div>
-      </form>
-    </div>
+            <button
+              type="submit"
+              className={`px-4 py-2 bg-blue-600 text-white font-semibold rounded-md transition duration-200 ${
+                readOnly ||
+                isActivityLocked ||
+                (availableTimeForDay === 0 && !isEditing)
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:bg-blue-700"
+              }`}
+              disabled={
+                readOnly ||
+                isActivityLocked ||
+                (availableTimeForDay === 0 && !isEditing)
+              }
+            >
+              {isEditing ? "Modifier" : "Ajouter"}
+            </button>
+          </div>
+        </form>
+      </div>
   );
 }
