@@ -1595,7 +1595,7 @@ export default function CraBoard({
         if (isSingleDaySelectionLocked) {
           return;
         }
-
+  
         // Continue multi-selection ONLY if mouse button is down on a day
         // AND drag has officially started (isDraggingMultiSelect is true)
         // AND a drag start day for selection is defined.
@@ -1610,22 +1610,19 @@ export default function CraBoard({
         if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
           return;
         }
-
+  
         const startIndex = daysInMonth.findIndex((d) =>
           isSameDay(d, dragStartDayForSelection)
         );
         const endIndex = daysInMonth.findIndex((d) => isSameDay(d, day));
-
+  
         if (startIndex === -1 || endIndex === -1) {
           return;
         }
-
+  
         const [start, end] =
           startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
-
-        // Filter days based on mode:
-        // - If 'paid_leave' mode, allow all days (working/non-working)
-        // - If 'activity' mode, allow only working days
+  
         const newTempSelectedDays = daysInMonth
           .slice(start, end + 1)
           .filter((d) => {
@@ -1634,26 +1631,19 @@ export default function CraBoard({
               multiSelectType === "paid_leave"
                 ? isPaidLeaveEditable
                 : isCraEditable;
-
-            if (!isCurrentModeEditable) {
-              return false; // If current mode is not editable, do not select
-            }
-
+  
+            // NEW BEHAVIOR: Unified logic to block non-working days for both modes
             const dayKey = format(d, "yyyy-MM-dd");
             const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
             const existingTimeOnDay = existingActivitiesOnDay.reduce(
               (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
               0
             );
-
-            if (multiSelectType === "paid_leave") {
-              return existingTimeOnDay < 1; // Allow if < 1 day
-            } else {
-              // 'activity' mode
-              return !isNonWorkingDay(d) && existingTimeOnDay < 1; // Allow if working day and < 1 day
-            }
+  
+            // Allow selection only if the mode is editable, it's a working day, and there's less than 1 day of activity already.
+            return isCurrentModeEditable && !isNonWorkingDay(d) && existingTimeOnDay < 1;
           });
-
+  
         setTempSelectedDays(newTempSelectedDays);
       },
       [
@@ -1673,7 +1663,6 @@ export default function CraBoard({
         isSingleDaySelectionLocked, // Added as dependency
       ]
     );
-
     /**
      * Handles the end of multi-day selection (mouse release).
      * Triggers the appropriate action based on `multiSelectType`.
