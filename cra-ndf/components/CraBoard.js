@@ -894,15 +894,8 @@ export default function CraBoard({
     });
   }, []);
 
-  /**
-   * Handles click on a calendar day cell. Opens ActivityModal form for creation or editing.
-   * This function is ALWAYS active for single-day interaction.
-   * @param {Date} dayDate - The date of the clicked day.
-   * @param {Event} e - The mouse click event.
-   */
   const handleDayClick = useCallback(
     (dayDate, e) => {
-      // Le log a été déplacé ici, à l'intérieur de la fonction
       console.log(
         `[DEBUG - handleDayClick] Multi-selection mode: ${multiSelectType}, Is non-working day: ${isNonWorkingDay(dayDate)}`
       );
@@ -933,7 +926,6 @@ export default function CraBoard({
       );
 
       if (readOnly) {
-        // Check global readOnly prop first
         localShowMessage(
           "Activity modification disabled in read-only mode. You cannot add or modify activities.",
           "info"
@@ -942,137 +934,143 @@ export default function CraBoard({
       }
 
       const dateKey = isValid(dayDate) ? format(dayDate, "yyyy-MM-dd") : null;
-        if (!dateKey) {
-          console.error("handleDayClick: Invalid date received.");
+      if (!dateKey) {
+        console.error("handleDayClick: Invalid date received.");
+        return;
+      }
+      const existingActivitiesForDay = activitiesByDay.get(dateKey) || [];
+      const totalTimeForDay = existingActivitiesForDay
+        ? existingActivitiesForDay.reduce(
+            (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
+            0
+          )
+        : 0;
+
+        if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
+          const activity = existingActivitiesForDay[0];
+          const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
+  
+          if (!isAbsence && !isCraEditable) {
+            localShowMessage(
+              `CRA activity locked: report status is '${craReportStatus}'. Modification impossible.`,
+              "info"
+            );
+            return;
+          }
+          if (isAbsence && !isPaidLeaveEditable) {
+            localShowMessage(
+              `Paid leave activity locked: report status is '${paidLeaveReportStatus}'. Modification impossible.`,
+              "info"
+            );
+            return;
+          }
+  
+          if (!["draft", "rejected"].includes(activity.status)) {
+            localShowMessage(
+              `Activity locked: status '${activity.status}'. Modification impossible.`,
+              "info"
+            );
+            return;
+          }
+  
+          if (String(activity.user_id) !== String(userId)) {
+            localShowMessage(
+              "You cannot modify other users' activities. Please contact an administrator.",
+              "error"
+            );
+            return;
+          }
+        setSelectedDate(dayDate);
+        setEditingActivity(activity);
+        setTempSelectedDays([]);
+        setIsModalOpen(true);
+        setIsSingleDaySelectionLocked(true);
+        // La logique de filtre pour l'édition est correcte
+        const initialFilter = multiSelectType === "paid_leave" ? 'absence' : (isAbsence ? 'absence' : 'activity');
+        setInitialActivityTypeFilter(initialFilter);
+        console.log(
+          `[CraBoard - DEBUG] handleDayClick: Form opened for day: ${format(
+            dayDate,
+            "yyyy-MM-dd"
+          )} (editing)`
+        );
+      } else {
+        if (totalTimeForDay >= 1) {
+          localShowMessage(
+            "You have already reached the 1-day limit for this date. Please modify an existing activity or delete one to add a new one.",
+            "warning"
+          );
           return;
         }
-        const existingActivitiesForDay = activitiesByDay.get(dateKey) || [];
-        const totalTimeForDay = existingActivitiesForDay
-          ? existingActivitiesForDay.reduce(
-              (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-              0
-            )
-          : 0;
-  
-          if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
-            const activity = existingActivitiesForDay[0];
-            const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
-    
-            if (!isAbsence && !isCraEditable) {
-              localShowMessage(
-                `CRA activity locked: report status is '${craReportStatus}'. Modification impossible.`,
-                "info"
-              );
-              return;
-            }
-            if (isAbsence && !isPaidLeaveEditable) {
-              localShowMessage(
-                `Paid leave activity locked: report status is '${paidLeaveReportStatus}'. Modification impossible.`,
-                "info"
-              );
-              return;
-            }
-    
-            if (!["draft", "rejected"].includes(activity.status)) {
-              localShowMessage(
-                `Activity locked: status '${activity.status}'. Modification impossible.`,
-                "info"
-              );
-              return;
-            }
-    
-            if (String(activity.user_id) !== String(userId)) {
-              localShowMessage(
-                "You cannot modify other users' activities. Please contact an administrator.",
-                "error"
-              );
-              return;
-            }
-            setSelectedDate(dayDate);
-            setEditingActivity(activity);
-            setTempSelectedDays([]); // Ensure no temporary days for a single click
-            setIsModalOpen(true);
-            // NEW: Lock single day selection
-            setIsSingleDaySelectionLocked(true);
-            // Set initial filter based on the type of the existing activity
-            const initialFilter = multiSelectType === "paid_leave" ? 'absence' : (isAbsence ? 'absence' : 'activity');
-            setInitialActivityTypeFilter(initialFilter);
-            console.log(
-              `[CraBoard - DEBUG] handleDayClick: Form opened for day: ${format(
-                dayDate,
-                "yyyy-MM-dd"
-              )} (editing)`
-            );
-          } else {
-            if (totalTimeForDay >= 1) {
-              localShowMessage(
-                "You have already reached the 1-day limit for this date. Please modify an existing activity or delete one to add a new one.",
-                "warning"
-              );
-              return;
-            }
-    
-            // Logique de blocage en mode congé si le jour est non travaillé
-            if (multiSelectType === "paid_leave" && isNonWorkingDay(dayDate)) {
-              localShowMessage(
-                "Cannot add paid leave on a weekend or public holiday in single-day selection mode.",
-                "warning"
-              );
-              return; // Le clic est bloqué ici
-            }
-    
-            // On vérifie que la création est possible
-            if (!isCraEditable && !isPaidLeaveEditable) {
-              localShowMessage(
-                "Cannot add activities. CRA and Paid Leave reports are locked.",
-                "info"
-              );
-              return;
-            }
-    
-            // Détermination du filtre initial pour la modale
-            let filterType = 'activity';
-            if (multiSelectType === 'paid_leave' && isPaidLeaveEditable) {
-                filterType = 'absence';
-            } else if (isNonWorkingDay(dayDate) && isPaidLeaveEditable) {
-                filterType = 'absence';
-            }
-            setSelectedDate(dayDate);
-            setEditingActivity(null);
-            setTempSelectedDays([]); // Ensure no temporary days for a single click
-            setIsModalOpen(true);
-            // NEW: Lock single day selection
-            setIsSingleDaySelectionLocked(true);
-            
-            console.log(
-              `[CraBoard - DEBUG] handleDayClick: Form opened for day: ${format(
-                dayDate,
-                "yyyy-MM-dd"
-              )} (new activity)`
-            );
-          }
-        },
-          [
-            localShowMessage,
-            activitiesByDay,
-            readOnly,
-            absenceActivityTypeIds,
-            isCraEditable,
-            isPaidLeaveEditable,
-            craReportStatus,
-            paidLeaveReportStatus,
-            isDeletingActivityFlag,
-            isDraggingActivity,
-            isDraggingMultiSelect,
-            userId,
-            setSelectedDate,
-            setEditingActivity,
-            setTempSelectedDays,
-            setIsModalOpen,
-            setIsSingleDaySelectionLocked,
-            setInitialActivityTypeFilter,
-            isNonWorkingDay,
-            multiSelectType
+
+        // --- DÉBUT DE LA LOGIQUE CORRIGÉE POUR LA CRÉATION (CLIC SIMPLE) ---
+
+        // Logique de blocage en mode congé si le jour est non travaillé
+        if (multiSelectType === "paid_leave" && isNonWorkingDay(dayDate)) {
+          localShowMessage(
+            "Cannot add paid leave on a weekend or public holiday in single-day selection mode.",
+            "warning"
+          );
+          return;
+        }
+
+        // On vérifie que la création est possible pour le mode actuel
+        if (multiSelectType === 'activity' && !isCraEditable) {
+          localShowMessage(
+            "Cannot add activities. The CRA report is locked.",
+            "info"
+          );
+          return;
+        }
+        if (multiSelectType === 'paid_leave' && !isPaidLeaveEditable) {
+          localShowMessage(
+            "Cannot add paid leaves. The Paid Leave report is locked.",
+            "info"
+          );
+          return;
+        }
+
+        // Simplification du filtre initial, basé uniquement sur le multiSelectType
+        const filterType = multiSelectType === 'paid_leave' ? 'absence' : 'activity';
+
+        setSelectedDate(dayDate);
+        setEditingActivity(null);
+        setTempSelectedDays([]);
+        setIsModalOpen(true);
+        setIsSingleDaySelectionLocked(true);
+        // Le filtre est appliqué ici
+        setInitialActivityTypeFilter(filterType);
+        
+        console.log(
+          `[CraBoard - DEBUG] handleDayClick: Form opened for day: ${format(
+            dayDate,
+            "yyyy-MM-dd"
+          )} (new activity)`
+        );
+        // --- FIN DE LA LOGIQUE CORRIGÉE ---
+      }
+    },
+      [
+        localShowMessage,
+        activitiesByDay,
+        readOnly,
+        absenceActivityTypeIds,
+        isCraEditable,
+        isPaidLeaveEditable,
+        craReportStatus,
+        paidLeaveReportStatus,
+        isDeletingActivityFlag,
+        isDraggingActivity,
+        isDraggingMultiSelect,
+        userId,
+        setSelectedDate,
+        setEditingActivity,
+        setTempSelectedDays,
+        setIsModalOpen,
+        setIsSingleDaySelectionLocked,
+        setInitialActivityTypeFilter,
+        isNonWorkingDay,
+        multiSelectType
       ]
     );
 
