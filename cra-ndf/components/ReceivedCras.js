@@ -677,7 +677,37 @@ export default function ReceivedCras({
     ],
     []
   );
+  const userOptions = useMemo(() => {
+    return allUsersForFilter.map(user => ({
+      value: user.azureAdUserId,
+      name: user.fullName,
+    }));
+  }, [allUsersForFilter]);
+  const filteredReports = useMemo(() => {
+    return reports.filter(report => {
+      // Filtre utilisateur (si filtre appliqué)
+      if (
+        filterUserIds.length > 0 &&
+        !filterUserIds.includes(String(report.user_id))
+        
+      )
+      
+       {
+        return false;
+        console.log('filterUserIds:', filterUserIds);
+console.log('report.user_id:', report.user_id, 'type:', typeof report.user_id);
+console.log('includes:', filterUserIds.includes(String(report.user_id)));
 
+      
+      }
+      // Filtre mois (si filtre appliqué)
+      if (filterMonths.length > 0 && !filterMonths.includes((report.month || "").toString())) {
+        return false;
+      }
+      return true;
+    });
+  }, [reports, filterUserIds, filterMonths]);
+  
   // Fonction de réinitialisation des filtres
   const handleResetFilters = useCallback(() => {
     setFilterUserIds([]); // Vide la sélection des utilisateurs pour signifier "tous"
@@ -888,7 +918,7 @@ export default function ReceivedCras({
               </tr>
             </thead>
             <tbody>
-              {reports.map((report) => (
+              {filteredReports.map((report) => (
                 <tr
                   key={report.id}
                   className="border-b border-gray-200 hover:bg-gray-50"
