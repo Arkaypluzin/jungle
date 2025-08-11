@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import CreateNdfModal from "@/components/NDF/NDF_ACTIONS/CreateNdfModal";
 import BtnRetour from "@/components/BtnRetour";
@@ -10,16 +10,95 @@ import RefuseNdfButton from "@/components/NDF/NDF_ACTIONS/RefuseNdfButton";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+/**
+ * Liste des mois affichés dans les sélecteurs
+ * (utilisée pour ordonner chronologiquement).
+ */
 const MONTHS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
 ];
 
-/** ================= MultiMonthSelect ================= **/
+/* ========================================================================
+   Helpers métiers (mutualisés) — évitent les duplications et erreurs
+   ======================================================================== */
+
+/**
+ * Convertit un champ TVA (string/array) en tableau exploitable.
+ * - Cas "0%" ou vide → tableau vide
+ * - Cas "20%" → [{ taux: 20, valeur_tva: ... }]
+ * - Cas "10%/20%" → array de plusieurs objets
+ * @param {string|Array} rawTva
+ * @param {number|string} montant
+ * @returns {Array<{taux:number, valeur_tva:number}>}
+ */
+function normalizeTva(rawTva, montant) {
+  const montantNum = parseFloat(montant) || 0;
+
+  if (!rawTva || rawTva === "0%") return [];
+
+  if (Array.isArray(rawTva)) {
+    // On suppose déjà au bon format
+    return rawTva.map(t => ({
+      taux: typeof t.taux === "number" ? t.taux : parseFloat(String(t.taux || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0,
+      valeur_tva: parseFloat(t.valeur_tva) || 0,
+    }));
+  }
+
+  if (typeof rawTva === "string" && rawTva.includes("/")) {
+    return rawTva.split("/").map((t) => {
+      const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+      // L'ancien code utilisait un ceil avant /100 — on conserve le même calcul
+      const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+      return { taux: tauxNum, valeur_tva };
+    });
+  }
+
+  if (typeof rawTva === "string") {
+    const tauxNum = parseFloat(rawTva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+    const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
+    return [{ taux: tauxNum, valeur_tva }];
+  }
+
+  return [];
+}
+
+/**
+ * Calcule le TTC d'une liste de détails (API /api/ndf_details).
+ * On garde la logique de l'app (ceil puis /100 + arrondi 2 décimales).
+ * @param {Array} details
+ * @returns {number} total TTC
+ */
+function computeTtcFromDetails(details) {
+  if (!Array.isArray(details) || details.length === 0) return 0;
+  const ttc = details.reduce((sum, d) => {
+    const base = parseFloat(d.montant) || 0;
+    const tvaArr = normalizeTva(d.tva, d.montant);
+    const totalTva = tvaArr.reduce((s, tvaObj) => s + (parseFloat(tvaObj.valeur_tva) || 0), 0);
+    return sum + Math.round((base + totalTva) * 100) / 100;
+  }, 0);
+  return ttc;
+}
+
+/**
+ * Récupération JSON simple avec annulation.
+ * @param {string} url
+ * @param {AbortSignal} signal
+ */
+async function fetchJSON(url, signal) {
+  const res = await fetch(url, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
+  return res.json();
+}
+
+/* ========================================================================
+   Composant MultiMonthSelect (inchangé visuellement)
+   ======================================================================== */
 function MultiMonthSelect({ label, options, selected, setSelected }) {
   const [open, setOpen] = useState(false);
   const ref = useRef();
 
+  // Ferme le menu si clic à l'extérieur
   useEffect(() => {
     function handleClickOutside(event) {
       if (ref.current && !ref.current.contains(event.target)) setOpen(false);
@@ -63,8 +142,7 @@ function MultiMonthSelect({ label, options, selected, setSelected }) {
           {options.map((m) => (
             <label
               key={m}
-              className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-blue-50 ${selected.includes(m) ? "font-bold text-blue-600" : "text-gray-800"
-                }`}
+              className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-blue-50 ${selected.includes(m) ? "font-bold text-blue-600" : "text-gray-800"}`}
             >
               <input
                 type="checkbox"
@@ -80,26 +158,28 @@ function MultiMonthSelect({ label, options, selected, setSelected }) {
     </div>
   );
 }
-/** ==================================================== **/
 
+/* ========================================================================
+   Page principale
+   ======================================================================== */
 export default function ClientAdminNdf() {
   const { data: session } = useSession();
   const [tab, setTab] = useState("mes");
 
-  // Filtres
+  // Filtres — listes
   const [ndfList, setNdfList] = useState([]);
   const [allNdfs, setAllNdfs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingAll, setLoadingAll] = useState(true);
 
-  // Perso
+  // Filtres — Mes
   const [filterYearPerso, setFilterYearPerso] = useState("");
   const [sortYearPerso, setSortYearPerso] = useState("desc");
   const [filterMonthsPerso, setFilterMonthsPerso] = useState([]);
   const [sortMonthPerso, setSortMonthPerso] = useState("asc");
   const [filterStatutPerso, setFilterStatutPerso] = useState("");
 
-  // Admin
+  // Filtres — Admin
   const [filterYear, setFilterYear] = useState("");
   const [sortYear, setSortYear] = useState("desc");
   const [filterMonths, setFilterMonths] = useState([]);
@@ -107,53 +187,78 @@ export default function ClientAdminNdf() {
   const [filterUser, setFilterUser] = useState("");
   const [filterStatut, setFilterStatut] = useState("");
 
-  // Totaux
+  // Totaux calculés côté client (TTC & indemnités)
   const [totaux, setTotaux] = useState({});
   const [totauxPerso, setTotauxPerso] = useState({});
   const [indemnitesPerso, setIndemnitesPerso] = useState({});
 
-  // Fetches
-  useEffect(() => {
-    fetchNdfs();
-    fetchAllNdfs();
-  }, []);
-  async function fetchNdfs() {
+  /* ---------------------- Fetch des listes ---------------------- */
+  const fetchNdfs = useCallback(async () => {
     setLoading(true);
+    const controller = new AbortController();
     try {
-      const res = await fetch("/api/ndf", { cache: "no-store" });
-      const data = await res.ok ? await res.json() : [];
+      const data = await fetchJSON("/api/ndf", controller.signal);
       setNdfList(Array.isArray(data) ? data : []);
     } catch {
       setNdfList([]);
     } finally {
       setLoading(false);
     }
-  }
-  async function fetchAllNdfs() {
+    return () => controller.abort();
+  }, []);
+
+  const fetchAllNdfs = useCallback(async () => {
     setLoadingAll(true);
+    const controller = new AbortController();
     try {
-      const res = await fetch("/api/ndf/all", { cache: "no-store" });
-      const data = await res.ok ? await res.json() : [];
+      const data = await fetchJSON("/api/ndf/all", controller.signal);
       setAllNdfs(Array.isArray(data) ? data : []);
     } catch {
       setAllNdfs([]);
     } finally {
       setLoadingAll(false);
     }
-  }
+    return () => controller.abort();
+  }, []);
 
-  // Filtres dynamiques
-  const yearOptionsPerso = Array.from(new Set(ndfList.map((n) => n.year))).sort((a, b) => b - a);
-  const monthOptionsPerso = MONTHS.filter((m) => ndfList.some((ndf) => ndf.month === m));
+  // Montage initial : on charge les deux listes
+  useEffect(() => {
+    let abortA, abortB;
+    (async () => {
+      abortA = await fetchNdfs();
+      abortB = await fetchAllNdfs();
+    })();
+    return () => { try { abortA?.(); abortB?.(); } catch { } };
+  }, [fetchNdfs, fetchAllNdfs]);
+
+  /* ------------------- Options de filtres ------------------- */
+  const yearOptionsPerso = useMemo(
+    () => Array.from(new Set(ndfList.map((n) => n.year))).sort((a, b) => b - a),
+    [ndfList]
+  );
+  const monthOptionsPerso = useMemo(
+    () => MONTHS.filter((m) => ndfList.some((ndf) => ndf.month === m)),
+    [ndfList]
+  );
   const statutOptionsPerso = ["Provisoire", "Déclaré", "Validé", "Remboursé"];
-  const yearOptions = Array.from(new Set(allNdfs.map((n) => n.year))).sort((a, b) => b - a);
-  const monthOptions = MONTHS.filter((m) => allNdfs.some((ndf) => ndf.month === m));
-  const userOptions = Array.from(new Set(allNdfs.map((n) => n.name || n.user_id))).filter(Boolean).sort();
+
+  const yearOptions = useMemo(
+    () => Array.from(new Set(allNdfs.map((n) => n.year))).sort((a, b) => b - a),
+    [allNdfs]
+  );
+  const monthOptions = useMemo(
+    () => MONTHS.filter((m) => allNdfs.some((ndf) => ndf.month === m)),
+    [allNdfs]
+  );
+  const userOptions = useMemo(
+    () => Array.from(new Set(allNdfs.map((n) => n.name || n.user_id))).filter(Boolean).sort(),
+    [allNdfs]
+  );
   const statutOptions = ["Déclaré", "Validé", "Remboursé"];
 
-  // Filtrage multi-mois (perso)
+  /* ------------------- Filtrage — Mes ------------------- */
   const filteredNdfList = useMemo(() => {
-    return ndfList
+    const list = ndfList
       .filter((ndf) => !filterYearPerso || String(ndf.year) === String(filterYearPerso))
       .filter((ndf) => filterMonthsPerso.length === 0 || filterMonthsPerso.includes(ndf.month))
       .filter((ndf) => !filterStatutPerso || ndf.statut === filterStatutPerso)
@@ -164,11 +269,12 @@ export default function ClientAdminNdf() {
         const idxB = MONTHS.indexOf(b.month);
         return sortMonthPerso === "asc" ? idxA - idxB : idxB - idxA;
       });
+    return list;
   }, [ndfList, filterYearPerso, filterMonthsPerso, filterStatutPerso, sortYearPerso, sortMonthPerso]);
 
-  // Filtrage (admin)
+  /* ------------------- Filtrage — Admin ------------------- */
   const filteredNdfs = useMemo(() => {
-    return allNdfs
+    const list = allNdfs
       .filter((ndf) => !filterYear || String(ndf.year) === String(filterYear))
       .filter((ndf) => filterMonths.length === 0 || filterMonths.includes(ndf.month))
       .filter((ndf) => !filterUser || ndf.name === filterUser || ndf.user_id === filterUser)
@@ -180,143 +286,168 @@ export default function ClientAdminNdf() {
         const idxB = MONTHS.indexOf(b.month);
         return sortMonth === "asc" ? idxA - idxB : idxB - idxA;
       });
+    return list;
   }, [allNdfs, filterYear, filterMonths, filterUser, filterStatut, sortYear, sortMonth]);
 
-  /** ================ Totaux (DRY) ================= */
+  /* ------------------- Totaux (TTC) — Admin ------------------- */
   useEffect(() => {
     let isMounted = true;
-    async function getTotalsFor(list, setter) {
-      const t = {};
-      for (const ndf of list) {
-        const res = await fetch(`/api/ndf_details?ndf=${ndf.uuid}`);
-        if (!res.ok) continue;
-        const details = await res.json();
-        const ttc = details.reduce((sum, d) => {
-          const base = parseFloat(d.montant) || 0;
-          let arr = [];
-          if (!d.tva || d.tva === "0%") arr = [];
-          else if (Array.isArray(d.tva)) arr = d.tva;
-          else if (typeof d.tva === "string" && d.tva.includes("/")) {
-            const montantNum = parseFloat(d.montant) || 0;
-            arr = d.tva.split("/").map((t) => {
-              const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-              const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
-              return { taux: tauxNum, valeur_tva };
-            });
-          } else if (typeof d.tva === "string") {
-            const tauxNum = parseFloat(d.tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-            const montantNum = parseFloat(d.montant) || 0;
-            const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
-            arr = [{ taux: tauxNum, valeur_tva }];
-          }
-          const totalTva = arr.reduce((s, tvaObj) => s + (parseFloat(tvaObj.valeur_tva) || 0), 0);
-          return sum + Math.round((base + totalTva) * 100) / 100;
-        }, 0);
-        t[ndf.uuid] = ttc;
-      }
-      if (isMounted) setter(t);
+    const uuids = filteredNdfs.map((n) => n.uuid);
+    if (uuids.length === 0) {
+      setTotaux({});
+      return;
     }
-    getTotalsFor(filteredNdfs, setTotaux);
-  }, [JSON.stringify(filteredNdfs.map((ndf) => ndf.uuid))]);
 
-  useEffect(() => {
-    let isMounted = true;
-    async function getTotalsForPerso() {
-      const t = {};
-      for (const ndf of filteredNdfList) {
-        const res = await fetch(`/api/ndf_details?ndf=${ndf.uuid}`);
-        if (!res.ok) continue;
-        const details = await res.json();
-        const ttc = details.reduce((sum, d) => {
-          const base = parseFloat(d.montant) || 0;
-          let arr = [];
-          if (!d.tva || d.tva === "0%") arr = [];
-          else if (Array.isArray(d.tva)) arr = d.tva;
-          else if (typeof d.tva === "string" && d.tva.includes("/")) {
-            const montantNum = parseFloat(d.montant) || 0;
-            arr = d.tva.split("/").map((t) => {
-              const tauxNum = parseFloat(t.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-              const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
-              return { taux: tauxNum, valeur_tva };
-            });
-          } else if (typeof d.tva === "string") {
-            const tauxNum = parseFloat(d.tva.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-            const montantNum = parseFloat(d.montant) || 0;
-            const valeur_tva = Math.ceil(montantNum * tauxNum) / 100;
-            arr = [{ taux: tauxNum, valeur_tva }];
-          }
-          const totalTva = arr.reduce((s, tvaObj) => s + (parseFloat(tvaObj.valeur_tva) || 0), 0);
-          return sum + Math.round((base + totalTva) * 100) / 100;
-        }, 0);
-        t[ndf.uuid] = ttc;
-      }
-      if (isMounted) setTotauxPerso(t);
-    }
-    getTotalsForPerso();
-  }, [JSON.stringify(filteredNdfList.map((ndf) => ndf.uuid))]);
+    const controller = new AbortController();
 
-  useEffect(() => {
-    let isMounted = true;
-    async function getIndemnites() {
-      const ind = {};
-      for (const ndf of filteredNdfList) {
-        const res = await fetch(`/api/ndf_kilo?id_ndf=${ndf.uuid}`);
-        if (!res.ok) continue;
-        const rows = await res.json();
-
-        function calcIndemniteVoiture(cv, total) {
-          total = parseFloat(total);
-          if (isNaN(total) || !cv) return 0;
-          let bar = null;
-          if (cv === "3-") bar = 3;
-          if (cv === "4") bar = 4;
-          if (cv === "5") bar = 5;
-          if (cv === "6") bar = 6;
-          if (cv === "7+") bar = 7;
-          if (!bar) return 0;
-          if (bar === 3) { if (total <= 5000) return total * 0.529; if (total <= 20000) return total * 0.316 + 1061; return total * 0.369; }
-          if (bar === 4) { if (total <= 5000) return total * 0.606; if (total <= 20000) return total * 0.340 + 1330; return total * 0.408; }
-          if (bar === 5) { if (total <= 5000) return total * 0.636; if (total <= 20000) return total * 0.356 + 1391; return total * 0.427; }
-          if (bar === 6) { if (total <= 5000) return total * 0.665; if (total <= 20000) return total * 0.374 + 1457; return total * 0.448; }
-          if (bar === 7) { if (total <= 5000) return total * 0.697; if (total <= 20000) return total * 0.394 + 1512; return total * 0.470; }
-          return 0;
-        }
-        function calcIndemniteMoto(cv, total) {
-          total = parseFloat(total);
-          if (isNaN(total) || !cv) return 0;
-          if (cv === "1") { if (total <= 3000) return total * 0.395; if (total <= 6000) return total * 0.099 + 891; return total * 0.248; }
-          if (cv === "2-3-4-5") { if (total <= 3000) return total * 0.468; if (total <= 6000) return total * 0.082 + 1158; return total * 0.275; }
-          if (cv === "plus5") { if (total <= 3000) return total * 0.606; if (total <= 6000) return total * 0.079 + 1583; return total * 0.343; }
-          return 0;
-        }
-        function calcIndemnite(type_vehicule, cv, total) {
-          if (type_vehicule === "voiture") return calcIndemniteVoiture(cv, total);
-          if (type_vehicule === "moto") return calcIndemniteMoto(cv, total);
-          return 0;
-        }
-
-        const totalIndemnites = rows.reduce(
-          (acc, r) => acc + (parseFloat(calcIndemnite(r.type_vehicule, r.cv, r.total_euro)) || 0),
-          0
+    (async () => {
+      try {
+        // On récupère toutes les lignes en parallèle pour accélérer
+        const results = await Promise.allSettled(
+          uuids.map((uuid) => fetchJSON(`/api/ndf_details?ndf=${uuid}`, controller.signal))
         );
-        ind[ndf.uuid] = totalIndemnites;
-      }
-      if (isMounted) setIndemnitesPerso(ind);
-    }
-    getIndemnites();
-  }, [JSON.stringify(filteredNdfList.map((ndf) => ndf.uuid))]);
 
-  /** ------------ Export PDF (ONGLET MES) ------------ **/
-  function exportMesPdf() {
+        const map = {};
+        results.forEach((res, idx) => {
+          const uuid = uuids[idx];
+          if (res.status === "fulfilled") {
+            map[uuid] = computeTtcFromDetails(res.value);
+          } else {
+            map[uuid] = 0;
+          }
+        });
+
+        if (isMounted) setTotaux(map);
+      } catch {
+        if (isMounted) setTotaux({});
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [JSON.stringify(filteredNdfs.map((n) => n.uuid))]);
+
+  /* ------------------- Totaux (TTC) — Mes ------------------- */
+  useEffect(() => {
+    let isMounted = true;
+    const uuids = filteredNdfList.map((n) => n.uuid);
+    if (uuids.length === 0) {
+      setTotauxPerso({});
+      return;
+    }
+
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const results = await Promise.allSettled(
+          uuids.map((uuid) => fetchJSON(`/api/ndf_details?ndf=${uuid}`, controller.signal))
+        );
+        const map = {};
+        results.forEach((res, idx) => {
+          const uuid = uuids[idx];
+          map[uuid] = res.status === "fulfilled" ? computeTtcFromDetails(res.value) : 0;
+        });
+        if (isMounted) setTotauxPerso(map);
+      } catch {
+        if (isMounted) setTotauxPerso({});
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [JSON.stringify(filteredNdfList.map((n) => n.uuid))]);
+
+  /* ------------------- Indemnités — Mes ------------------- */
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    const uuids = filteredNdfList.map((n) => n.uuid);
+    if (uuids.length === 0) {
+      setIndemnitesPerso({});
+      return;
+    }
+
+    // Barèmes (identiques à votre code d’origine)
+    function calcIndemniteVoiture(cv, total) {
+      total = parseFloat(total);
+      if (isNaN(total) || !cv) return 0;
+      let bar = null;
+      if (cv === "3-") bar = 3;
+      if (cv === "4") bar = 4;
+      if (cv === "5") bar = 5;
+      if (cv === "6") bar = 6;
+      if (cv === "7+") bar = 7;
+      if (!bar) return 0;
+      if (bar === 3) { if (total <= 5000) return total * 0.529; if (total <= 20000) return total * 0.316 + 1061; return total * 0.369; }
+      if (bar === 4) { if (total <= 5000) return total * 0.606; if (total <= 20000) return total * 0.340 + 1330; return total * 0.408; }
+      if (bar === 5) { if (total <= 5000) return total * 0.636; if (total <= 20000) return total * 0.356 + 1391; return total * 0.427; }
+      if (bar === 6) { if (total <= 5000) return total * 0.665; if (total <= 20000) return total * 0.374 + 1457; return total * 0.448; }
+      if (bar === 7) { if (total <= 5000) return total * 0.697; if (total <= 20000) return total * 0.394 + 1512; return total * 0.470; }
+      return 0;
+    }
+    function calcIndemniteMoto(cv, total) {
+      total = parseFloat(total);
+      if (isNaN(total) || !cv) return 0;
+      if (cv === "1") { if (total <= 3000) return total * 0.395; if (total <= 6000) return total * 0.099 + 891; return total * 0.248; }
+      if (cv === "2-3-4-5") { if (total <= 3000) return total * 0.468; if (total <= 6000) return total * 0.082 + 1158; return total * 0.275; }
+      if (cv === "plus5") { if (total <= 3000) return total * 0.606; if (total <= 6000) return total * 0.079 + 1583; return total * 0.343; }
+      return 0;
+    }
+    function calcIndemnite(type_vehicule, cv, total) {
+      if (type_vehicule === "voiture") return calcIndemniteVoiture(cv, total);
+      if (type_vehicule === "moto") return calcIndemniteMoto(cv, total);
+      return 0;
+    }
+
+    (async () => {
+      try {
+        const results = await Promise.allSettled(
+          uuids.map((uuid) => fetchJSON(`/api/ndf_kilo?id_ndf=${uuid}`, controller.signal))
+        );
+
+        const map = {};
+        results.forEach((res, idx) => {
+          const uuid = uuids[idx];
+          if (res.status === "fulfilled" && Array.isArray(res.value)) {
+            const totalIndemnites = res.value.reduce(
+              (acc, r) => acc + (parseFloat(calcIndemnite(r.type_vehicule, r.cv, r.total_euro)) || 0),
+              0
+            );
+            map[uuid] = totalIndemnites;
+          } else {
+            map[uuid] = 0;
+          }
+        });
+
+        if (isMounted) setIndemnitesPerso(map);
+      } catch {
+        if (isMounted) setIndemnitesPerso({});
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [JSON.stringify(filteredNdfList.map((n) => n.uuid))]);
+
+  /* ------------------- Export PDF (Onglet MES) ------------------- */
+  const exportMesPdf = useCallback(() => {
     const doc = new jsPDF({ orientation: "landscape" });
     const title = `Mes notes de frais — ${session?.user?.name || ""}`.trim();
+
     const filtersLabelParts = [];
     if (filterYearPerso) filtersLabelParts.push(`Année: ${filterYearPerso}`);
     if (filterMonthsPerso.length) filtersLabelParts.push(`Mois: ${filterMonthsPerso.join(", ")}`);
     if (filterStatutPerso) filtersLabelParts.push(`Statut: ${filterStatutPerso}`);
     const sub = filtersLabelParts.join(" — ") || "Tous les filtres";
 
-    // Header
+    // En-tête
     doc.setFontSize(16);
     doc.text(title, 12, 16);
     doc.setFontSize(11);
@@ -324,23 +455,23 @@ export default function ClientAdminNdf() {
     doc.text(sub, 12, 22);
     doc.setTextColor(0);
 
-    // Table
+    // Corps (tableau)
     const head = [["Mois", "Statut", "NDF TTC (€)", "Indemnités (€)", "Total à rembourser (€)"]];
     const rows = filteredNdfList.map((ndf) => {
-      const ttc = totauxPerso[ndf.uuid];
-      const indem = indemnitesPerso[ndf.uuid];
-      const total = (ttc || 0) + (indem || 0);
+      const ttc = Number(totauxPerso[ndf.uuid] || 0);
+      const indem = Number(indemnitesPerso[ndf.uuid] || 0);
+      const total = ttc + indem;
       return [
         `${ndf.month} ${ndf.year}`,
         ndf.statut || "-",
-        typeof ttc === "number" ? ttc.toFixed(2) : "N/A",
-        typeof indem === "number" ? indem.toFixed(2) : "N/A",
+        ttc ? ttc.toFixed(2) : "N/A",
+        indem ? indem.toFixed(2) : "N/A",
         total.toFixed(2),
       ];
     });
 
     const totalGeneral = filteredNdfList.reduce(
-      (acc, ndf) => acc + ((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)),
+      (acc, ndf) => acc + (Number(totauxPerso[ndf.uuid] || 0) + Number(indemnitesPerso[ndf.uuid] || 0)),
       0
     );
 
@@ -367,7 +498,7 @@ export default function ClientAdminNdf() {
       margin: { left: 10, right: 10 },
     });
 
-    // Totaux
+    // Bloc totaux
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 6,
       body: [
@@ -388,16 +519,16 @@ export default function ClientAdminNdf() {
 
     const filename = `mes-notes-de-frais_${filterYearPerso || "toutes-annees"}.pdf`;
     doc.save(filename);
-  }
+  }, [session?.user?.name, filterYearPerso, filterMonthsPerso, filterStatutPerso, filteredNdfList, totauxPerso, indemnitesPerso]);
 
-  // Tabs visuel
+  /* ------------------- Tabs (UI) ------------------- */
   function renderTabs() {
     return (
       <div className="flex justify-center mb-8 mt-2 gap-2">
         <button
           className={`px-7 py-2 font-bold text-lg border-b-4 rounded-t-xl transition-all duration-150 ${tab === "mes"
-              ? "border-blue-600 text-blue-700 bg-white shadow"
-              : "border-transparent text-gray-500 bg-gray-100 hover:bg-blue-50"
+            ? "border-blue-600 text-blue-700 bg-white shadow"
+            : "border-transparent text-gray-500 bg-gray-100 hover:bg-blue-50"
             }`}
           onClick={() => setTab("mes")}
         >
@@ -405,8 +536,8 @@ export default function ClientAdminNdf() {
         </button>
         <button
           className={`px-7 py-2 font-bold text-lg border-b-4 rounded-t-xl transition-all duration-150 ${tab === "all"
-              ? "border-blue-600 text-blue-700 bg-white shadow"
-              : "border-transparent text-gray-500 bg-gray-100 hover:bg-blue-50"
+            ? "border-blue-600 text-blue-700 bg-white shadow"
+            : "border-transparent text-gray-500 bg-gray-100 hover:bg-blue-50"
             }`}
           onClick={() => setTab("all")}
         >
@@ -416,18 +547,19 @@ export default function ClientAdminNdf() {
     );
   }
 
-  // Total admin
+  /* ------------------- Total affiché (admin) ------------------- */
   const totalARembourserSomme = useMemo(() => {
     return filteredNdfs.reduce(
-      (acc, ndf) => acc + ((totaux[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)),
+      (acc, ndf) => acc + ((Number(totaux[ndf.uuid]) || 0) + (Number(indemnitesPerso[ndf.uuid]) || 0)),
       0
     );
   }, [filteredNdfs, totaux, indemnitesPerso]);
 
-  /** ====================== Rendu ====================== **/
+  /* ============================= Rendu ============================= */
   return (
     <div className="min-h-screen bg-gradient-to-tr from-blue-50 to-white p-4 sm:p-8">
       <div className="max-w-4xl mx-auto bg-white p-7 rounded-3xl shadow-xl border border-blue-100">
+        {/* Bandeau haut */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-5">
           <span className="font-bold text-xl mb-2 sm:mb-0 text-gray-800">
             Bienvenue, {session?.user?.name || "utilisateur"}
@@ -444,7 +576,7 @@ export default function ClientAdminNdf() {
         {/* =================== ONGLET MES =================== */}
         {tab === "mes" && (
           <>
-            {/* Filtres perso */}
+            {/* Filtres (perso) */}
             <div className="mb-4 flex flex-wrap items-end gap-4 p-5 bg-blue-50 rounded-2xl border border-blue-200">
               <div className="flex-grow min-w-[160px]">
                 <label htmlFor="filterYearPerso" className="block text-sm font-semibold text-gray-700 mb-1">
@@ -525,7 +657,7 @@ export default function ClientAdminNdf() {
               </button>
             </div>
 
-            {/* Toolbar : Create (gauche) + Export (droite) */}
+            {/* Toolbar : bouton création (gauche) + export (droite) */}
             <div className="mb-6 flex items-center gap-3">
               <div>
                 <CreateNdfModal onNdfCreated={fetchNdfs} />
@@ -546,7 +678,7 @@ export default function ClientAdminNdf() {
               </div>
             </div>
 
-            {/* Liste perso */}
+            {/* Liste Mes NDF */}
             {loading ? (
               <div className="text-center py-6">
                 <p className="text-gray-600">Chargement de vos notes de frais...</p>
@@ -580,12 +712,12 @@ export default function ClientAdminNdf() {
                       </span>
                       <span
                         className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${ndf.statut === "Provisoire"
-                            ? "bg-blue-100 text-blue-800"
-                            : ndf.statut === "Déclaré"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : ndf.statut === "Validé"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-purple-100 text-purple-800"
+                          ? "bg-blue-100 text-blue-800"
+                          : ndf.statut === "Déclaré"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : ndf.statut === "Validé"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-purple-100 text-purple-800"
                           }`}
                       >
                         {ndf.statut}
@@ -593,15 +725,15 @@ export default function ClientAdminNdf() {
                       <div className="flex flex-col gap-1 mt-2 ml-1">
                         <span className="text-sm text-blue-700 font-bold">
                           {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
-                            ? `Total à rembourser : ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)} €`
+                            ? `Total à rembourser : ${((Number(totauxPerso[ndf.uuid]) || 0) + (Number(indemnitesPerso[ndf.uuid]) || 0)).toFixed(2)} €`
                             : ""}
                         </span>
                         <span className="text-sm text-blue-700 font-semibold">
-                          NDF TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
+                          NDF TTC : {typeof totauxPerso[ndf.uuid] === "number" ? `${Number(totauxPerso[ndf.uuid]).toFixed(2)} €` : "N/A"}
                         </span>
                         <span className="text-sm text-blue-700 font-semibold">
                           {typeof indemnitesPerso[ndf.uuid] === "number"
-                            ? `Indemnités kilométriques : ${indemnitesPerso[ndf.uuid].toFixed(2)} €`
+                            ? `Indemnités kilométriques : ${Number(indemnitesPerso[ndf.uuid]).toFixed(2)} €`
                             : ""}
                         </span>
                       </div>
@@ -627,7 +759,7 @@ export default function ClientAdminNdf() {
           </>
         )}
 
-        {/* =================== ONGLET ALL =================== */}
+        {/* =================== ONGLET ALL (admin) =================== */}
         {tab === "all" && (
           <>
             <div className="mb-7 flex flex-wrap items-end gap-4 p-5 bg-blue-50 rounded-2xl border border-blue-200">
@@ -728,6 +860,7 @@ export default function ClientAdminNdf() {
               </button>
             </div>
 
+            {/* Total affiché pour l’onglet admin */}
             <div className="mb-2 flex items-center gap-3">
               <span className="font-semibold text-base text-gray-800">Total à rembourser affiché :</span>
               <span className="text-lg font-bold text-blue-800">{totalARembourserSomme.toFixed(2)} €</span>
@@ -754,10 +887,10 @@ export default function ClientAdminNdf() {
                       </span>
                       <span
                         className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${ndf.statut === "Déclaré"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : ndf.statut === "Validé"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-purple-100 text-purple-800"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : ndf.statut === "Validé"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-purple-100 text-purple-800"
                           }`}
                       >
                         {ndf.statut}
@@ -768,15 +901,15 @@ export default function ClientAdminNdf() {
                       <div className="flex flex-col gap-1 mt-2 ml-1">
                         <span className="ml-3 text-sm text-blue-700 font-bold">
                           {typeof totauxPerso[ndf.uuid] === "number" || typeof indemnitesPerso[ndf.uuid] === "number"
-                            ? `Total à rembourser ${((totauxPerso[ndf.uuid] || 0) + (indemnitesPerso[ndf.uuid] || 0)).toFixed(2)}€`
+                            ? `Total à rembourser ${((Number(totauxPerso[ndf.uuid]) || 0) + (Number(indemnitesPerso[ndf.uuid]) || 0)).toFixed(2)}€`
                             : ""}
                         </span>
                         <span className="ml-3 text-sm text-blue-700 font-bold">
-                          NDF TTC : {totauxPerso[ndf.uuid] ? `${totauxPerso[ndf.uuid].toFixed(2)} €` : "N/A"}
+                          NDF TTC : {typeof totauxPerso[ndf.uuid] === "number" ? `${Number(totauxPerso[ndf.uuid]).toFixed(2)} €` : "N/A"}
                         </span>
                         <span className="ml-3 text-sm text-blue-700 font-bold">
                           {typeof indemnitesPerso[ndf.uuid] === "number"
-                            ? `Indemnités : ${indemnitesPerso[ndf.uuid].toFixed(2)}€`
+                            ? `Indemnités : ${Number(indemnitesPerso[ndf.uuid]).toFixed(2)}€`
                             : ""}
                         </span>
                       </div>
@@ -793,6 +926,7 @@ export default function ClientAdminNdf() {
                         ndfId={ndf.uuid}
                         ndfStatut={ndf.statut}
                         onValidated={() => {
+                          // Après validation, on refresh les deux listes
                           fetchAllNdfs();
                           fetchNdfs();
                         }}
