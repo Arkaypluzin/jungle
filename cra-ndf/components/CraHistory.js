@@ -1,12 +1,11 @@
 // components/CraHistory.js
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
 import CraBoard from "@/components/CraBoard";
-import MonthlyReportPreviewModal from "@/components/MonthlyReportPreviewModal";
 
 export default function CraHistory({
   userId,
@@ -82,10 +81,7 @@ export default function CraHistory({
 
   const handleViewDetails = useCallback(
     async (report) => {
-      console.log(
-        "[CraHistory] handleViewDetails appelé avec le rapport:",
-        report
-      );
+      console.log("[CraHistory] handleViewDetails appelé avec le rapport:", report);
       try {
         const response = await fetch(`/api/monthly_cra_reports/${report.id}`);
         if (!response.ok) {
@@ -95,6 +91,8 @@ export default function CraHistory({
           );
         }
         const detailedReport = await response.json();
+
+        console.log("[CraHistory] detailedReport reçu:", detailedReport);
 
         if (!detailedReport) {
           console.error("[CraHistory] detailedReport est nul ou indéfini.");
@@ -120,20 +118,46 @@ export default function CraHistory({
           craBoardCurrentMonth = new Date();
         }
 
-        const activitiesToPass =
+        // Gestion des activités : si activities_snapshot contient uniquement des IDs, on fetch les détails
+        let activitiesToPass = [];
+        if (
           detailedReport.activities_snapshot &&
           Array.isArray(detailedReport.activities_snapshot)
-            ? detailedReport.activities_snapshot
-            : [];
+        ) {
+          // Check si le premier élément est une string (id) ou un objet
+          const firstElem = detailedReport.activities_snapshot[0];
+          if (typeof firstElem === "string" || typeof firstElem === "number") {
+            // Ce sont des IDs, on récupère chaque activité en détail
+            try {
+              const activitiesDetails = await Promise.all(
+                detailedReport.activities_snapshot.map(async (activityId) => {
+                  const res = await fetch(`/api/activities/${activityId}`);
+                  if (!res.ok) {
+                    console.warn(`Erreur chargement activité ${activityId}`);
+                    return null;
+                  }
+                  return res.json();
+                })
+              );
+              // Filtrer les activités nulles (en cas d'erreur fetch)
+              activitiesToPass = activitiesDetails.filter((a) => a !== null);
+            } catch (err) {
+              console.error("Erreur lors du fetch des activités détaillées:", err);
+              showMessage("Erreur lors du chargement des activités détaillées.", "error");
+            }
+          } else {
+            // On a déjà les objets activités complets
+            activitiesToPass = detailedReport.activities_snapshot;
+          }
+        }
 
-        // Robustly convert date_activite to a Date object
+        // Formattage robuste des activités
         const formattedActivities = activitiesToPass
           .map((activity) => {
             let dateObj = null;
             if (typeof activity.date_activite === "string") {
               dateObj = parseISO(activity.date_activite);
             } else if (activity.date_activite) {
-              // If it's already a Date object or other date-like
               dateObj = new Date(activity.date_activite);
             }
             return {
@@ -159,15 +183,12 @@ export default function CraHistory({
             detailedReport.status === "rejected"
               ? detailedReport.rejectionReason
               : null,
-          monthlyReports: monthlyReports, // Pass all monthly reports for status logic within CraBoard
-          reportStatus: detailedReport.status, // Pass the actual status of the report being viewed for CraBoard's internal logic
+          monthlyReports: monthlyReports,
+          reportStatus: detailedReport.status,
         });
         setShowCraBoardModal(true);
       } catch (err) {
-        console.error(
-          "CraHistory: Erreur lors de la récupération du CRA détaillé:",
-          err
-        );
+        console.error("CraHistory: Erreur lors de la récupération du CRA détaillé:", err);
         showMessage(`Erreur: ${err.message}`, "error");
       }
     },
@@ -265,9 +286,7 @@ export default function CraHistory({
                       locale: fr,
                     })}
                   </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {report.year}
-                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-800">{report.year}</td>
                   <td className="py-3 px-4 text-sm">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -289,20 +308,16 @@ export default function CraHistory({
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {report.submittedAt
-                      ? format(
-                          parseISO(report.submittedAt),
-                          "dd/MM/yyyy HH:mm",
-                          { locale: fr }
-                        )
+                      ? format(parseISO(report.submittedAt), "dd/MM/yyyy HH:mm", {
+                          locale: fr,
+                        })
                       : "N/A"}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {report.reviewedAt
-                      ? format(
-                          parseISO(report.reviewedAt),
-                          "dd/MM/yyyy HH:mm",
-                          { locale: fr }
-                        )
+                      ? format(parseISO(report.reviewedAt), "dd/MM/yyyy HH:mm", {
+                          locale: fr,
+                        })
                       : "N/A"}
                   </td>
                   <td className="py-3 px-4 text-sm">
@@ -344,14 +359,10 @@ export default function CraHistory({
                 activities={craBoardReportData.activities}
                 activityTypeDefinitions={activityTypeDefinitions}
                 clientDefinitions={clientDefinitions}
-                currentMonth={craBoardReportData.currentMonth}
-                showMessage={showMessage}
-                readOnly={
-                  craBoardReportData.reportStatus === "validated" ||
-                  craBoardReportData.reportStatus === "pending_review"
-                }
                 monthlyReports={craBoardReportData.monthlyReports}
+                currentMonth={craBoardReportData.currentMonth}
                 rejectionReason={craBoardReportData.rejectionReason}
+                reportStatus={craBoardReportData.reportStatus}
               />
             </div>
           </div>
