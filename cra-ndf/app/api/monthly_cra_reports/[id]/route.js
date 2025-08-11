@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import {
   getMonthlyReportByIdController,
-  updateMonthlyReportStatusController,
+  changeMonthlyReportStatusController,
   getActivitiesCollection, // Exporté depuis controller.js
   getMonthlyCraReportsCollection, // Exporté depuis controller.js
 } from "../controller";
@@ -28,7 +28,7 @@ export async function PUT(request, { params }) {
   const { id } = params;
   const { status, reviewerId, rejectionReason } = await request.json();
 
-  const result = await updateMonthlyReportStatusController(
+  const result = await changeMonthlyReportStatusController(
     id,
     status,
     reviewerId,

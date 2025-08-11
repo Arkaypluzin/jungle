@@ -9,18 +9,22 @@ import {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const month = searchParams.get("month");
+    const userIdsParam = searchParams.get("userId");
+    const monthsParam = searchParams.get("month");
     const year = searchParams.get("year");
     const status = searchParams.get("status");
 
+    // Convertir les paramètres en tableau s'ils existent
+    const userIds = userIdsParam ? userIdsParam.split(",") : null;
+    const months = monthsParam ? monthsParam.split(",") : null;
+
     console.log(
-      `API (Monthly Reports) GET: userId=${userId}, month=${month}, year=${year}, status=${status}`
+      `API (Monthly Reports) GET: userIds=${userIds}, months=${months}, year=${year}, status=${status}`
     );
 
     const reports = await getMonthlyReportsController({
-      userId,
-      month,
+      userIds,
+      months,
       year,
       status,
     });

@@ -299,282 +299,66 @@ export async function getMonthlyReportByIdController(reportId) {
           .toArray();
 
         console.log(
-          `[Backend DEBUG] Raw activities from toArray() (before mapping to add 'id'): ${rawActivitiesFromDb.length} documents. First 3:`,
-          rawActivitiesFromDb.slice(0, 3).map((d) => ({
-            _id: d._id,
-            date_activite: d.date_activite,
-            temps_passe: d.temps_passe,
-          }))
+          `[Backend DEBUG] Raw activities from DB fetched: ${rawActivitiesFromDb.length}`
         );
-
-        populatedActivities = rawActivitiesFromDb.map((doc) => ({
-          ...doc,
-          id: doc._id.toString(),
-        }));
-
-        console.log(
-          `[Backend] getMonthlyReportByIdController: Activités récupérées de la base de données:`,
-          populatedActivities.length,
-          "activités. Premières activités (ID, type, date):",
-          populatedActivities.slice(0, 3).map((a) => ({
-            id: a.id,
-            type: a.type_activite,
-            date: a.date_activite,
-          }))
-        );
-        if (populatedActivities.length !== activityObjectIds.length) {
-          console.warn(
-            `[Backend] getMonthlyReportByIdController: Le nombre d'activités récupérées (${populatedActivities.length}) ne correspond pas au nombre d'IDs recherchés (${activityObjectIds.length}). Cela peut indiquer des activités manquantes ou des IDs incorrects dans la base de données 'activities'.`
-          );
+        if (rawActivitiesFromDb.length > 0) {
+          populatedActivities = rawActivitiesFromDb.map((act) => ({
+            ...act,
+            id: act._id.toString(),
+          }));
         }
       } else {
         console.warn(
-          `[Backend] getMonthlyReportByIdController: Aucun ID d'activité valide à rechercher après filtrage.`
+          `[Backend] getMonthlyReportByIdController: Aucun ID d'activité valide trouvé dans activities_snapshot.`
         );
       }
     } else {
       console.log(
-        `[Backend] getMonthlyReportByIdController: Le champ activities_snapshot est vide ou n'existe pas dans le rapport.`
+        `[Backend] getMonthlyReportByIdController: Pas d'activités à peupler pour ce rapport.`
       );
     }
-
-    const userName = report.userName || "Utilisateur inconnu";
 
     return {
       success: true,
       data: {
         ...report,
         id: report._id.toString(),
-        userName: userName,
         activities_snapshot: populatedActivities,
       },
     };
   } catch (error) {
     console.error(
-      "[Backend] Erreur lors de la récupération du rapport CRA mensuel par ID:",
+      "[Backend] Erreur lors de la récupération du rapport mensuel par ID:",
       error
     );
     return { success: false, message: error.message };
   }
 }
 
-// Fonction pour mettre à jour le statut d'un rapport mensuel
-export async function updateMonthlyReportStatusController(
-  reportId,
-  newStatus,
-  reviewerId,
-  rejectionReason = null
-) {
+// Fonction pour changer le statut d'un rapport mensuel (ex. 'pending_review' à 'approved')
+export async function changeMonthlyReportStatusController(reportId, newStatus) {
   try {
     const db = await getMongoDb();
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
-    const activitiesCollection = await getActivitiesCollection(db); // Obtenir la collection d'activités
 
-    let updateOperation = {
-      $set: {
-        status: newStatus,
-        reviewedAt: new Date(),
-        reviewerId: reviewerId,
-      },
-    };
-
-    if (newStatus === "rejected") {
-      updateOperation.$set.rejectionReason = rejectionReason;
-    } else {
-      updateOperation.$unset = { rejectionReason: "" };
-    }
-
-    // 1. Mettre à jour le statut du rapport mensuel lui-même
-    const result = await monthlyReportsCollection.updateOne(
+    const updateResult = await monthlyReportsCollection.updateOne(
       { _id: new ObjectId(reportId) },
-      updateOperation
+      { $set: { status: newStatus } }
     );
 
-    if (result.matchedCount === 0) {
+    if (updateResult.matchedCount === 0) {
       return {
         success: false,
-        message: "Rapport mensuel non trouvé pour la mise à jour du statut.",
+        message: "Rapport mensuel non trouvé pour mise à jour du statut.",
       };
     }
-    console.log(
-      `[Backend] updateMonthlyReportStatusController: Statut du rapport ${reportId} mis à jour à "${newStatus}"`
-    );
 
-    // NOUVEAU: Si le rapport est validé, mettre à jour le statut des activités associées
-    if (newStatus === "validated") {
-      const report = await monthlyReportsCollection.findOne({ _id: new ObjectId(reportId) });
-
-      if (report && report.activities_snapshot && report.activities_snapshot.length > 0) {
-        // Convertir les IDs des activités en ObjectId pour la requête MongoDB
-        const activityObjectIds = report.activities_snapshot
-          .map(id => {
-            try {
-              return new ObjectId(id);
-            } catch (e) {
-              console.warn(`[Backend] ID d'activité invalide dans activities_snapshot: ${id}. Ignoré.`);
-              return null;
-            }
-          })
-          .filter(id => id !== null);
-
-        if (activityObjectIds.length > 0) {
-          console.log(`[Backend] updateMonthlyReportStatusController: Mise à jour du statut de ${activityObjectIds.length} activités vers "validated"...`);
-          const updateActivitiesResult = await activitiesCollection.updateMany(
-            { _id: { $in: activityObjectIds } },
-            { $set: { status: "validated", updated_at: new Date() } }
-          );
-          console.log(`[Backend] updateMonthlyReportStatusController: ${updateActivitiesResult.matchedCount} activités trouvées, ${updateActivitiesResult.modifiedCount} activités modifiées vers "validated".`);
-        } else {
-          console.log("[Backend] updateMonthlyReportStatusController: activities_snapshot est vide ou ne contient pas d'IDs valides. Aucune activité individuelle à mettre à jour.");
-        }
-      } else {
-        console.log("[Backend] updateMonthlyReportStatusController: Rapport non trouvé ou activities_snapshot manquant/vide. Aucune activité individuelle à mettre à jour.");
-      }
-    } else if (newStatus === "rejected") {
-      // Si un rapport est rejeté, remettre les activités en "rejected"
-      const report = await monthlyReportsCollection.findOne({ _id: new ObjectId(reportId) });
-
-      if (report && report.activities_snapshot && report.activities_snapshot.length > 0) {
-        const activityObjectIds = report.activities_snapshot
-          .map(id => {
-            try {
-              return new ObjectId(id);
-            } catch (e) {
-              console.warn(`[Backend] ID d'activité invalide dans activities_snapshot: ${id}. Ignoré.`);
-              return null;
-            }
-          })
-          .filter(id => id !== null);
-
-        if (activityObjectIds.length > 0) {
-          console.log(`[Backend] updateMonthlyReportStatusController: Mise à jour du statut de ${activityObjectIds.length} activités vers "rejected" suite au rejet du rapport...`);
-          const updateActivitiesResult = await activitiesCollection.updateMany(
-            { _id: { $in: activityObjectIds } },
-            { $set: { status: "rejected", updated_at: new Date() } }
-          );
-          console.log(`[Backend] updateMonthlyReportStatusController: ${updateActivitiesResult.matchedCount} activités trouvées, ${updateActivitiesResult.modifiedCount} activités modifiées vers "rejected".`);
-        }
-      }
-    }
-
-
-    return {
-      success: true,
-      message: "Statut du rapport mensuel mis à jour avec succès.",
-    };
+    return { success: true, message: `Statut mis à jour en '${newStatus}'.` };
   } catch (error) {
     console.error(
-      "[Backend] Erreur lors de la mise à jour du statut du rapport CRA mensuel:",
+      "[Backend] Erreur lors du changement de statut du rapport mensuel:",
       error
     );
     return { success: false, message: error.message };
   }
-}
-
-// NOUVELLE FONCTION DE TEST POUR LA LECTURE DES ACTIVITÉS (à supprimer après le debug)
-export async function testActivityRead() {
-  let db;
-  let activitiesCollection;
-  let testActivityId = null;
-  const testResults = {
-    success: false,
-    message: "Test de lecture d'activité terminé.",
-    insertedId: null,
-    findOneResult: null,
-    findInResultCount: 0,
-  };
-
-  try {
-    db = await getMongoDb();
-    activitiesCollection = await getActivitiesCollection(db);
-
-    console.log(`[Backend TEST] Starting activity read test.`);
-    console.log(
-      `[Backend TEST] Connected to DB: "${db.databaseName}", Collection: "${activitiesCollection.collectionName}"`
-    );
-
-    const dummyActivity = {
-      date_activite: new Date(),
-      temps_passe: 8,
-      description_activite: "Activité de test temporaire",
-      type_activite: "test_type",
-      client_id: "test_client",
-      user_id: "test_user_id",
-      status: "draft",
-      created_at: new Date(),
-    };
-    const insertResult = await activitiesCollection.insertOne(dummyActivity);
-    testActivityId = insertResult.insertedId;
-    testResults.insertedId = testActivityId.toString();
-    console.log(
-      `[Backend TEST] Inserted dummy activity with _id: ${testActivityId.toString()}`
-    );
-
-    const findOneResult = await activitiesCollection.findOne({
-      _id: testActivityId,
-    });
-    testResults.findOneResult = findOneResult
-      ? findOneResult._id.toString()
-      : "Not Found";
-    console.log(
-      `[Backend TEST] findOne result for ${testActivityId.toString()}: ${
-        testResults.findOneResult
-      }`
-    );
-
-    const findInResult = await activitiesCollection
-      .find({ _id: { $in: [testActivityId] } })
-      .toArray();
-    testResults.findInResultCount = findInResult.length;
-    console.log(
-      `[Backend TEST] find with $in result count for ${testActivityId.toString()}: ${
-        testResults.findInResultCount
-      }`
-    );
-    if (findInResult.length > 0) {
-      console.log(
-        `[Backend TEST] First document from find with $in: ${findInResult[0]._id.toString()}`
-      );
-    }
-
-    if (
-      findOneResult &&
-      findInResult.length > 0 &&
-      findOneResult._id.equals(testActivityId)
-    ) {
-      testResults.success = true;
-      testResults.message =
-        "Test de lecture d'activité réussi : findOne et find avec $in ont trouvé le document.";
-    } else {
-      testResults.success = false;
-      testResults.message =
-        "Test de lecture d'activité échoué : les documents n'ont pas été trouvés comme attendu.";
-    }
-  } catch (error) {
-    console.error(
-      "[Backend TEST] Erreur lors du test de lecture d'activité:",
-      error
-    );
-    testResults.success = false;
-    testResults.message = `Erreur lors du test de lecture: ${error.message}`;
-  } finally {
-    if (testActivityId && activitiesCollection) {
-      try {
-        const deleteResult = await activitiesCollection.deleteOne({
-          _id: testActivityId,
-        });
-        console.log(
-          `[Backend TEST] Deleted dummy activity ${testActivityId.toString()}. Count: ${
-            deleteResult.deletedCount
-          }`
-        );
-      } catch (deleteError) {
-        console.error(
-          `[Backend TEST] Erreur lors de la suppression de l'activité de test ${testActivityId.toString()}:`,
-          deleteError
-        );
-      }
-    }
-  }
-  return testResults;
 }

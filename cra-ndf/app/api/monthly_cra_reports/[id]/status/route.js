@@ -1,6 +1,6 @@
 // app/api/monthly_cra_reports/[id]/status/route.js
 import { NextResponse } from "next/server";
-import { updateMonthlyReportStatusController } from "../../controller"; // Adjust path if necessary
+import { changeMonthlyReportStatusController } from "../../controller"; // Adjust path if necessary
 
 export async function PUT(request, { params }) {
   // Assurez-vous d'attendre les paramètres pour éviter l'erreur "Unexpected token '<'"
@@ -30,7 +30,7 @@ export async function PUT(request, { params }) {
   }
 
   try {
-    const updatedReportResult = await updateMonthlyReportStatusController(
+    const updatedReportResult = await changeMonthlyReportStatusController(
       id,
       status,
       reviewerId,
