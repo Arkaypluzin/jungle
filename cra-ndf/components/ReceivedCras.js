@@ -4,6 +4,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // PAS D'IMPORTS DIRECTS DE jspdf OU jspdf-autotable ICI.
 // Ils seront importés dynamiquement dans handleDownloadTableViewPdf.
@@ -685,26 +687,17 @@ export default function ReceivedCras({
   }, []);
 
   // NOUVEAU: Fonction pour télécharger la vue actuelle du tableau en PDF
-  const handleDownloadTableViewPdf = useCallback(async () => { // Rendre la fonction asynchrone
-    // Vérification du statut de validation du CRA
-    if (!reportToUpdate || reportToUpdate.status !== "validated") {
-        showMessage("Le rapport doit être validé pour être téléchargé en PDF.", "warning");
-        return;
-    }
+  const handleDownloadTableViewPdf = useCallback(async () => {
+    console.log("handleDownloadTableViewPdf déclenché");
 
     try {
-      // Imports dynamiques pour jspdf et jspdf-autotable
-      // Assure que jspdf-autotable est chargé et étend jspdf avant l'instanciation
-      // La séquence est importante : d'abord le plugin, puis la classe jsPDF
-      // @ts-ignore
-      await import('jspdf-autotable'); // Importe et attache autoTable au prototype de jsPDF
-      // @ts-ignore
-      const { jsPDF } = await import('jspdf'); // Importe la classe jsPDF
-      
+      const { jsPDF } = await import("jspdf");
+      const autoTable = (await import("jspdf-autotable")).default;
+  
       const doc = new jsPDF();
       doc.setFontSize(16);
-      doc.text("Rapports Mensuels Filtrés", 14, 20);
-
+      doc.text("Rapports Mensuels", 14, 20);
+  
       const headers = [
         "Utilisateur",
         "Mois",
@@ -713,8 +706,8 @@ export default function ReceivedCras({
         "Jours facturables",
         "Statut",
       ];
-
-      const data = reports.map((report) => [
+  
+      const data = reports.map(report => [
         report.userName || "Utilisateur inconnu",
         isValidDateFns(new Date(report.year, report.month - 1))
           ? format(new Date(report.year, report.month - 1), "MMMM", { locale: fr })
@@ -730,58 +723,50 @@ export default function ReceivedCras({
           ? `Rejeté (${report.rejection_reason || report.rejectionReason || 'N/A'})`
           : "Brouillon",
       ]);
-
-      console.log("Type of doc.autoTable (after dynamic import):", typeof doc.autoTable); // Debugging line
-
-      // @ts-ignore
-      doc.autoTable({
+  
+      autoTable(doc, {
         startY: 30,
         head: [headers],
         body: data,
-        theme: 'grid',
-        styles: {
-          fontSize: 8,
-          cellPadding: 2,
-        },
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2 },
         headStyles: {
-          fillColor: [240, 240, 240], // Light gray header
+          fillColor: [240, 240, 240],
           textColor: [0, 0, 0],
-          fontStyle: 'bold',
+          fontStyle: "bold",
         },
         columnStyles: {
-          0: { cellWidth: 30 }, // Utilisateur
-          1: { cellWidth: 25 }, // Mois
-          2: { cellWidth: 15 }, // Année
-          3: { cellWidth: 25 }, // Jours travaillés
-          4: { cellWidth: 25 }, // Jours facturables
-          5: { cellWidth: 40 }, // Statut
+          0: { cellWidth: 30 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 15 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 25 },
+          5: { cellWidth: 40 },
         },
-        didParseCell: function (data) {
-          // Style the status column text color based on status
-          if (data.column.index === 5 && data.cell.section === 'body') {
+        didParseCell: (data) => {
+          if (data.column.index === 5 && data.cell.section === "body") {
             const statusText = data.cell.text[0];
-            if (statusText.startsWith('En attente')) {
-              data.cell.styles.textColor = [202, 138, 4]; // yellow-800
-            } else if (statusText.startsWith('Validé')) {
-              data.cell.styles.textColor = [22, 101, 52]; // green-800
-            } else if (statusText.startsWith('Rejeté')) {
-              data.cell.styles.textColor = [185, 28, 28]; // red-800
-            } else if (statusText.startsWith('Brouillon')) {
-              data.cell.styles.textColor = [75, 85, 99]; // gray-800
+            if (statusText.startsWith("En attente")) {
+              data.cell.styles.textColor = [202, 138, 4];
+            } else if (statusText.startsWith("Validé")) {
+              data.cell.styles.textColor = [22, 101, 52];
+            } else if (statusText.startsWith("Rejeté")) {
+              data.cell.styles.textColor = [185, 28, 28];
+            } else if (statusText.startsWith("Brouillon")) {
+              data.cell.styles.textColor = [75, 85, 99];
             }
           }
         },
       });
-
+  
       doc.save("rapports_mensuels_filtres.pdf");
       showMessage("La vue du tableau a été téléchargée en PDF !", "success");
     } catch (error) {
       console.error("Erreur lors de la génération du PDF:", error);
       showMessage("Erreur lors de la génération du PDF: " + error.message, "error");
     }
-  }, [reports, showMessage, reportToUpdate]);
-
-
+  }, [reports, showMessage]);
+  
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64 text-xl text-gray-700">
@@ -861,7 +846,6 @@ export default function ReceivedCras({
         <button
           onClick={handleDownloadTableViewPdf}
           className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 self-end mb-1"
-          disabled={!reportToUpdate || reportToUpdate.status !== "validated"} // Désactivé si pas validé
           title={!reportToUpdate || reportToUpdate.status !== "validated" ? "Le rapport doit être validé pour être téléchargé en PDF" : "Télécharger la vue PDF"}
         >
           Télécharger la vue PDF
