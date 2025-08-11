@@ -63,9 +63,8 @@ function MultiMonthSelect({ label, options, selected, setSelected }) {
           {options.map((m) => (
             <label
               key={m}
-              className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-blue-50 ${
-                selected.includes(m) ? "font-bold text-blue-600" : "text-gray-800"
-              }`}
+              className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-blue-50 ${selected.includes(m) ? "font-bold text-blue-600" : "text-gray-800"
+                }`}
             >
               <input
                 type="checkbox"
@@ -396,21 +395,19 @@ export default function ClientAdminNdf() {
     return (
       <div className="flex justify-center mb-8 mt-2 gap-2">
         <button
-          className={`px-7 py-2 font-bold text-lg border-b-4 rounded-t-xl transition-all duration-150 ${
-            tab === "mes"
+          className={`px-7 py-2 font-bold text-lg border-b-4 rounded-t-xl transition-all duration-150 ${tab === "mes"
               ? "border-blue-600 text-blue-700 bg-white shadow"
               : "border-transparent text-gray-500 bg-gray-100 hover:bg-blue-50"
-          }`}
+            }`}
           onClick={() => setTab("mes")}
         >
           Mes notes de frais
         </button>
         <button
-          className={`px-7 py-2 font-bold text-lg border-b-4 rounded-t-xl transition-all duration-150 ${
-            tab === "all"
+          className={`px-7 py-2 font-bold text-lg border-b-4 rounded-t-xl transition-all duration-150 ${tab === "all"
               ? "border-blue-600 text-blue-700 bg-white shadow"
               : "border-transparent text-gray-500 bg-gray-100 hover:bg-blue-50"
-          }`}
+            }`}
           onClick={() => setTab("all")}
         >
           Recherche notes de frais
@@ -466,9 +463,8 @@ export default function ClientAdminNdf() {
                     ))}
                   </select>
                   <button
-                    className={`ml-2 p-2 rounded-full transition-colors ${
-                      sortYearPerso === "asc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                    className={`ml-2 p-2 rounded-full transition-colors ${sortYearPerso === "asc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
                     onClick={() => setSortYearPerso("asc")}
                     title="Tri année croissant"
                   >
@@ -477,9 +473,8 @@ export default function ClientAdminNdf() {
                     </svg>
                   </button>
                   <button
-                    className={`ml-1 p-2 rounded-full transition-colors ${
-                      sortYearPerso === "desc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                    className={`ml-1 p-2 rounded-full transition-colors ${sortYearPerso === "desc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
                     onClick={() => setSortYearPerso("desc")}
                     title="Tri année décroissant"
                   >
@@ -584,15 +579,14 @@ export default function ClientAdminNdf() {
                         )}
                       </span>
                       <span
-                        className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${
-                          ndf.statut === "Provisoire"
+                        className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${ndf.statut === "Provisoire"
                             ? "bg-blue-100 text-blue-800"
                             : ndf.statut === "Déclaré"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : ndf.statut === "Validé"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-purple-100 text-purple-800"
-                        }`}
+                              ? "bg-yellow-100 text-yellow-800"
+                              : ndf.statut === "Validé"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-purple-100 text-purple-800"
+                          }`}
                       >
                         {ndf.statut}
                       </span>
@@ -654,9 +648,8 @@ export default function ClientAdminNdf() {
                     ))}
                   </select>
                   <button
-                    className={`ml-2 p-2 rounded-full transition-colors ${
-                      sortYear === "asc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                    className={`ml-2 p-2 rounded-full transition-colors ${sortYear === "asc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
                     onClick={() => setSortYear("asc")}
                     title="Tri année croissant"
                   >
@@ -665,9 +658,8 @@ export default function ClientAdminNdf() {
                     </svg>
                   </button>
                   <button
-                    className={`ml-1 p-2 rounded-full transition-colors ${
-                      sortYear === "desc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
+                    className={`ml-1 p-2 rounded-full transition-colors ${sortYear === "desc" ? "bg-blue-600 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
                     onClick={() => setSortYear("desc")}
                     title="Tri année décroissant"
                   >
@@ -761,13 +753,12 @@ export default function ClientAdminNdf() {
                         {ndf.month} {ndf.year}
                       </span>
                       <span
-                        className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${
-                          ndf.statut === "Déclaré"
+                        className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold ${ndf.statut === "Déclaré"
                             ? "bg-yellow-100 text-yellow-800"
                             : ndf.statut === "Validé"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-purple-100 text-purple-800"
-                        }`}
+                              ? "bg-green-100 text-green-800"
+                              : "bg-purple-100 text-purple-800"
+                          }`}
                       >
                         {ndf.statut}
                       </span>

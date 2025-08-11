@@ -293,7 +293,7 @@ export default function NdfKiloTable({ ndfId, ndfStatut, rows = [], loading = fa
                             )}
                         </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-blue-50">
+                    <tbody className="bg-white divide-y divide-blue-50 text-gray-700">
                         {loading ? (
                             <tr>
                                 <td colSpan={12} className="py-10 text-center text-gray-400">Chargement…</td>
