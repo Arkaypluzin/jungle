@@ -4,8 +4,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 
 // PAS D'IMPORTS DIRECTS DE jspdf OU jspdf-autotable ICI.
 // Ils seront importés dynamiquement dans handleDownloadTableViewPdf.
