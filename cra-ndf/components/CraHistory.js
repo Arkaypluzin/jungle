@@ -1,24 +1,21 @@
-// components/CraHistory.js
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
 import CraBoard from "@/components/CraBoard";
-import MonthlyReportPreviewModal from "@/components/MonthlyReportPreviewModal";
 
 export default function CraHistory({
-  userId,
   userFirstName,
   showMessage,
   clientDefinitions,
   activityTypeDefinitions,
 }) {
   const { data: session, status } = useSession();
-  const currentUserId = userId || session?.user?.id;
-  const currentUserName =
-    userFirstName || session?.user?.name?.split(" ")[0] || "Utilisateur";
+  // Forcer à utiliser uniquement l’ID de la session (utilisateur connecté)
+  const currentUserId = session?.user?.id;
+  const currentUserName = userFirstName || session?.user?.name?.split(" ")[0] || "Utilisateur";
 
   const [monthlyReports, setMonthlyReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +130,6 @@ export default function CraHistory({
             if (typeof activity.date_activite === "string") {
               dateObj = parseISO(activity.date_activite);
             } else if (activity.date_activite) {
-              // If it's already a Date object or other date-like
               dateObj = new Date(activity.date_activite);
             }
             return {
@@ -159,8 +155,8 @@ export default function CraHistory({
             detailedReport.status === "rejected"
               ? detailedReport.rejectionReason
               : null,
-          monthlyReports: monthlyReports, // Pass all monthly reports for status logic within CraBoard
-          reportStatus: detailedReport.status, // Pass the actual status of the report being viewed for CraBoard's internal logic
+          monthlyReports: monthlyReports,
+          reportStatus: detailedReport.status,
         });
         setShowCraBoardModal(true);
       } catch (err) {
@@ -203,13 +199,18 @@ export default function CraHistory({
     );
   }
 
+  // Filtrer les rapports pour ne garder que ceux de l'utilisateur connecté (sécurité supplémentaire)
+  const filteredReports = monthlyReports.filter(
+    (report) => report.user_id === currentUserId
+  );
+
   return (
     <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
       <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
         Historique de mes rapports envoyés
       </h2>
 
-      {monthlyReports.length === 0 ? (
+      {filteredReports.length === 0 ? (
         <div className="text-gray-600 text-center py-8 text-lg">
           Aucun rapport envoyé trouvé.
         </div>
@@ -242,7 +243,7 @@ export default function CraHistory({
               </tr>
             </thead>
             <tbody>
-              {monthlyReports.map((report) => (
+              {filteredReports.map((report) => (
                 <tr
                   key={report.id}
                   className="border-b border-gray-200 hover:bg-gray-50"

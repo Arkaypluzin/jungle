@@ -1024,7 +1024,7 @@ export default function CraBoard({
         }
         if (multiSelectType === 'paid_leave' && !isPaidLeaveEditable) {
           localShowMessage(
-            "Cannot add paid leaves. The Paid Leave report is locked.",
+            "Impossible d'ajouter d'absence",
             "info"
           );
           return;
@@ -1565,7 +1565,7 @@ setInitialActivityTypeFilter(initialFilter);
         }
         if (multiSelectType === "paid_leave" && !isPaidLeaveEditable) {
           localShowMessage(
-            "Cannot start multi-selection for paid leave. The paid leave report is locked.",
+            "Impossible d'ajouter d'absence",
             "info"
           );
           return;
