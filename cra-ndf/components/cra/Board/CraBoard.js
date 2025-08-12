@@ -1,4 +1,3 @@
-// components/cra/Board/CraBoard.jsx
 "use client";
 
 /**
