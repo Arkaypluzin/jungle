@@ -38,7 +38,7 @@ export default function OverviewBoard({
   const [allActivities, setAllActivities] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [currentViewStart, setCurrentViewStart] = useState(new Date());
-  const [viewMode, setViewMode] = useState("month"); // 'month', 'week', 'day'
+  const [viewMode, setViewMode] = useState("month"); // 'month', 'week', 'day', 'commonLeaves'
   const [publicHolidays, setPublicHolidays] = useState([]);
   const [allMonthlyReports, setAllMonthlyReports] = useState([]);
 
@@ -46,15 +46,10 @@ export default function OverviewBoard({
   const [selectedUserIdsFilter, setSelectedUserIdsFilter] = useState([]);
 
   // État pour le filtre de statut des congés
-  // Initialisé à 'all' par défaut pour couvrir tous les cas au démarrage
   const [commonLeaveStatusFilter, setCommonLeaveStatusFilter] = useState('all');
-
-  // NOUVEAU: État pour basculer entre les congés communs et individuels
-  const [showCommonLeavesOnly, setShowCommonLeavesOnly] = useState(true); // true: congés communs, false: congés individuels
 
   // Déclencheur de rafraîchissement manuel
   const [refreshActivitiesTrigger, setRefreshActivitiesTrigger] = useState(0);
-
 
   // Filtrer les utilisateurs à afficher dans le calendrier
   const filteredUsersForCalendar = useMemo(() => {
@@ -63,6 +58,7 @@ export default function OverviewBoard({
     }
     return allUsers.filter(user => selectedUserIdsFilter.includes(user.id));
   }, [allUsers, selectedUserIdsFilter]);
+
   const leaveActivityTypeIds = useMemo(() => {
     // Liste plus complète et robuste de mots-clés pour les congés et absences
     const leaveKeywords = [
@@ -380,11 +376,9 @@ export default function OverviewBoard({
   }, [allActivities, allUsers]);
 
 
-  // MODIFICATION ICI: Résumé des jours de congés pris par plusieurs personnes pour la période affichée
   const multiPersonLeaveDaysSummary = useMemo(() => {
     console.log("--- Début du calcul multiPersonLeaveDaysSummary ---");
     console.log("  Filtre de statut sélectionné (commonLeaveStatusFilter):", commonLeaveStatusFilter);
-    console.log("  Afficher congés communs seulement (showCommonLeavesOnly):", showCommonLeavesOnly);
     console.log("  Nombre total d'activités (allActivities.length):", allActivities.length);
     console.log("  IDs des types de congé/absence (leaveActivityTypeIds):", Array.from(leaveActivityTypeIds));
     console.log("  Utilisateurs chargés (allUsers.length):", allUsers.length);
@@ -400,7 +394,6 @@ export default function OverviewBoard({
 
     // Déterminer les statuts à inclure dans le filtre
     const statusesToInclude = [];
-    // Si 'all' est sélectionné, inclure tous les statuts. Sinon, inclure le statut spécifique.
     if (commonLeaveStatusFilter === 'all') {
       statusesToInclude.push("pending_review", "validated", "draft", "rejected");
     } else {
@@ -408,97 +401,58 @@ export default function OverviewBoard({
     }
     console.log(`  Statuts inclus pour le filtre: [${statusesToInclude.join(', ')}]`);
 
-    // Première passe: itérer sur TOUTES les activités pour trouver les congés pertinents
     allActivities.forEach(activity => {
       const isLeaveActivity = leaveActivityTypeIds.has(String(activity.type_activite));
       const isValidDate = isValid(activity.date_activite);
       const userId = activity.userAzureAdId || activity.user_id;
-      const hasUserId = !!userId; // Convertir en booléen
+      const hasUserId = !!userId;
       const statusMatches = statusesToInclude.includes(activity.status);
       const dateKey = activity.date_activite ? format(activity.date_activite, "yyyy-MM-dd") : 'Invalid Date';
 
-      // Log détaillé pour chaque activité examinée
-      console.log(`    Examinant activité ID: ${activity.id || 'N/A'}, Date: ${dateKey}, User ID: ${userId || 'N/A'}, Status: ${activity.status}, Type: ${activity.type_activite}`);
-      console.log(`      Conditions: IsLeaveActivity=${isLeaveActivity}, IsValidDate=${isValidDate}, HasUserId=${hasUserId}, StatusMatches=${statusMatches}`);
-
-
       if (isLeaveActivity && isValidDate && hasUserId && statusMatches) {
-        // Vérifier si l'utilisateur de l'activité est dans la liste allUsers
         const userExistsInAllUsers = allUsers.some(u => String(u.id) === String(userId));
-        console.log(`      Vérification utilisateur: User ID ${userId} existe dans allUsers? ${userExistsInAllUsers}`);
-
         if (userExistsInAllUsers) {
           if (!leaveDaysByDate.has(dateKey)) {
             leaveDaysByDate.set(dateKey, new Set());
           }
           leaveDaysByDate.get(dateKey).add(userId);
-          console.log(`      -> Ajouté : Jour ${dateKey}, Utilisateur ${userId}. Set actuel: [${Array.from(leaveDaysByDate.get(dateKey)).join(', ')}]`);
         } else {
           console.warn(`    WARNING: Activité de congé (${activity.id}) pour utilisateur INCONNU (${userId}) à la date ${dateKey}. Cette activité sera ignorée pour le résumé des congés.`);
         }
-      } else {
-        // console.log(`    Activité ID: ${activity.id || 'N/A'} ignorée car ne correspond pas aux critères de congé filtré.`);
       }
     });
 
-    console.log("  leaveDaysByDate après agrégation (clé: date, valeur: [userIds]):", Object.fromEntries(
-      Array.from(leaveDaysByDate.entries()).map(([date, userSet]) => [date, Array.from(userSet)])
-    ));
-
-
     const summary = [];
-    // Deuxième passe: itérer sur les jours de la vue actuelle et appliquer la logique commun/individuel
+    // Logique pour les congés communs ou individuels en fonction du filtre utilisateur
     daysInView.forEach(day => {
       const dateKey = format(day, "yyyy-MM-dd");
       const userIdsSet = leaveDaysByDate.get(dateKey);
 
-      console.log(`  Traitement du jour de la vue: ${dateKey}. Set d'utilisateurs pour ce jour: ${userIdsSet ? Array.from(userIdsSet).join(', ') : 'Aucun'}. Taille: ${userIdsSet ? userIdsSet.size : 0}`);
-
       if (userIdsSet) {
-        if (showCommonLeavesOnly) {
-          if (userIdsSet.size > 1) { // Congés communs (plus d'une personne)
-            console.log(`    Jour ${dateKey} est un congé COMMUN (taille: ${userIdsSet.size}). Ajouté au résumé.`);
-            summary.push({
-              date: day, // Utilise l'objet Date réel de daysInView
-              userIds: Array.from(userIdsSet),
-            });
-          } else {
-            console.log(`    Jour ${dateKey} n'est PAS un congé COMMUN (taille: ${userIdsSet.size}).`);
-          }
-        } else {
-          // Logique pour les congés individuels
-          if (userIdsSet.size === 1) { // Congés individuels (exactement une personne)
-            const singleUserId = Array.from(userIdsSet)[0];
-            // Appliquer le filtre utilisateur si des utilisateurs sont sélectionnés
-            const isUserFiltered = selectedUserIdsFilter.length === 0 || selectedUserIdsFilter.includes(singleUserId);
-
-            console.log(`    DEBUG: Congé individuel pour ${singleUserId}. Filtre sélectionné: [${selectedUserIdsFilter.join(', ')}]. Est filtré: ${isUserFiltered}`);
-
-            if (isUserFiltered) {
-              console.log(`    Jour ${dateKey} est un congé INDIVIDUEL (taille: ${userIdsSet.size}). Ajouté au résumé.`);
-              summary.push({
-                date: day, // Utilise l'objet Date réel de daysInView
-                userIds: Array.from(userIdsSet),
-              });
-            } else {
-              console.log(`    Jour ${dateKey} est un congé INDIVIDUEL mais l'utilisateur (${singleUserId}) n'est PAS dans le filtre sélectionné.`);
-            }
-          } else {
-            console.log(`    Jour ${dateKey} n'est PAS un congé INDIVIDUEL (taille: ${userIdsSet.size}).`);
-          }
+        const allUsersIds = allUsers.map(u => u.id);
+        const usersInFilter = selectedUserIdsFilter.length > 0 ? selectedUserIdsFilter : allUsersIds;
+        const leaveUsersInFilter = Array.from(userIdsSet).filter(id => usersInFilter.includes(id));
+        
+        if (viewMode === 'commonLeaves' && leaveUsersInFilter.length > 1) { // Congés communs
+          summary.push({
+            date: day,
+            userIds: leaveUsersInFilter,
+          });
+        } else if (viewMode === 'commonLeaves' && leaveUsersInFilter.length === 1) { // Congés individuels
+          summary.push({
+            date: day,
+            userIds: leaveUsersInFilter,
+          });
         }
-      } else {
-        console.log(`    Jour ${dateKey} n'a PAS de congés filtrés.`);
       }
     });
 
-    // Trier le résumé par date
     summary.sort((a, b) => a.date.getTime() - b.date.getTime());
 
     console.log("--- Fin du calcul multiPersonLeaveDaysSummary ---");
     console.log("multiPersonLeaveDaysSummary (résultat final):", summary);
     return summary;
-  }, [allActivities, daysInView, leaveActivityTypeIds, allUsers, commonLeaveStatusFilter, showCommonLeavesOnly, selectedUserIdsFilter]); // Ajout de selectedUserIdsFilter comme dépendance
+  }, [allActivities, daysInView, leaveActivityTypeIds, allUsers, commonLeaveStatusFilter, selectedUserIdsFilter, viewMode]);
 
 
   // NOUVEAU USEMEMO: Calcul des résumés d'activités par utilisateur pour la période affichée
@@ -613,6 +567,10 @@ export default function OverviewBoard({
     setCurrentViewStart(new Date());
   }, []);
 
+  const handleLeaveViewModeChange = useCallback(() => {
+    setViewMode('commonLeaves');
+  }, []);
+
   // Handler pour la sélection des utilisateurs pour le filtre global (multi-sélection)
   const toggleUserSelection = useCallback((userId) => {
     setSelectedUserIdsFilter(prevSelected => {
@@ -648,8 +606,8 @@ export default function OverviewBoard({
   }
 
   // Ajustement des titres et messages en fonction du mode de congés
-  const commonLeavesTitle = showCommonLeavesOnly ? "Jours avec Congés Communs (période actuelle)" : "Jours avec Congés Individuels (période actuelle)";
-  const noLeavesMessage = showCommonLeavesOnly ? "Aucun jour avec des congés communs pour la période sélectionnée et le statut choisi." : "Aucun jour avec des congés individuels pour la période sélectionnée et le statut choisi.";
+  const commonLeavesTitle = "Jours avec Congés Communs (période actuelle)";
+  const noLeavesMessage = "Aucun jour avec des congés communs pour la période sélectionnée et le statut choisi.";
 
 
   return (
@@ -682,13 +640,23 @@ export default function OverviewBoard({
           </button>
           <button
             onClick={() => handleViewModeChange("month")}
-            className={`px-4 py-2 rounded-r-lg font-semibold transition-colors duration-200 ${
+            className={`px-4 py-2 font-semibold transition-colors duration-200 ${
               viewMode === "month"
                 ? "bg-blue-600 text-white"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
           >
             Vue Mois
+          </button>
+          <button
+            onClick={() => handleViewModeChange("commonLeaves")}
+            className={`px-4 py-2 rounded-r-lg font-semibold transition-colors duration-200 ${
+              viewMode === "commonLeaves"
+                ? "bg-orange-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            Vue Congés
           </button>
         </div>
       </div>
@@ -721,97 +689,177 @@ export default function OverviewBoard({
         )}
       </div>
 
-      {/* NOUVELLE SECTION: Jours avec Congés Communs (en mode calendrier simplifié) */}
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 shadow-inner">
-        <h3 className="text-xl font-semibold text-orange-800 mb-3 text-center">
-          {commonLeavesTitle}
-        </h3>
-        {/* NOUVEAU: Bascule pour les congés communs/individuels */}
-        <div className="flex justify-center items-center gap-4 mb-4">
-          <span className="text-gray-700 font-semibold">Type de congés :</span>
-          <div className="flex rounded-md shadow-sm">
-            <button
-              onClick={() => {
-                setShowCommonLeavesOnly(true);
-                setCommonLeaveStatusFilter('all'); // Réinitialise à 'Tous' pour les congés communs
-              }}
-              className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
-                ${showCommonLeavesOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              Communs
-            </button>
-            <button
-              onClick={() => {
-                setShowCommonLeavesOnly(false);
-                setCommonLeaveStatusFilter('all'); // Réinitialise à 'Tous' pour les congés individuels
-              }}
-              className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
-                ${!showCommonLeavesOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              Individuels
-            </button>
+      {/* Rendu conditionnel des vues */}
+      {viewMode === 'commonLeaves' ? (
+        // NOUVELLE VUE: Jours avec Congés Communs
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 shadow-inner">
+          <h3 className="text-xl font-semibold text-orange-800 mb-3 text-center">
+            Jours avec Congés (période actuelle)
+          </h3>
+          {/* Filtre de statut pour les congés */}
+          <div className="flex justify-center items-center gap-4 mb-4">
+            <span className="text-gray-700 font-semibold">Afficher les congés :</span>
+            <div className="flex rounded-md shadow-sm">
+              <button
+                onClick={() => setCommonLeaveStatusFilter('all')}
+                className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
+                  ${commonLeaveStatusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                Tous
+              </button>
+              <button
+                onClick={() => setCommonLeaveStatusFilter('pending_review')}
+                className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                  ${commonLeaveStatusFilter === 'pending_review' ? 'bg-yellow-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                En attente
+              </button>
+              <button
+                onClick={() => setCommonLeaveStatusFilter('validated')}
+                className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                  ${commonLeaveStatusFilter === 'validated' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                Validés
+              </button>
+              <button
+                onClick={() => setCommonLeaveStatusFilter('rejected')}
+                className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
+                  ${commonLeaveStatusFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                Refusés
+              </button>
+              <button
+                onClick={() => setCommonLeaveStatusFilter('draft')}
+                className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
+                  ${commonLeaveStatusFilter === 'draft' ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              >
+                Brouillons
+              </button>
+            </div>
           </div>
-        </div>
+          {multiPersonLeaveDaysSummary.length > 0 ? (
+            <div className="overflow-x-auto">
+              <div className="inline-block min-w-full align-middle">
+                {/* Header row for days in common leave calendar */}
+                <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-2">
+                  <div className=" flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
+                    Jour
+                  </div>
+                  {multiPersonLeaveDaysSummary.map((item) => {
+                    const day = item.date;
+                    const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+                    const isHoliday = isPublicHoliday(day);
+                    const isNonWorkingDay = isWeekendDay || isHoliday;
+                    const dayClass = isNonWorkingDay
+                      ? "bg-gray-200 text-gray-500"
+                      : "bg-gray-100 text-gray-700";
+                    const todayClass = isSameDay(day, new Date())
+                      ? "border-2 border-blue-500 bg-blue-50"
+                      : "";
 
-        {/* Filtre de statut pour les congés */}
-        <div className="flex justify-center items-center gap-4 mb-4">
-          <span className="text-gray-700 font-semibold">Afficher les congés :</span>
-          <div className="flex rounded-md shadow-sm">
-            {/* Bouton "Tous" toujours présent */}
-            <button
-              onClick={() => setCommonLeaveStatusFilter('all')}
-              className={`px-3 py-1 text-sm font-semibold rounded-l-md transition-colors duration-200
-                ${commonLeaveStatusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              Tous
-            </button>
-
-            {/* Statuts spécifiques, affichés uniquement si le mode n'est PAS "Communs" */}
-            {!showCommonLeavesOnly && (
-              <>
-                <button
-                  onClick={() => setCommonLeaveStatusFilter('pending_review')}
-                  className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
-                    ${commonLeaveStatusFilter === 'pending_review' ? 'bg-yellow-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                >
-                  En attente
-                </button>
-                <button
-                  onClick={() => setCommonLeaveStatusFilter('validated')}
-                  className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
-                    ${commonLeaveStatusFilter === 'validated' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                >
-                  Validés
-                </button>
-                <button
-                  onClick={() => setCommonLeaveStatusFilter('rejected')}
-                  className={`px-3 py-1 text-sm font-semibold transition-colors duration-200
-                    ${commonLeaveStatusFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                >
-                  Refusés
-                </button>
-                <button
-                  onClick={() => setCommonLeaveStatusFilter('draft')}
-                  className={`px-3 py-1 text-sm font-semibold rounded-r-md transition-colors duration-200
-                    ${commonLeaveStatusFilter === 'draft' ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                >
-                  Brouillons
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {multiPersonLeaveDaysSummary.length > 0 ? (
-          <div className="overflow-x-auto">
-            <div className="inline-block min-w-full align-middle">
-              {/* Header row for days in common leave calendar */}
-              <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-2">
-                <div className=" flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
-                  Jour
+                    return (
+                      <div
+                        key={format(day, "yyyy-MM-dd")}
+                        className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
+                        title={
+                          isNonWorkingDay
+                            ? isWeekendDay && isHoliday
+                              ? "Week-end & Férié"
+                              : isWeekendDay
+                              ? "Week-end"
+                              : "Jour Férié"
+                            : ""
+                        }
+                      >
+                        <div className="font-semibold">
+                          {format(day, "EEE", { locale: fr })}
+                        </div>
+                        <div className="font-semibold">{format(day, "d")}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-                {multiPersonLeaveDaysSummary.map((item) => {
-                  const day = item.date;
+
+                {/* Users row for common leave calendar */}
+                <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-1">
+                  <div className="flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
+                    Utilisateurs
+                  </div>
+                  {multiPersonLeaveDaysSummary.map((item) => (
+                    <div
+                      key={format(item.date, "yyyy-MM-dd") + "-users"}
+                      className="h-auto p-1 flex flex-col items-center justify-center rounded-md border border-gray-200 bg-white"
+                    >
+                      {item.userIds.map(userId => {
+                        const user = allUsers.find(u => u.id === userId);
+                        return user ? (
+                          <span key={userId} className="text-xs text-gray-700 bg-gray-100 px-1 py-0.5 rounded-sm mb-0.5 last:mb-0">
+                            {user.name}
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-600 text-center text-sm">Aucun jour avec des congés pour la période sélectionnée et le statut choisi.</p>
+          )}
+        </div>
+      ) : (
+        // SECTION: VUE CALENDRIER PRINCIPAL (JOUR/SEMAINE/MOIS)
+        <>
+          <div className="flex justify-between items-center mb-6">
+            <button
+              onClick={() => navigateView("prev")}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
+            >
+              {viewMode === "day"
+                ? "Jour précédent"
+                : viewMode === "week"
+                ? "Semaine précédente"
+                : "Mois précédent"}
+            </button>
+            <h3 className="text-xl font-semibold text-gray-800">
+              {viewMode === "day" && isValid(currentViewStart)
+                ? format(currentViewStart, "EEEE dd MMMM yyyy", { locale: fr })
+                : ""}
+              {viewMode === "week" &&
+              isValid(daysInView[0]) &&
+              isValid(daysInView[daysInView.length - 1])
+                ? `${format(daysInView[0], "dd MMM", { locale: fr })} - ${format(
+                    daysInView[daysInView.length - 1],
+                    "dd MMM yyyy",
+                    { locale: fr }
+                  )}`
+                : ""}
+              {viewMode === "month" && isValid(currentViewStart)
+                ? format(currentViewStart, "MMMM yyyy", { locale: fr })
+                : ""}
+            </h3>
+            <button
+              onClick={() => navigateView("next")}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
+            >
+              {viewMode === "day"
+                ? "Jour suivant"
+                : viewMode === "week"
+                  ? "Semaine suivante"
+                  : "Mois suivant"}
+            </button>
+          </div>
+
+          <div className="overflow-x-auto pb-4">
+            <div className="inline-block min-w-full align-middle">
+              {/* Header row for days */}
+              <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-2">
+                {" "}
+                {/* Fixed width for day columns */}
+                <div className="flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
+                  Utilisateur
+                </div>
+                {daysInView.map((day) => {
                   const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
                   const isHoliday = isPublicHoliday(day);
                   const isNonWorkingDay = isWeekendDay || isHoliday;
@@ -827,14 +875,14 @@ export default function OverviewBoard({
                       key={format(day, "yyyy-MM-dd")}
                       className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
                       title={
-                        isNonWorkingDay
-                          ? isWeekendDay && isHoliday
-                            ? "Week-end & Férié"
-                            : isWeekendDay
-                            ? "Week-end"
-                            : "Jour Férié"
-                          : ""
-                      }
+                          isNonWorkingDay
+                            ? isWeekendDay && isHoliday
+                              ? "Week-end & Férié"
+                              : isWeekendDay
+                              ? "Week-end"
+                              : "Jour Férié"
+                            : ""
+                        }
                     >
                       <div className="font-semibold">
                         {format(day, "EEE", { locale: fr })}
@@ -845,264 +893,152 @@ export default function OverviewBoard({
                 })}
               </div>
 
-              {/* Users row for common leave calendar */}
-              <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-1">
-                <div className="flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
-                  Utilisateurs
-                </div>
-                {multiPersonLeaveDaysSummary.map((item) => (
-                  <div
-                    key={format(item.date, "yyyy-MM-dd") + "-users"}
-                    className="h-auto p-1 flex flex-col items-center justify-center rounded-md border border-gray-200 bg-white"
-                  >
-                    {item.userIds.map(userId => {
-                      const user = allUsers.find(u => u.id === userId);
-                      return user ? (
-                        <span key={userId} className="text-xs text-gray-700 bg-gray-100 px-1 py-0.5 rounded-sm mb-0.5 last:mb-0">
-                          {user.name}
-                        </span>
-                      ) : null;
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="text-gray-600 text-center text-sm">{noLeavesMessage}</p>
-        )}
-      </div>
-
-      {/* SECTION: VUE CALENDRIER PRINCIPAL */}
-      <>
-        <div className="flex justify-between items-center mb-6">
-          <button
-            onClick={() => navigateView("prev")}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
-          >
-            {viewMode === "day"
-              ? "Jour précédent"
-              : viewMode === "week"
-              ? "Semaine précédente"
-              : "Mois précédent"}
-          </button>
-          <h3 className="text-xl font-semibold text-gray-800">
-            {viewMode === "day" && isValid(currentViewStart)
-              ? format(currentViewStart, "EEEE dd MMMM yyyy", { locale: fr })
-              : ""}
-            {viewMode === "week" &&
-            isValid(daysInView[0]) &&
-            isValid(daysInView[daysInView.length - 1])
-              ? `${format(daysInView[0], "dd MMM", { locale: fr })} - ${format(
-                  daysInView[daysInView.length - 1],
-                  "dd MMM yyyy",
-                  { locale: fr }
-                )}`
-              : ""}
-            {viewMode === "month" && isValid(currentViewStart)
-              ? format(currentViewStart, "MMMM yyyy", { locale: fr })
-              : ""}
-          </h3>
-          <button
-            onClick={() => navigateView("next")}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200"
-          >
-            {viewMode === "day"
-              ? "Jour suivant"
-              : viewMode === "week"
-                ? "Semaine suivante"
-                : "Mois suivant"}
-          </button>
-        </div>
-
-        <div className="overflow-x-auto pb-4">
-          <div className="inline-block min-w-full align-middle">
-            {/* Header row for days */}
-            <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-2">
-              {" "}
-              {/* Fixed width for day columns */}
-              <div className="flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
-                Utilisateur
-              </div>
-              {daysInView.map((day) => {
-                const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-                const isHoliday = isPublicHoliday(day);
-                const isNonWorkingDay = isWeekendDay || isHoliday;
-                const dayClass = isNonWorkingDay
-                  ? "bg-gray-200 text-gray-500"
-                  : "bg-gray-100 text-gray-700";
-                const todayClass = isSameDay(day, new Date())
-                  ? "border-2 border-blue-500 bg-blue-50"
-                  : "";
-
+              {/* Rows for each user */}
+              {filteredUsersForCalendar.map((user) => {
+                const userSummary = userActivitySummaries.find(s => s.userId === user.id);
                 return (
-                  <div
-                    key={format(day, "yyyy-MM-dd")}
-                    className={`text-center py-2 text-sm rounded-md ${dayClass} ${todayClass}`}
-                    title={
-                        isNonWorkingDay
-                          ? isWeekendDay && isHoliday
-                            ? "Week-end & Férié"
-                            : isWeekendDay
-                            ? "Week-end"
-                            : "Jour Férié"
-                          : ""
-                      }
-                  >
-                    <div className="font-semibold">
-                      {format(day, "EEE", { locale: fr })}
+                  <div key={user.id} className="mb-4">
+                    <div
+                      className="grid grid-flow-col auto-cols-[150px] gap-1 mb-1"
+                    >
+                      <div className= "flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
+                        {user.name}
+                      </div>
+                      {daysInView.map((day) => {
+                        const dateKey = format(day, "yyyy-MM-dd");
+                        const activities =
+                          activitiesByDayAndUser.get(user.id)?.get(dateKey) || [];
+                        const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
+                        const isHoliday = isPublicHoliday(day);
+                        const isNonWorkingDay = isWeekendDay || isHoliday;
+                        const cellBgClass = isNonWorkingDay
+                          ? "bg-gray-100"
+                          : "bg-white";
+                        const todayClass = isSameDay(day, new Date())
+                          ? "border-2 border-blue-400"
+                          : "border border-gray-200";
+
+                        return (
+                          <div
+                            key={`${user.id}-${dateKey}`}
+                            className={`h-16 p-1 flex items-center justify-center rounded-md ${cellBgClass} ${todayClass}`}
+                            title={
+                              isNonWorkingDay
+                                ? isWeekendDay && isHoliday
+                                  ? "Week-end & Férié"
+                                  : isWeekendDay
+                                  ? "Week-end"
+                                  : "Jour Férié"
+                                : ""
+                            }
+                          >
+                            {activities.length > 0 ? (
+                              <div className="flex flex-col w-full h-full justify-center items-center">
+                                {activities.map((activity) => {
+                                  const activityTypeObj = activityTypeDefinitions.find(
+                                    (type) =>
+                                      String(type.id) === String(activity.type_activite)
+                                  );
+                                  const activityTypeLabel = activityTypeObj
+                                    ? activityTypeObj.name
+                                    : "Inconnu";
+                                  const client = clientDefinitions.find(
+                                    (c) => String(c.id) === String(activity.client_id)
+                                  );
+                                  const clientLabel = client
+                                    ? client.nom_client
+                                    : "N/A";
+
+                                  let activityColorClass = "bg-blue-200 text-blue-800"; // Default color for non-leave activities
+                                  let activityStatusIcon = "";
+                                  let activityTitle = "";
+
+                                  // MODIFICATION ICI: Utiliser leaveActivityTypeIds pour la coloration et les icônes
+                                  if (leaveActivityTypeIds.has(String(activity.type_activite))) {
+                                    if (activity.status === "pending_review") {
+                                      activityColorClass = "bg-yellow-200 text-yellow-800";
+                                      activityStatusIcon = "⏳";
+                                      activityTitle = "Congé en attente de révision";
+                                    } else if (activity.status === "validated") {
+                                      activityColorClass = "bg-green-200 text-green-800";
+                                      activityStatusIcon = "✅";
+                                      activityTitle = "Congé validé";
+                                    } else if (activity.status === "rejected") {
+                                      activityColorClass = "bg-red-200 text-red-800";
+                                      activityStatusIcon = "❌";
+                                      activityTitle = "Congé refusé";
+                                    } else if (activity.status === "draft") {
+                                      activityColorClass = "bg-gray-200 text-gray-800"; // Brouillon
+                                      activityStatusIcon = "";
+                                      activityTitle = "Congé brouillon";
+                                    } else {
+                                      activityColorClass = "bg-lime-200 text-lime-800";
+                                      activityTitle = "Congé"; // Généralisé
+                                    }
+                                  } else if (
+                                    activityTypeLabel.toLowerCase().includes("absence")
+                                  ) {
+                                    activityColorClass = "bg-red-200 text-red-800";
+                                  } else if (activityTypeObj?.is_overtime) {
+                                    activityColorClass =
+                                      "bg-purple-200 text-purple-800";
+                                  }
+
+                                  return (
+                                    <div
+                                      key={activity.id}
+                                      className={`w-full text-xs px-1 py-0.5 rounded-sm whitespace-nowrap overflow-hidden text-ellipsis mb-0.5 ${activityColorClass}`}
+                                      title={`${activityTypeLabel} (${
+                                        activity.temps_passe
+                                      }j) - Client: ${clientLabel} - Status: ${
+                                        activity.status
+                                      } ${activityTitle ? `(${activityTitle})` : ""}`}
+                                    >
+                                      {activityStatusIcon} {activityTypeLabel} (
+                                      {activity.temps_passe}j) - {clientLabel}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-gray-300 text-xs"></span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="font-semibold">{format(day, "d")}</div>
+                    {/* Résumés sous la ligne de l'utilisateur - Styles améliorés */}
+                    {userSummary && (
+                      <div className="flex flex-col gap-2 mt-2 pl-2"> {/* Utiliser flex-col pour empiler les résumés */}
+                        <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
+                          <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                            Jours Travaillés: {userSummary.totalNonLeaveActivitiesTime.toFixed(1)}j
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
+                          {/* Congés Validés */}
+                          <div className="bg-green-200 text-green-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                            Congés Validés: {userSummary.totalLeaveDaysValidated.toFixed(1)}j
+                          </div>
+                          {/* Congés en Attente */}
+                          {/* Congés Brouillons */}
+                          <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                            Congés Brouillons: {userSummary.totalLeaveDaysDraft.toFixed(1)}j
+                          </div>
+                          {/* Heures Supp */}
+                          <div className="bg-purple-200 text-purple-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
+                            Heures Supp: {userSummary.totalOvertimeDays.toFixed(1)}j
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-
-            {/* Rows for each user */}
-            {filteredUsersForCalendar.map((user) => {
-              const userSummary = userActivitySummaries.find(s => s.userId === user.id);
-              return (
-                <div key={user.id} className="mb-4">
-                  <div
-                    className="grid grid-flow-col auto-cols-[150px] gap-1 mb-1"
-                  >
-                    <div className= "flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
-                      {user.name}
-                    </div>
-                    {daysInView.map((day) => {
-                      const dateKey = format(day, "yyyy-MM-dd");
-                      const activities =
-                        activitiesByDayAndUser.get(user.id)?.get(dateKey) || [];
-                      const isWeekendDay = isWeekend(day, { weekStartsOn: 1 });
-                      const isHoliday = isPublicHoliday(day);
-                      const isNonWorkingDay = isWeekendDay || isHoliday;
-                      const cellBgClass = isNonWorkingDay
-                        ? "bg-gray-100"
-                        : "bg-white";
-                      const todayClass = isSameDay(day, new Date())
-                        ? "border-2 border-blue-400"
-                        : "border border-gray-200";
-
-                      return (
-                        <div
-                          key={`${user.id}-${dateKey}`}
-                          className={`h-16 p-1 flex items-center justify-center rounded-md ${cellBgClass} ${todayClass}`}
-                          title={
-                            isNonWorkingDay
-                              ? isWeekendDay && isHoliday
-                                ? "Week-end & Férié"
-                                : isWeekendDay
-                                ? "Week-end"
-                                : "Jour Férié"
-                              : ""
-                          }
-                        >
-                          {activities.length > 0 ? (
-                            <div className="flex flex-col w-full h-full justify-center items-center">
-                              {activities.map((activity) => {
-                                const activityTypeObj = activityTypeDefinitions.find(
-                                  (type) =>
-                                    String(type.id) === String(activity.type_activite)
-                                );
-                                const activityTypeLabel = activityTypeObj
-                                  ? activityTypeObj.name
-                                  : "Inconnu";
-                                const client = clientDefinitions.find(
-                                  (c) => String(c.id) === String(activity.client_id)
-                                );
-                                const clientLabel = client
-                                  ? client.nom_client
-                                  : "N/A";
-
-                                let activityColorClass = "bg-blue-200 text-blue-800"; // Default color for non-leave activities
-                                let activityStatusIcon = "";
-                                let activityTitle = "";
-
-                                // MODIFICATION ICI: Utiliser leaveActivityTypeIds pour la coloration et les icônes
-                                if (leaveActivityTypeIds.has(String(activity.type_activite))) {
-                                  if (activity.status === "pending_review") {
-                                    activityColorClass = "bg-yellow-200 text-yellow-800";
-                                    activityStatusIcon = "⏳";
-                                    activityTitle = "Congé en attente de révision";
-                                  } else if (activity.status === "validated") {
-                                    activityColorClass = "bg-green-200 text-green-800";
-                                    activityStatusIcon = "✅";
-                                    activityTitle = "Congé validé";
-                                  } else if (activity.status === "rejected") {
-                                    activityColorClass = "bg-red-200 text-red-800";
-                                    activityStatusIcon = "❌";
-                                    activityTitle = "Congé refusé";
-                                  } else if (activity.status === "draft") {
-                                    activityColorClass = "bg-gray-200 text-gray-800"; // Brouillon
-                                    activityStatusIcon = "";
-                                    activityTitle = "Congé brouillon";
-                                  } else {
-                                    activityColorClass = "bg-lime-200 text-lime-800";
-                                    activityTitle = "Congé"; // Généralisé
-                                  }
-                                } else if (
-                                  activityTypeLabel.toLowerCase().includes("absence")
-                                ) {
-                                  activityColorClass = "bg-red-200 text-red-800";
-                                } else if (activityTypeObj?.is_overtime) {
-                                  activityColorClass =
-                                    "bg-purple-200 text-purple-800";
-                                }
-
-                                return (
-                                  <div
-                                    key={activity.id}
-                                    className={`w-full text-xs px-1 py-0.5 rounded-sm whitespace-nowrap overflow-hidden text-ellipsis mb-0.5 ${activityColorClass}`}
-                                    title={`${activityTypeLabel} (${
-                                      activity.temps_passe
-                                    }j) - Client: ${clientLabel} - Status: ${
-                                      activity.status
-                                    } ${activityTitle ? `(${activityTitle})` : ""}`}
-                                  >
-                                    {activityStatusIcon} {activityTypeLabel} (
-                                    {activity.temps_passe}j) - {clientLabel}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <span className="text-gray-300 text-xs"></span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Résumés sous la ligne de l'utilisateur - Styles améliorés */}
-                  {userSummary && (
-                    <div className="flex flex-col gap-2 mt-2 pl-2"> {/* Utiliser flex-col pour empiler les résumés */}
-                      <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
-                        <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Jours Travaillés: {userSummary.totalNonLeaveActivitiesTime.toFixed(1)}j
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
-                        {/* Congés Validés */}
-                        <div className="bg-green-200 text-green-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Congés Validés: {userSummary.totalLeaveDaysValidated.toFixed(1)}j
-                        </div>
-                        {/* Congés en Attente */}
-                        {/* Congés Brouillons */}
-                        <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Congés Brouillons: {userSummary.totalLeaveDaysDraft.toFixed(1)}j
-                        </div>
-                        {/* Heures Supp */}
-                        <div className="bg-purple-200 text-purple-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Heures Supp: {userSummary.totalOvertimeDays.toFixed(1)}j
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
           </div>
-        </div>
-      </>
+        </>
+      )}
     </div>
   );
 }
