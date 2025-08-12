@@ -34,6 +34,116 @@ function fmt(date) {
   return date ? format(date, "dd/MM/yyyy HH:mm", { locale: fr }) : "N/A";
 }
 
+/** Normalise une chaîne (minuscules, sans accents, trim) pour matcher noms/codes. */
+function norm(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+/* =========================================================================================
+ * Index helpers (activity types / clients)
+ * =======================================================================================*/
+function buildTypeIndex(activityTypeDefinitions = []) {
+  const byId = new Map();
+  const byCode = new Map();
+  const byName = new Map();
+  const bySlug = new Map();
+
+  for (const def of activityTypeDefinitions) {
+    const id = def?.id ?? def?.value ?? def?.code ?? def?.slug ?? def?.name;
+    if (id != null) byId.set(String(id), def);
+
+    if (def?.code) byCode.set(norm(def.code), def);
+    if (def?.name) byName.set(norm(def.name), def);
+    if (def?.slug) bySlug.set(norm(def.slug), def);
+  }
+  return { byId, byCode, byName, bySlug, list: activityTypeDefinitions || [] };
+}
+
+function buildClientIndex(clientDefinitions = []) {
+  const byId = new Map();
+  const byName = new Map();
+  for (const def of clientDefinitions || []) {
+    const id = def?.id ?? def?.value ?? def?.code ?? def?.slug ?? def?.name;
+    if (id != null) byId.set(String(id), def);
+    if (def?.name) byName.set(norm(def.name), def);
+  }
+  return { byId, byName, list: clientDefinitions || [] };
+}
+
+/**
+ * Résout le type d’activité attendu par CraBoard.
+ * - Garde l’ID réel si présent (type_activite / activity_type_id / type / activityTypeId)
+ * - Sinon, si c’est un congé (tag === "CP"), tente de trouver le type "Congés payés"
+ *   dans les définitions (par code "CP" ou nom contenant "cong").
+ * - Retourne { typeId, typeLabel, typeDef }
+ */
+function resolveActivityType(activity, tag, typeIdx) {
+  const raw =
+    activity?.type_activite ??
+    activity?.activity_type_id ??
+    activity?.type ??
+    activity?.activityTypeId ??
+    null;
+
+  // 1) Si on a déjà un identifiant => on le garde (stringifié)
+  if (raw != null) {
+    const id = String(raw);
+    const def =
+      typeIdx.byId.get(id) ||
+      typeIdx.byCode.get(norm(id)) ||
+      typeIdx.bySlug.get(norm(id)) ||
+      typeIdx.byName.get(norm(id)) ||
+      null;
+    return {
+      typeId: def?.id != null ? String(def.id) : id,
+      typeLabel: def?.name || def?.label || null,
+      typeDef: def,
+    };
+  }
+
+  // 2) Fallback spécifique congés payés
+  if (tag === "CP") {
+    // on essaie : code "CP" -> nom contenant "congé" -> slug "paid_leave"/"conges-payes"
+    const byCpCode = typeIdx.byCode.get(norm("CP"));
+    if (byCpCode)
+      return {
+        typeId: String(byCpCode.id ?? byCpCode.value ?? "CP"),
+        typeLabel: byCpCode.name || byCpCode.label || "Congés payés",
+        typeDef: byCpCode,
+      };
+
+    const byNameConges = [...typeIdx.byName.entries()].find(([k]) =>
+      /conge|conges|cong[e|é]s/.test(k)
+    );
+    if (byNameConges) {
+      const def = byNameConges[1];
+      return {
+        typeId: String(def.id ?? def.value ?? def.code ?? def.slug ?? "paid_leave"),
+        typeLabel: def.name || def.label || "Congés payés",
+        typeDef: def,
+      };
+    }
+
+    const bySlugPaid = typeIdx.bySlug.get(norm("paid_leave")) || typeIdx.bySlug.get(norm("conges-payes"));
+    if (bySlugPaid)
+      return {
+        typeId: String(bySlugPaid.id ?? bySlugPaid.value ?? "paid_leave"),
+        typeLabel: bySlugPaid.name || bySlugPaid.label || "Congés payés",
+        typeDef: bySlugPaid,
+      };
+
+    // Dernier recours lisible
+    return { typeId: "paid_leave", typeLabel: "Congés payés", typeDef: null };
+  }
+
+  // 3) Sinon on ne force plus "CRA" (ça créait l’"Activité inconnue")
+  return { typeId: null, typeLabel: null, typeDef: null };
+}
+
 /* =========================================================================================
  * MultiSelectDropdown — composant léger, sans dépendances
  * =======================================================================================*/
@@ -65,7 +175,6 @@ function MultiSelectDropdown({
   }, []);
 
   const handleToggle = useCallback(() => setIsOpen((p) => !p), []);
-
   const handleOptionClick = useCallback(
     (value) => {
       const newSelectedValues = selectedValues.includes(value)
@@ -144,7 +253,7 @@ export default function ReceivedCras({
   clientDefinitions,
   activityTypeDefinitions,
   monthlyReports: propMonthlyReports,
-  onDeleteMonthlyReport, // toujours supporté en prop (non rendu suite à ta demande)
+  onDeleteMonthlyReport, // supporté mais non rendu
 }) {
   // ----------- State principal -----------
   const [reports, setReports] = useState(propMonthlyReports);
@@ -173,7 +282,11 @@ export default function ReceivedCras({
   const [craBoardReportData, setCraBoardReportData] = useState(null);
   const [modalMeta, setModalMeta] = useState(null); // { craDetail?, paidDetail? }
 
-  const isAdmin = useMemo(() => userRole === "admin", [userRole]);
+  /* -------------------------------------------------------------------------------------
+   * Index définitions (pour résoudre les noms/types d’activités & clients)
+   * -----------------------------------------------------------------------------------*/
+  const typeIdx = useMemo(() => buildTypeIndex(activityTypeDefinitions), [activityTypeDefinitions]);
+  const clientIdx = useMemo(() => buildClientIndex(clientDefinitions), [clientDefinitions]);
 
   /* -------------------------------------------------------------------------------------
    * Chargement des utilisateurs (pour le filtre)
@@ -314,8 +427,8 @@ export default function ReceivedCras({
             modalMeta?.craDetail && modalMeta.craDetail.id === reportId
               ? { ...modalMeta.craDetail, status: newStatus, reviewedAt: new Date() }
               : modalMeta?.paidDetail && modalMeta.paidDetail.id === reportId
-                ? { ...modalMeta.paidDetail, status: newStatus, reviewedAt: new Date() }
-                : null;
+              ? { ...modalMeta.paidDetail, status: newStatus, reviewedAt: new Date() }
+              : null;
 
           if (updated) {
             const newMeta = { ...modalMeta };
@@ -365,7 +478,7 @@ export default function ReceivedCras({
   }, []);
 
   /* -------------------------------------------------------------------------------------
-   * Ouverture modal combiné (récupère 2 rapports: CRA + Congés)
+   * Ouverture modal combiné (récupère 2 rapports: CRA + Congés) — **corrigé: type_activite**
    * -----------------------------------------------------------------------------------*/
   const handleViewCombined = useCallback(
     async ({ user_id, userName, month, year }) => {
@@ -418,6 +531,7 @@ export default function ReceivedCras({
           if (!Array.isArray(items)) return [];
           return items
             .map((activity) => {
+              // --- date
               let dateObj = null;
               if (typeof activity.date_activite === "string") {
                 const p = parseISO(activity.date_activite);
@@ -425,18 +539,35 @@ export default function ReceivedCras({
               } else if (activity.date_activite) {
                 dateObj = normalizeToDate(activity.date_activite);
               }
-              const ownValidated =
-                normalizeToDate(activity.validatedAt) || (tag === "CRA" ? craValidatedAt : cpValidatedAt);
+
+              // --- type d’activité (ne PAS forcer "CRA"/"CP")
+              const { typeId, typeLabel } = resolveActivityType(activity, tag, typeIdx);
+
+              // --- client
+              const clientId =
+                activity.client_id != null
+                  ? String(activity.client_id)
+                  : activity.clientId != null
+                  ? String(activity.clientId)
+                  : null;
+              const clientDef = clientId ? clientIdx.byId.get(clientId) : null;
+
+              // --- validatedAt héritée si absente
+              const inheritedValidated =
+                tag === "CRA" ? craValidatedAt : cpValidatedAt;
 
               return {
                 ...activity,
                 __kind: tag, // "CRA" ou "CP"
                 date_activite: isValidDateFns(dateObj) ? dateObj : null,
-                client_id: activity.client_id ? String(activity.client_id) : null,
-                type_activite: String(activity.type_activite || tag),
+                client_id: clientId,
+                client_label: clientDef?.name || clientDef?.label || null,
+                type_activite: typeId, // <= ID que CraBoard saura retrouver dans activityTypeDefinitions
+                type_label: typeLabel || null, // facultatif
                 status: activity.status || "draft",
                 id: activity.id || activity._id?.toString(),
-                validatedAt: ownValidated || null,
+                validatedAt:
+                  normalizeToDate(activity.validatedAt) || inheritedValidated || null,
               };
             })
             .filter((a) => a.date_activite !== null && isValidDateFns(a.date_activite));
@@ -468,7 +599,7 @@ export default function ReceivedCras({
         showMessage?.(`Erreur: ${err.message}`, "error");
       }
     },
-    [showMessage]
+    [showMessage, typeIdx, clientIdx]
   );
 
   // Ouvre le modal quand les données sont prêtes
@@ -723,7 +854,6 @@ export default function ReceivedCras({
                 <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wider">Jours facturables (CRA)</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wider">Statuts (CRA | Congés)</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
-                {/* Colonne "Supprimer" supprimée */}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -748,18 +878,18 @@ export default function ReceivedCras({
                     status === "pending_review"
                       ? "bg-yellow-100 text-yellow-800"
                       : status === "validated"
-                        ? "bg-green-100 text-green-800"
-                        : status === "rejected"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-gray-100 text-gray-800";
+                      ? "bg-green-100 text-green-800"
+                      : status === "rejected"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-gray-100 text-gray-800";
                   const label =
                     status === "pending_review"
                       ? "En attente"
                       : status === "validated"
-                        ? "Validé"
-                        : status === "rejected"
-                          ? `Rejeté${reason ? ` (${reason})` : ""}`
-                          : "Brouillon";
+                      ? "Validé"
+                      : status === "rejected"
+                      ? `Rejeté${reason ? ` (${reason})` : ""}`
+                      : "Brouillon";
                   return (
                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${cls}`}>
                       {type}: {label}
@@ -839,7 +969,6 @@ export default function ReceivedCras({
                         )}
                       </div>
                     </td>
-                    {/* Colonne "Supprimer" retirée conformément à ta demande */}
                   </tr>
                 );
               })}
@@ -921,11 +1050,11 @@ export default function ReceivedCras({
       />
 
       {/* MODAL CraBoard — COMBINÉ CRA + CONGÉS
-          ⚠️ Boutons “Rejeter” retirés dans cette barre d’action, comme demandé. */}
+          On masque switch activité/congé + Envoyer + Réinitialiser via uiVisibility */}
       {showCraBoardModal && craBoardReportData && (
         <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
-            {/* Entête modal + actions review */}
+            {/* Entête modal (statuts simples) */}
             <div className="flex flex-col gap-3 p-4 border-b border-gray-200">
               <div className="flex justify-between items-start">
                 <h3 className="text-xl font-semibold text-gray-900">
@@ -941,9 +1070,7 @@ export default function ReceivedCras({
                 </button>
               </div>
 
-              {/* Ligne d’actions validation (sans rejet) pour CRA et Congés */}
               <div className="flex flex-wrap items-center gap-2">
-                {/* Statuts actuels */}
                 <div className="ml-auto text-xs text-gray-500">
                   {modalMeta?.craDetail && (
                     <span className="mr-3">
@@ -951,10 +1078,10 @@ export default function ReceivedCras({
                       {modalMeta.craDetail.status === "pending_review"
                         ? "En attente"
                         : modalMeta.craDetail.status === "validated"
-                          ? "Validé"
-                          : modalMeta.craDetail.status === "rejected"
-                            ? "Rejeté"
-                            : "Brouillon"}
+                        ? "Validé"
+                        : modalMeta.craDetail.status === "rejected"
+                        ? "Rejeté"
+                        : "Brouillon"}
                       {modalMeta.craDetail.reviewedAt && (
                         <> • {fmt(normalizeToDate(modalMeta.craDetail.reviewedAt) || normalizeToDate(modalMeta.craDetail.updatedAt))}</>
                       )}
@@ -966,10 +1093,10 @@ export default function ReceivedCras({
                       {modalMeta.paidDetail.status === "pending_review"
                         ? "En attente"
                         : modalMeta.paidDetail.status === "validated"
-                          ? "Validé"
-                          : modalMeta.paidDetail.status === "rejected"
-                            ? "Rejeté"
-                            : "Brouillon"}
+                        ? "Validé"
+                        : modalMeta.paidDetail.status === "rejected"
+                        ? "Rejeté"
+                        : "Brouillon"}
                       {modalMeta.paidDetail.reviewedAt && (
                         <> • {fmt(normalizeToDate(modalMeta.paidDetail.reviewedAt) || normalizeToDate(modalMeta.paidDetail.updatedAt))}</>
                       )}
@@ -979,7 +1106,7 @@ export default function ReceivedCras({
               </div>
             </div>
 
-            {/* Corps modal : CraBoard lecture seule avec activités combinées (CRA + Congés) */}
+            {/* Corps modal : CraBoard lecture seule (les noms d’activités s’affichent maintenant) */}
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
               <CraBoard
                 userId={craBoardReportData.userId}
@@ -989,9 +1116,16 @@ export default function ReceivedCras({
                 clientDefinitions={clientDefinitions}
                 currentMonth={craBoardReportData.currentMonth}
                 showMessage={showMessage}
-                readOnly={true}                    // pas d’ajout/envoi/réinit
-                monthlyReports={craBoardReportData.monthlyReports} // [craDetail?, paidDetail?]
+                readOnly={true}
+                monthlyReports={craBoardReportData.monthlyReports}
                 rejectionReason={craBoardReportData.rejectionReason}
+                uiVisibility={{
+                  hideModeSwitch: true,   // cache le changement activité/congé
+                  hideSendButton: true,   // cache "Envoyer"
+                  hideResetButton: true,  // cache "Réinitialiser"
+                  hideAddButtons: true,   // si CraBoard affiche des + d’ajout
+                }}
+                isReviewMode={true}
               />
             </div>
           </div>
