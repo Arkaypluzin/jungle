@@ -160,19 +160,47 @@ export default function CraDayCell({
   const onCellDragOver = onDragOverDay;
   const onCellDrop = (e) => onDropActivity(e, day);
 
+  // Résout les libellés depuis la DB (activityTypeName/clientName) avec fallback defs
+  const resolveLabelsFromDB = useCallback((activity) => {
+    const typeDef = activityTypeDefinitions.find(
+      (t) => String(t.id) === String(activity.type_activite)
+    );
+
+    const typeLabel =
+      typeDef?.name ||
+      activity.activityTypeName || // <- nom renvoyé par la DB (model.js)
+      activity.type_label ||       // <- éventuellement fourni par l'appelant (history)
+      (activity.__kind === "CP" || activity.__kind === "paid_leave"
+        ? "Congés payés"
+        : "Activité");
+
+    const clientDef = clientDefinitions.find(
+      (c) => String(c.id) === String(activity.client_id)
+    );
+
+    const clientLabel =
+      clientDef?.nom_client ||
+      activity.clientName ||  // <- nom client renvoyé par la DB (model.js)
+      activity.client_label || "";
+
+    return { typeDef, typeLabel, clientLabel };
+  }, [activityTypeDefinitions, clientDefinitions]);
+
   const enhancedActivities = useMemo(() => {
     return activitiesForDay.map((activity) => {
-      const typeDefinition = activityTypeDefinitions.find(
-        (t) => String(t.id) === String(activity.type_activite)
-      );
+      const { typeDef, typeLabel, clientLabel } = resolveLabelsFromDB(activity);
       return {
         ...activity,
-        // Ajout des propriétés `is_absence` et `is_overtime` à l'activité
-        is_absence: typeDefinition?.is_absence || false,
-        is_overtime: typeDefinition?.is_overtime || false,
+        is_absence: typeDef?.is_absence || activity.is_absence || false,
+        is_overtime: typeDef?.is_overtime || activity.is_overtime || false,
+        // labels prêts pour l'affichage + tri
+        display_type_label: typeLabel,
+        display_client_label: clientLabel,
+        // 🔑 Fournit toujours un name exploitable pour CraActivityItem
+        name: activity.name || typeLabel,
       };
     });
-  }, [activitiesForDay, activityTypeDefinitions]);
+  }, [activitiesForDay, resolveLabelsFromDB]);
 
   return (
     <div
@@ -199,9 +227,8 @@ export default function CraDayCell({
       onDrop={onCellDrop}
     >
       <span
-        className={`text-sm font-semibold mb-1 ${
-          isTodayHighlight ? "text-blue-800" : ""
-        }`}
+        className={`text-sm font-semibold mb-1 ${isTodayHighlight ? "text-blue-800" : ""
+          }`}
       >
         {formattedDate}
       </span>
@@ -210,8 +237,8 @@ export default function CraDayCell({
           {isWeekendDay && isPublicHolidayDay
             ? "Férié & W-E"
             : isWeekendDay
-            ? "Week-end"
-            : "Férié"}
+              ? "Week-end"
+              : "Férié"}
         </span>
       )}
 
@@ -227,35 +254,16 @@ export default function CraDayCell({
       <div className="flex-grow overflow-y-auto w-full pr-1 custom-scrollbar">
         {enhancedActivities
           .sort((a, b) => {
-            const typeA =
-              activityTypeDefinitions.find(
-                (t) => String(t.id) === String(a.type_activite)
-              )?.name ||
-              a.type_activite_name ||
-              a.type_activite;
-            const typeB =
-              activityTypeDefinitions.find(
-                (t) => String(t.id) === String(b.type_activite)
-              )?.name ||
-              b.type_activite_name ||
-              b.type_activite;
-            if ((typeA || "") < (typeB || "")) return -1;
-            if ((typeA || "") > (typeB || "")) return 1;
+            const typeA = a.display_type_label || "";
+            const typeB = b.display_type_label || "";
+            if (typeA < typeB) return -1;
+            if (typeA > typeB) return 1;
 
-            const clientA =
-              clientDefinitions.find(
-                (c) => String(c.id) === String(a.client_id)
-              )?.nom_client ||
-              a.client_name ||
-              "";
-            const clientB =
-              clientDefinitions.find(
-                (c) => String(c.id) === String(b.client_id)
-              )?.nom_client ||
-              b.client_name ||
-              "";
+            const clientA = a.display_client_label || "";
+            const clientB = b.display_client_label || "";
             if (clientA < clientB) return -1;
             if (clientA > clientB) return 1;
+
             return 0;
           })
           .map((activity) => (
@@ -264,7 +272,7 @@ export default function CraDayCell({
               activity={activity}
               activityTypeDefinitions={activityTypeDefinitions}
               clientDefinitions={clientDefinitions}
-              handleActivityClick={onActivityClick} // Toujours actif
+              handleActivityClick={onActivityClick}
               requestDeleteFromCalendar={requestDeleteFromCalendar}
               showMessage={showMessage}
               readOnly={readOnly}
@@ -273,13 +281,12 @@ export default function CraDayCell({
               userId={userId}
               userFirstName={userFirstName}
               paidLeaveTypeId={paidLeaveTypeId}
-              // L'attribut draggable est maintenant géré uniquement par canModifyActivity et readOnly
               isDraggable={
                 !readOnly &&
                 activity.user_id === userId &&
                 (activity.status === "draft" || activity.status === "rejected")
               }
-              onDragStartActivity={onDragStartActivity} // Passé directement de CraBoard
+              onDragStartActivity={onDragStartActivity}
             />
           ))}
       </div>
