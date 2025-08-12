@@ -1081,14 +1081,7 @@ export default function OverviewBoard({
                   {/* Résumés sous la ligne de l'utilisateur - Styles améliorés */}
                   {userSummary && (
                     <div className="flex flex-col gap-2 mt-2 pl-2"> {/* Utiliser flex-col pour empiler les résumés */}
-                      <div className="flex flex-wrap justify-start gap-2 text-base font-semibold"> {/* text-base pour texte légèrement plus petit, justify-start pour aligner à gauche, font-semibold pour moins de gras */}
-                        {/* Nouvelle ligne pour les totaux d'activités par statut */}
-                        <div className="bg-green-100 text-green-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Activités Validées: {userSummary.totalNonLeaveValidatedActivities.toFixed(1)}j
-                        </div>
-                        <div className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Activités Brouillons: {userSummary.totalNonLeaveDraftActivities.toFixed(1)}j
-                        </div>
+                      <div className="flex flex-wrap justify-start gap-2 text-base font-semibold">
                         <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
                           Jours Travaillés: {userSummary.totalNonLeaveActivitiesTime.toFixed(1)}j
                         </div>
@@ -1103,21 +1096,9 @@ export default function OverviewBoard({
                         <div className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
                           Congés Brouillons: {userSummary.totalLeaveDaysDraft.toFixed(1)}j
                         </div>
-                        {/* Congés Refusés */}
-                        <div className="bg-red-200 text-red-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Congés Refusés: {userSummary.totalLeaveDaysRejected.toFixed(1)}j
-                        </div>
-                        {/* Facturable */}
-                        <div className="bg-blue-200 text-blue-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Facturable: {userSummary.totalBillableDays.toFixed(1)}j
-                        </div>
                         {/* Heures Supp */}
                         <div className="bg-purple-200 text-purple-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
                           Heures Supp: {userSummary.totalOvertimeDays.toFixed(1)}j
-                        </div>
-                        {/* Jours Ouvrés (Théoriques) */}
-                        <div className="bg-gray-300 text-gray-800 px-2 py-1 rounded-lg shadow-md w-auto text-center min-w-[100px]">
-                          Jours Ouvrés: {userSummary.totalWorkingDaysInView.toFixed(1)}j
                         </div>
                       </div>
                     </div>
