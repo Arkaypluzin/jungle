@@ -72,10 +72,10 @@ export default function CraActivityItem({
 
   const typeColorClass = useMemo(() => {
     if (String(activity.type_activite) === String(paidLeaveTypeId)) {
-      return "bg-lime-200 text-lime-800";
-    }
-    if (activityTypeLabel.toLowerCase().includes("absence")) {
       return "bg-red-200 text-red-800";
+    }
+    if (activity.is_absence) {
+      return "bg-orange-200 text-orange-800";
     }
     if (
       activityTypeLabel.toLowerCase().includes("heure supplémentaire") ||
@@ -83,7 +83,7 @@ export default function CraActivityItem({
     ) {
       return "bg-purple-200 text-purple-800";
     }
-    return "bg-blue-200 text-blue-800";
+    return "bg-lime-200 text-lime-800";
   }, [
     activity.type_activite,
     paidLeaveTypeId,

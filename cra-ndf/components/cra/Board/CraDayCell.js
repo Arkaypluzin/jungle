@@ -1,7 +1,7 @@
 // components/cra/CraDayCell.js
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   format,
   isToday,
@@ -160,6 +160,20 @@ export default function CraDayCell({
   const onCellDragOver = onDragOverDay;
   const onCellDrop = (e) => onDropActivity(e, day);
 
+  const enhancedActivities = useMemo(() => {
+    return activitiesForDay.map((activity) => {
+      const typeDefinition = activityTypeDefinitions.find(
+        (t) => String(t.id) === String(activity.type_activite)
+      );
+      return {
+        ...activity,
+        // Ajout des propriétés `is_absence` et `is_overtime` à l'activité
+        is_absence: typeDefinition?.is_absence || false,
+        is_overtime: typeDefinition?.is_overtime || false,
+      };
+    });
+  }, [activitiesForDay, activityTypeDefinitions]);
+
   return (
     <div
       className={cellClasses.join(" ")}
@@ -201,9 +215,9 @@ export default function CraDayCell({
         </span>
       )}
 
-      {activitiesForDay.length > 0 && (
+      {enhancedActivities.length > 0 && (
         <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
-          {activitiesForDay
+          {enhancedActivities
             .reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0)
             .toFixed(1)}
           j
@@ -211,7 +225,7 @@ export default function CraDayCell({
       )}
 
       <div className="flex-grow overflow-y-auto w-full pr-1 custom-scrollbar">
-        {activitiesForDay
+        {enhancedActivities
           .sort((a, b) => {
             const typeA =
               activityTypeDefinitions.find(

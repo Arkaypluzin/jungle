@@ -565,8 +565,9 @@ export default function SummaryReport({
             yPos += sectionSpacing / 2;
           }
 
-          const startDay = getDate(group[0].day);
-          const endDay = getDate(group[group.length - 1].day);
+          // CORRECTION: Utiliser format(date, 'd') au lieu de getDate(date)
+          const startDay = format(group[0].day, 'd', { locale: fr });
+          const endDay = format(group[group.length - 1].day, 'd', { locale: fr });
           pdf.setFont("helvetica", "bold");
           pdf.setFontSize(11);
           pdf.setTextColor(...colors.mediumGray);
@@ -639,7 +640,6 @@ export default function SummaryReport({
                 const clientName = getClientName(activity.client_id);
                 const activityTypeName = getActivityTypeName(activity.type_activite);
 
-                // --- NOUVELLE LOGIQUE DE COULEURS POUR LE PDF ---
                 let rectFillColor = colors.regularActivityGreenBg;
                 let textColor = colors.regularActivityGreenText;
                 if (activity.is_absence) {
@@ -852,7 +852,6 @@ export default function SummaryReport({
                   <div className="pl-4 space-y-1">
                     {dailyActivities.length > 0 ? (
                       dailyActivities.map((activity) => (
-                        // --- NOUVELLE LOGIQUE DE COULEURS POUR L'APERCU ---
                         <p
                           key={activity.id}
                           className={`text-sm rounded-md p-1 ${
