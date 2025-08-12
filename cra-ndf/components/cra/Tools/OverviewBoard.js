@@ -1,4 +1,3 @@
-// components/OverviewBoard.js
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -64,11 +63,6 @@ export default function OverviewBoard({
     }
     return allUsers.filter(user => selectedUserIdsFilter.includes(user.id));
   }, [allUsers, selectedUserIdsFilter]);
-
-
-  // MODIFICATION ICI: Collecter TOUS les IDs de types d'activités liés aux congés/absences
-  // NOTE IMPORTANTE: La précision de cette liste dépend du contenu de activityTypeDefinitions.
-  // Nous avons besoin de ce contenu pour affiner les mots-clés si nécessaire.
   const leaveActivityTypeIds = useMemo(() => {
     // Liste plus complète et robuste de mots-clés pour les congés et absences
     const leaveKeywords = [
@@ -812,8 +806,8 @@ export default function OverviewBoard({
           <div className="overflow-x-auto">
             <div className="inline-block min-w-full align-middle">
               {/* Header row for days in common leave calendar */}
-              <div className="grid grid-flow-col auto-cols-[100px] gap-1 mb-2">
-                <div className="w-32 flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
+              <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-2">
+                <div className=" flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
                   Jour
                 </div>
                 {multiPersonLeaveDaysSummary.map((item) => {
@@ -852,8 +846,8 @@ export default function OverviewBoard({
               </div>
 
               {/* Users row for common leave calendar */}
-              <div className="grid grid-flow-col auto-cols-[100px] gap-1">
-                <div className="w-32 flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
+              <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-1">
+                <div className="flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
                   Utilisateurs
                 </div>
                 {multiPersonLeaveDaysSummary.map((item) => (
@@ -924,10 +918,10 @@ export default function OverviewBoard({
         <div className="overflow-x-auto pb-4">
           <div className="inline-block min-w-full align-middle">
             {/* Header row for days */}
-            <div className="grid grid-flow-col auto-cols-[100px] gap-1 mb-2">
+            <div className="grid grid-flow-col auto-cols-[150px] gap-1 mb-2">
               {" "}
               {/* Fixed width for day columns */}
-              <div className="w-32 flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
+              <div className="flex-shrink-0 font-semibold text-gray-700 text-left pl-2">
                 Utilisateur
               </div>
               {daysInView.map((day) => {
@@ -970,9 +964,9 @@ export default function OverviewBoard({
               return (
                 <div key={user.id} className="mb-4">
                   <div
-                    className="grid grid-flow-col auto-cols-[100px] gap-1 mb-1"
+                    className="grid grid-flow-col auto-cols-[150px] gap-1 mb-1"
                   >
-                    <div className="w-32 flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
+                    <div className= "flex-shrink-0 bg-blue-50 text-blue-800 font-semibold py-2 px-2 rounded-md flex items-center justify-start overflow-hidden text-ellipsis whitespace-nowrap">
                       {user.name}
                     </div>
                     {daysInView.map((day) => {
@@ -1040,7 +1034,7 @@ export default function OverviewBoard({
                                     activityTitle = "Congé refusé";
                                   } else if (activity.status === "draft") {
                                     activityColorClass = "bg-gray-200 text-gray-800"; // Brouillon
-                                    activityStatusIcon = "�";
+                                    activityStatusIcon = "";
                                     activityTitle = "Congé brouillon";
                                   } else {
                                     activityColorClass = "bg-lime-200 text-lime-800";
