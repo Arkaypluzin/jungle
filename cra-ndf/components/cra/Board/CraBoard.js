@@ -1735,6 +1735,25 @@ export default function CraBoard({
         isAnyReportEditable={isAnyReportEditable}
         readOnly={readOnly}
       />
+      {/* Modal activité */}
+      {isModalOpen && (
+        <ActivityModal
+          onClose={handleCloseActivityModal}
+          onSave={handleSaveActivity}
+          onDelete={confirmDeleteActivity}
+          activity={editingActivity}
+          initialDate={selectedDate}
+          activityTypeDefinitions={activityTypeDefinitions}
+          clientDefinitions={clientDefinitions}
+          showMessage={localShowMessage}
+          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)}
+          selectedDaysForMultiAdd={tempSelectedDays}
+          isNonWorkingDay={isNonWorkingDay}
+          activitiesByDay={activitiesByDay}
+          initialActivityTypeFilter={initialActivityTypeFilter}
+          absenceActivityTypeIds={absenceActivityTypeIds}
+        />
+      )}
 
       {/* Résumé mensuel + statut rapport */}
       <CraSummary
@@ -1781,26 +1800,6 @@ export default function CraBoard({
           isSingleDaySelectionLocked={isSingleDaySelectionLocked}
         />
       </div>
-
-      {/* Modal activité */}
-      {isModalOpen && (
-        <ActivityModal
-          onClose={handleCloseActivityModal}
-          onSave={handleSaveActivity}
-          onDelete={confirmDeleteActivity}
-          activity={editingActivity}
-          initialDate={selectedDate}
-          activityTypeDefinitions={activityTypeDefinitions}
-          clientDefinitions={clientDefinitions}
-          showMessage={localShowMessage}
-          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)}
-          selectedDaysForMultiAdd={tempSelectedDays}
-          isNonWorkingDay={isNonWorkingDay}
-          activitiesByDay={activitiesByDay}
-          initialActivityTypeFilter={initialActivityTypeFilter}
-          absenceActivityTypeIds={absenceActivityTypeIds}
-        />
-      )}
 
       {/* Modal aperçu rapport */}
       {showMonthlyReportPreview && monthlyReportPreviewData && (
