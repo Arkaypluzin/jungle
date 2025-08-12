@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { format, parseISO, isValid } from "date-fns";
 import { fr } from "date-fns/locale";
-import CraBoard from "./CraBoard"; // Importez le CraBoard
+import CraBoard from "../Board/CraBoard"; // Importez le CraBoard
 
 export default function MonthlyReportPreviewModal({
   isOpen,

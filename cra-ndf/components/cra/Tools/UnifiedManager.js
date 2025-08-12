@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import ConfirmationModal from "./ConfirmationModal";
+import ConfirmationModal from "../Modals/ConfirmationModal";
 
 export default function UnifiedManager({
   clientDefinitions,

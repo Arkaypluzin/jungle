@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
-import CraBoard from "@/components/CraBoard";
+import CraBoard from "@/components/cra/Board/CraBoard";
 
 export default function CraHistory({
   userFirstName,

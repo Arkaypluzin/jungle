@@ -29,12 +29,12 @@ import {
 import { fr } from "date-fns/locale";
 
 // Import sub-components
-import CraCalendar from "./cra/CraCalendar";
-import CraControls from "./cra/CraControls";
-import CraSummary from "./cra/CraSummary";
-import ActivityModal from "./ActivityModal";
-import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
-import SummaryReport from "./SummaryReport";
+import CraCalendar from "./CraCalendar";
+import CraControls from "./CraControls";
+import CraSummary from "./CraSummary";
+import ActivityModal from "../Modals/ActivityModal";
+import MonthlyReportPreviewModal from "../Reports/MonthlyReportPreviewModal";
+import SummaryReport from "../Reports/SummaryReport";
 
 export default function CraBoard({
   activities = [],

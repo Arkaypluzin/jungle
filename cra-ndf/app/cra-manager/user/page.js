@@ -5,8 +5,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import CraBoard from "@/components/CraBoard";
-import CraHistory from "@/components/CraHistory";
+import CraBoard from "@/components/cra/Board/CraBoard";
+import CraHistory from "@/components/cra/Reports/CraHistory";
 import {
   startOfMonth,
   endOfMonth,
@@ -15,7 +15,7 @@ import {
   isValid,
 } from "date-fns";
 import { fr } from "date-fns/locale";
-import ConfirmationModal from "@/components/ConfirmationModal";
+import ConfirmationModal from "@/components/cra/Modals/ConfirmationModal";
 
 const ToastMessage = ({ message, type, isVisible, onClose }) => {
   if (!isVisible) return null;

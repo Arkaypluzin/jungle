@@ -8,9 +8,9 @@ import { fr } from "date-fns/locale";
 // PAS D'IMPORTS DIRECTS DE jspdf OU jspdf-autotable ICI.
 // Ils seront importés dynamiquement dans handleDownloadTableViewPdf.
 
-import MonthlyReportPreviewModal from "./MonthlyReportPreviewModal";
-import ConfirmationModal from "./ConfirmationModal";
-import CraBoard from "./CraBoard";
+import MonthlyReportPreviewModal from "../Reports/MonthlyReportPreviewModal";
+import ConfirmationModal from "../Modals/ConfirmationModal";
+import CraBoard from "../Board/CraBoard";
 
 // Composant MultiSelectDropdown intégré directement
 function MultiSelectDropdown({
