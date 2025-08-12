@@ -40,7 +40,7 @@ export default function CraHistory({
         const errorData = await response.json();
         throw new Error(
           errorData.message ||
-            "Échec de la récupération de l'historique des rapports."
+          "Échec de la récupération de l'historique des rapports."
         );
       }
       const data = await response.json();
@@ -273,11 +273,10 @@ export default function CraHistory({
                 >
                   <td className="py-3 px-4 text-sm text-gray-800">
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        report.report_type === "paid_leave"
+                      className={`px-2 py-1 rounded-full text-xs font-semibold ${report.report_type === "paid_leave"
                           ? "bg-teal-100 text-teal-800"
                           : "bg-blue-100 text-blue-800"
-                      }`}
+                        }`}
                     >
                       {report.report_type === "paid_leave"
                         ? "Congés Payés"
@@ -292,36 +291,35 @@ export default function CraHistory({
                   <td className="py-3 px-4 text-sm text-gray-800">{report.year}</td>
                   <td className="py-3 px-4 text-sm">
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        report.status === "pending_review"
+                      className={`px-2 py-1 rounded-full text-xs font-semibold ${report.status === "pending_review"
                           ? "bg-blue-100 text-blue-800"
                           : report.status === "validated"
-                          ? "bg-green-100 text-green-800"
-                          : report.status === "rejected"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
+                            ? "bg-green-100 text-green-800"
+                            : report.status === "rejected"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-gray-100 text-gray-800"
+                        }`}
                     >
                       {report.status === "pending_review"
                         ? "En attente"
                         : report.status === "validated"
-                        ? "Validé"
-                        : "Rejeté"}
+                          ? "Validé"
+                          : "Rejeté"}
                     </span>
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {report.submittedAt
                       ? format(parseISO(report.submittedAt), "dd/MM/yyyy HH:mm", {
-                          locale: fr,
-                        })
+                        locale: fr,
+                      })
                       : "N/A"}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-800">
                     {report.reviewedAt
-                      ? format(parseISO(report.reviewedAt), "dd/MM/yyyy HH:mm", {
-                          locale: fr,
-                        })
-                      : "N/A"}
+                      ? format(parseISO(report.reviewedAt), "dd/MM/yyyy HH:mm", { locale: fr })
+                      : (report.updatedAt && report.status !== "pending_review")
+                        ? format(parseISO(report.updatedAt), "dd/MM/yyyy HH:mm", { locale: fr })
+                        : "N/A"}
                   </td>
                   <td className="py-3 px-4 text-sm">
                     <button

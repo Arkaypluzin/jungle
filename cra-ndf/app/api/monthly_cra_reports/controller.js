@@ -114,6 +114,7 @@ export async function createOrUpdateMonthlyReportController(
       activities_snapshot: activities_snapshot,
       status: "pending_review", // Le statut initial est toujours 'pending_review' lors de la création/mise à jour
       submittedAt: new Date(),
+      updatedAt: new Date(),
       report_type: report_type,
     };
 
@@ -207,12 +208,9 @@ export async function getMonthlyReportByIdController(reportId) {
       return { success: false, message: "Rapport mensuel non trouvé." };
     }
     console.log(
-      `[Backend] getMonthlyReportByIdController: Rapport mensuel trouvé. userName: "${
-        report.userName
-      }", month: ${report.month}, year: ${
-        report.year
-      }, activities_snapshot length: ${
-        report.activities_snapshot ? report.activities_snapshot.length : 0
+      `[Backend] getMonthlyReportByIdController: Rapport mensuel trouvé. userName: "${report.userName
+      }", month: ${report.month}, year: ${report.year
+      }, activities_snapshot length: ${report.activities_snapshot ? report.activities_snapshot.length : 0
       }`
     );
     console.log(`[Backend DEBUG] Monthly Report _id: ${report._id.toString()}`);
@@ -335,15 +333,22 @@ export async function getMonthlyReportByIdController(reportId) {
   }
 }
 
-// Fonction pour changer le statut d'un rapport mensuel (ex. 'pending_review' à 'approved')
+// Fonction pour changer le statut d'un rapport mensuel
 export async function changeMonthlyReportStatusController(reportId, newStatus) {
   try {
     const db = await getMongoDb();
     const monthlyReportsCollection = await getMonthlyCraReportsCollection(db);
 
+    const now = new Date();
+    const setFields = { status: newStatus, updatedAt: now };
+    // Si on valide ou rejette, on considère que c'est "révisé"
+    if (newStatus === "validated" || newStatus === "rejected") {
+      setFields.reviewedAt = now;
+    }
+
     const updateResult = await monthlyReportsCollection.updateOne(
       { _id: new ObjectId(reportId) },
-      { $set: { status: newStatus } }
+      { $set: setFields }
     );
 
     if (updateResult.matchedCount === 0) {
