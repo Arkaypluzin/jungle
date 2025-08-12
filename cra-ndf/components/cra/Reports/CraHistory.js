@@ -1,10 +1,102 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+/**
+ * CraHistory
+ * -----------
+ * Rôle :
+ * - Affiche l’historique des rapports envoyés par l’utilisateur (CRA & Congés payés)
+ * - Regroupe par (mois, année) dans des blocs pleine largeur
+ * - Ouvre un modal qui fusionne toutes les activités du mois (CRA + CP) dans le calendrier (CraBoard)
+ * - Montre le statut + la date d’envoi et la date de validation/révision
+ *
+ * Notes d’implémentation :
+ * - Tous les hooks (useState/useEffect/useMemo/useCallback) sont déclarés AVANT tout return conditionnel.
+ * - Les dates sont normalisées via `normalizeToDate` pour accepter ISO/String/Date/number.
+ * - La date de validation est déduite via (reviewedAt || updatedAt) côté front si absente.
+ * - Chaque activité passée à CraBoard reçoit un champ `validatedAt` (hérité du rapport parent si absent).
+ */
+
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
 import CraBoard from "@/components/cra/Board/CraBoard";
+
+/* ---------------------------------- */
+/* Utils Dates                        */
+/* ---------------------------------- */
+
+/** Normalise une valeur (ISO string / Date / timestamp / autre) en Date valide ou null */
+function normalizeToDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isValidDateFns(v) ? v : null;
+  if (typeof v === "number") {
+    const d = new Date(v);
+    return isValidDateFns(d) ? d : null;
+  }
+  if (typeof v === "string") {
+    const parsed = parseISO(v);
+    if (isValidDateFns(parsed)) return parsed;
+    const d = new Date(v);
+    return isValidDateFns(d) ? d : null;
+  }
+  return null;
+}
+
+/** Format standard UI pour les dates (jour/mois/année + heure) */
+function fmt(date) {
+  return date ? format(date, "dd/MM/yyyy HH:mm", { locale: fr }) : "N/A";
+}
+
+/** Nom du mois (fr) à partir (year, month 1..12) */
+function monthName(year, month) {
+  const d = new Date(year, (parseInt(month, 10) || 1) - 1, 1);
+  return format(d, "MMMM", { locale: fr });
+}
+
+/* ---------------------------------- */
+/* UI Helpers                         */
+/* ---------------------------------- */
+
+/** Classes & labels par statut */
+const STATUS_STYLES = {
+  pending_review: "bg-blue-100 text-blue-800",
+  validated: "bg-green-100 text-green-800",
+  rejected: "bg-red-100 text-red-800",
+  draft: "bg-gray-100 text-gray-800",
+};
+const STATUS_LABELS = {
+  pending_review: "En attente",
+  validated: "Validé",
+  rejected: "Rejeté",
+  draft: "Brouillon",
+};
+
+/** Badge compact pour le statut d’un rapport */
+function StatusBadge({ status, labelOverride }) {
+  const cls = STATUS_STYLES[status] || STATUS_STYLES.draft;
+  const label = labelOverride || STATUS_LABELS[status] || STATUS_LABELS.draft;
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+/** Retourne la date d’envoi (fallback reviewedAt -> updatedAt -> submittedAt) */
+function getSentDate(report) {
+  return (
+    normalizeToDate(report?.reviewedAt) ||
+    normalizeToDate(report?.updatedAt) ||
+    normalizeToDate(report?.submittedAt)
+  );
+}
+
+/** Retourne la date de validation/révision (si statut !== pending) */
+function getValidatedDate(report) {
+  if (!report || report.status === "pending_review") return null;
+  return normalizeToDate(report?.reviewedAt) || normalizeToDate(report?.updatedAt);
+}
 
 export default function CraHistory({
   userFirstName,
@@ -12,56 +104,68 @@ export default function CraHistory({
   clientDefinitions,
   activityTypeDefinitions,
 }) {
+  /* ---------------------------------- */
+  /* Session / état principal            */
+  /* ---------------------------------- */
+
   const { data: session, status } = useSession();
-  // Forcer à utiliser uniquement l’ID de la session (utilisateur connecté)
   const currentUserId = session?.user?.id;
-  const currentUserName = userFirstName || session?.user?.name?.split(" ")[0] || "Utilisateur";
+  const currentUserName =
+    userFirstName || session?.user?.name?.split(" ")[0] || "Utilisateur";
 
   const [monthlyReports, setMonthlyReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  /* ---------------------------------- */
+  /* Modal (CraBoard)                   */
+  /* ---------------------------------- */
+
   const [showCraBoardModal, setShowCraBoardModal] = useState(false);
   const [craBoardReportData, setCraBoardReportData] = useState(null);
+  // meta = { craStatus, cpStatus, craValidatedAt, cpValidatedAt }
+  const [modalMeta, setModalMeta] = useState(null);
+
+  /* ---------------------------------- */
+  /* Fetch des rapports de l’utilisateur */
+  /* ---------------------------------- */
 
   const fetchSentMonthlyReports = useCallback(async () => {
+    // AbortController pour éviter des setState sur composants démontés
+    const controller = new AbortController();
+
     if (!currentUserId) {
       setLoading(false);
-      return;
+      return () => controller.abort();
     }
+
     setLoading(true);
     setError(null);
+
     try {
       const queryParams = new URLSearchParams({ userId: currentUserId });
-      const response = await fetch(
-        `/api/monthly_cra_reports?${queryParams.toString()}`
-      );
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message ||
-          "Échec de la récupération de l'historique des rapports."
-        );
-      }
-      const data = await response.json();
-      console.log("CraHistory: Rapports mensuels envoyés récupérés:", data);
+      const res = await fetch(`/api/monthly_cra_reports?${queryParams}`, {
+        signal: controller.signal,
+      });
 
-      if (data && Array.isArray(data.data)) {
-        setMonthlyReports(data.data);
-      } else {
-        console.warn(
-          "CraHistory: La réponse API ne contient pas un tableau valide dans 'data.data'. Réponse:",
-          data
-        );
-        setMonthlyReports([]);
+      if (!res.ok) {
+        let message = "Échec de la récupération de l'historique des rapports.";
+        try {
+          const e = await res.json();
+          message = e?.message || message;
+        } catch {
+          /* ignore JSON parse */
+        }
+        throw new Error(message);
       }
+
+      const data = await res.json();
+      setMonthlyReports(Array.isArray(data?.data) ? data.data : []);
     } catch (err) {
-      console.error(
-        "CraHistory: Erreur lors de la récupération de l'historique des rapports:",
-        err
-      );
+      if (err.name === "AbortError") return; // requête annulée
+      console.error("[CraHistory] fetch error:", err);
       setError(err.message);
-      showMessage(
+      showMessage?.(
         `Erreur lors du chargement de l'historique: ${err.message}`,
         "error"
       );
@@ -69,138 +173,176 @@ export default function CraHistory({
     } finally {
       setLoading(false);
     }
+
+    return () => controller.abort();
   }, [currentUserId, showMessage]);
 
   useEffect(() => {
     if (status === "authenticated" && currentUserId) {
-      fetchSentMonthlyReports();
+      const abort = fetchSentMonthlyReports();
+      return () => {
+        // Si fetchSentMonthlyReports a retourné un cleanup
+        if (typeof abort === "function") abort();
+      };
+    } else if (status !== "loading") {
+      setLoading(false);
     }
   }, [status, currentUserId, fetchSentMonthlyReports]);
 
-  const handleViewDetails = useCallback(
-    async (report) => {
-      console.log("[CraHistory] handleViewDetails appelé avec le rapport:", report);
+  /* ---------------------------------- */
+  /* Données dérivées (mémoïsées)       */
+  /* ---------------------------------- */
+
+  // 1) Sécurité : ne garde que les rapports de l’utilisateur connecté
+  const myReports = useMemo(
+    () => (monthlyReports || []).filter((r) => r.user_id === currentUserId),
+    [monthlyReports, currentUserId]
+  );
+
+  // 2) Groupes (mois, année) => { year, month, cra, paid }
+  const groups = useMemo(() => {
+    const map = new Map(); // clé = `${year}-${month}`
+    for (const r of myReports) {
+      const key = `${r.year}-${r.month}`;
+      const entry =
+        map.get(key) || { year: r.year, month: r.month, cra: null, paid: null };
+      if (r.report_type === "paid_leave") entry.paid = r;
+      else entry.cra = r; // défaut: CRA
+      map.set(key, entry);
+    }
+    // du + récent au + ancien
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+  }, [myReports]);
+
+  /* ---------------------------------- */
+  /* Handlers                           */
+  /* ---------------------------------- */
+
+  /**
+   * Ouvre le modal avec :
+   * - activités CRA + CP fusionnées et triées
+   * - méta (statuts + dates de validation au niveau rapport)
+   */
+  const handleViewDetailsGroup = useCallback(
+    async (group) => {
       try {
-        const response = await fetch(`/api/monthly_cra_reports/${report.id}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Échec de la récupération du CRA détaillé."
+        const requests = [];
+        if (group.cra?.id) {
+          requests.push(
+            fetch(`/api/monthly_cra_reports/${group.cra.id}`).then((r) =>
+              r.ok ? r.json() : null
+            )
           );
         }
-        const detailedReport = await response.json();
-
-        console.log("[CraHistory] detailedReport reçu:", detailedReport);
-
-        if (!detailedReport) {
-          console.error("[CraHistory] detailedReport est nul ou indéfini.");
-          showMessage("Erreur: Rapport détaillé non trouvé.", "error");
-          return;
-        }
-
-        const reportYear = parseInt(detailedReport.year);
-        const reportMonth = parseInt(detailedReport.month);
-
-        let craBoardCurrentMonth;
-        if (
-          !isNaN(reportYear) &&
-          !isNaN(reportMonth) &&
-          reportMonth >= 1 &&
-          reportMonth <= 12
-        ) {
-          craBoardCurrentMonth = new Date(reportYear, reportMonth - 1, 1);
-        } else {
-          console.warn(
-            `[CraHistory] Année (${detailedReport.year}) ou mois (${detailedReport.month}) invalide(s) trouvé(s) dans le rapport détaillé. Utilisation de la date actuelle par défaut.`
+        if (group.paid?.id) {
+          requests.push(
+            fetch(`/api/monthly_cra_reports/${group.paid.id}`).then((r) =>
+              r.ok ? r.json() : null
+            )
           );
-          craBoardCurrentMonth = new Date();
         }
 
-        // Gestion des activités : si activities_snapshot contient uniquement des IDs, on fetch les détails
-        let activitiesToPass = [];
-        if (
-          detailedReport.activities_snapshot &&
-          Array.isArray(detailedReport.activities_snapshot)
-        ) {
-          // Check si le premier élément est une string (id) ou un objet
-          const firstElem = detailedReport.activities_snapshot[0];
-          if (typeof firstElem === "string" || typeof firstElem === "number") {
-            // Ce sont des IDs, on récupère chaque activité en détail
-            try {
-              const activitiesDetails = await Promise.all(
-                detailedReport.activities_snapshot.map(async (activityId) => {
-                  const res = await fetch(`/api/activities/${activityId}`);
-                  if (!res.ok) {
-                    console.warn(`Erreur chargement activité ${activityId}`);
-                    return null;
-                  }
-                  return res.json();
-                })
-              );
-              // Filtrer les activités nulles (en cas d'erreur fetch)
-              activitiesToPass = activitiesDetails.filter((a) => a !== null);
-            } catch (err) {
-              console.error("Erreur lors du fetch des activités détaillées:", err);
-              showMessage("Erreur lors du chargement des activités détaillées.", "error");
-            }
-          } else {
-            // On a déjà les objets activités complets
-            activitiesToPass = detailedReport.activities_snapshot;
-          }
-        }
+        const [craDetail, paidDetail] = await Promise.all(requests);
 
-        // Formattage robuste des activités
-        const formattedActivities = activitiesToPass
-          .map((activity) => {
-            let dateObj = null;
-            if (typeof activity.date_activite === "string") {
-              dateObj = parseISO(activity.date_activite);
-            } else if (activity.date_activite) {
-              dateObj = new Date(activity.date_activite);
-            }
-            return {
-              ...activity,
-              date_activite: isValidDateFns(dateObj) ? dateObj : null,
-              client_id: String(activity.client_id),
-              type_activite: String(activity.type_activite),
-              id: activity.id || activity._id?.toString(),
-            };
-          })
-          .filter(
-            (activity) =>
-              activity.date_activite !== null &&
-              isValidDateFns(activity.date_activite)
-          );
+        // Dates de validation (rapport) si statut non pending
+        const craValidatedAt = getValidatedDate(craDetail);
+        const cpValidatedAt = getValidatedDate(paidDetail);
+
+        // Helper : format d’une activité, avec héritage validatedAt depuis le rapport parent
+        const formatActivities = (items, tag) => {
+          if (!Array.isArray(items)) return [];
+          return items
+            .map((activity) => {
+              let dateObj = null;
+              if (typeof activity.date_activite === "string") {
+                const p = parseISO(activity.date_activite);
+                dateObj = isValidDateFns(p)
+                  ? p
+                  : normalizeToDate(activity.date_activite);
+              } else if (activity.date_activite) {
+                dateObj = normalizeToDate(activity.date_activite);
+              }
+
+              const inheritedValidated =
+                tag === "CRA" ? craValidatedAt : cpValidatedAt;
+
+              return {
+                ...activity,
+                __kind: tag, // "CRA" ou "CP"
+                date_activite: isValidDateFns(dateObj) ? dateObj : null,
+                client_id: activity.client_id ? String(activity.client_id) : null,
+                type_activite: String(activity.type_activite || tag),
+                status: activity.status || "draft",
+                id: activity.id || activity._id?.toString(),
+                validatedAt:
+                  normalizeToDate(activity.validatedAt) || inheritedValidated || null,
+              };
+            })
+            .filter(
+              (a) => a.date_activite !== null && isValidDateFns(a.date_activite)
+            );
+        };
+
+        const craActs = craDetail
+          ? formatActivities(craDetail.activities_snapshot, "CRA")
+          : [];
+        const cpActs = paidDetail
+          ? formatActivities(paidDetail.activities_snapshot, "CP")
+          : [];
+
+        const combinedActivities = [...craActs, ...cpActs].sort(
+          (a, b) => a.date_activite - b.date_activite
+        );
+
+        const currentMonthDate = new Date(group.year, group.month - 1, 1);
+
+        setModalMeta({
+          craStatus: group.cra?.status || null,
+          cpStatus: group.paid?.status || null,
+          craValidatedAt,
+          cpValidatedAt,
+        });
+
+        const monthlyReportsForModal = [];
+        if (craDetail) monthlyReportsForModal.push(craDetail);
+        if (paidDetail) monthlyReportsForModal.push(paidDetail);
 
         setCraBoardReportData({
-          userId: detailedReport.user_id,
-          userFirstName: detailedReport.userName,
-          currentMonth: craBoardCurrentMonth,
-          activities: formattedActivities,
-          rejectionReason:
-            detailedReport.status === "rejected"
-              ? detailedReport.rejectionReason
-              : null,
-          monthlyReports: monthlyReports,
-          reportStatus: detailedReport.status,
+          userId: currentUserId,
+          userFirstName: currentUserName,
+          currentMonth: currentMonthDate,
+          activities: combinedActivities,
+          monthlyReports: monthlyReportsForModal,
         });
+
         setShowCraBoardModal(true);
       } catch (err) {
-        console.error("CraHistory: Erreur lors de la récupération du CRA détaillé:", err);
-        showMessage(`Erreur: ${err.message}`, "error");
+        console.error("[CraHistory] Erreur détail group:", err);
+        showMessage?.(`Erreur: ${err.message}`, "error");
       }
     },
-    [showMessage, monthlyReports]
+    [currentUserId, currentUserName, showMessage]
   );
 
   const handleCloseCraBoardModal = useCallback(() => {
     setShowCraBoardModal(false);
     setCraBoardReportData(null);
+    setModalMeta(null);
   }, []);
+
+  /* ---------------------------------- */
+  /* Rendus conditionnels (chargement)  */
+  /* ---------------------------------- */
 
   if (status === "loading" || loading) {
     return (
-      <div className="flex justify-center items-center h-64 text-xl text-gray-700">
+      <div
+        className="flex justify-center items-center h-64 text-xl text-gray-700"
+        aria-busy="true"
+      >
         Chargement de l'historique...
       </div>
     );
@@ -216,143 +358,219 @@ export default function CraHistory({
 
   if (error) {
     return (
-      <div className="text-red-500 text-center py-8 text-lg">
-        Erreur: {error}
-      </div>
+      <div className="text-red-500 text-center py-8 text-lg">Erreur: {error}</div>
     );
   }
 
-  // Filtrer les rapports pour ne garder que ceux de l'utilisateur connecté (sécurité supplémentaire)
-  const filteredReports = monthlyReports.filter(
-    (report) => report.user_id === currentUserId
-  );
+  /* ---------------------------------- */
+  /* Rendu principal                    */
+  /* ---------------------------------- */
 
   return (
-    <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8 w-full mt-8">
-      <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
-        Historique de mes rapports envoyés
+    <div className="bg-white shadow-xl ring-1 ring-gray-200 rounded-2xl p-6 sm:p-8 w-full mt-8">
+      <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-6 text-center tracking-tight">
+        Historique de mes rapports envoyés (CRA &amp; Congés payés)
       </h2>
 
-      {filteredReports.length === 0 ? (
-        <div className="text-gray-600 text-center py-8 text-lg">
+      {groups.length === 0 ? (
+        <div className="text-gray-600 text-center py-10 text-lg">
           Aucun rapport envoyé trouvé.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white border border-gray-200 rounded-lg">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Type
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Mois
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Année
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Statut
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Envoyé le
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Révisé le
-                </th>
-                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredReports.map((report) => (
-                <tr
-                  key={report.id}
-                  className="border-b border-gray-200 hover:bg-gray-50"
-                >
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-semibold ${report.report_type === "paid_leave"
-                          ? "bg-teal-100 text-teal-800"
-                          : "bg-blue-100 text-blue-800"
-                        }`}
+        /* Empilement vertical en pleine largeur */
+        <div className="flex flex-col gap-4 sm:gap-6">
+          {groups.map((g) => {
+            const cra = g.cra;
+            const cp = g.paid;
+
+            // Dates d’envoi (UI) par type
+            const craSent = cra ? getSentDate(cra) : null;
+            const cpSent = cp ? getSentDate(cp) : null;
+
+            // Dates validées (UI) par type
+            const craVal = cra ? getValidatedDate(cra) : null;
+            const cpVal = cp ? getValidatedDate(cp) : null;
+
+            return (
+              <div
+                key={`${g.year}-${g.month}`}
+                className="w-full rounded-xl border border-gray-200 bg-gradient-to-r from-white to-gray-50 p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all"
+              >
+                {/* Header bloc */}
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <div className="text-xl font-semibold text-gray-900 capitalize">
+                      {monthName(g.year, g.month)} {g.year}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-3">
+                      {cra && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">CRA :</span>
+                          <StatusBadge status={cra.status} />
+                        </div>
+                      )}
+                      {cp && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">
+                            Congés payés :
+                          </span>
+                          <StatusBadge status={cp.status} />
+                        </div>
+                      )}
+                      {!cra && !cp && (
+                        <StatusBadge status="draft" labelOverride="Aucun" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Détails dates */}
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700">
+                  {cra && (
+                    <>
+                      <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2 ring-1 ring-gray-100">
+                        <span className="text-gray-500">CRA – Envoyé le</span>
+                        <span className="font-medium">{fmt(craSent)}</span>
+                      </div>
+                      {craVal && (
+                        <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2 ring-1 ring-gray-100">
+                          <span className="text-gray-500">CRA – Validé le</span>
+                          <span className="font-medium">{fmt(craVal)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {cp && (
+                    <>
+                      <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2 ring-1 ring-gray-100">
+                        <span className="text-gray-500">
+                          Congés payés – Envoyé le
+                        </span>
+                        <span className="font-medium">{fmt(cpSent)}</span>
+                      </div>
+                      {cpVal && (
+                        <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2 ring-1 ring-gray-100">
+                          <span className="text-gray-500">
+                            Congés payés – Validé le
+                          </span>
+                          <span className="font-medium">{fmt(cpVal)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="mt-5 flex justify-end">
+                  <button
+                    onClick={() => handleViewDetailsGroup(g)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    aria-label={`Voir les détails pour ${monthName(
+                      g.year,
+                      g.month
+                    )} ${g.year}`}
+                  >
+                    {/* petit œil inline pour plus de feedback visuel */}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
                     >
-                      {report.report_type === "paid_leave"
-                        ? "Congés Payés"
-                        : "CRA"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {format(new Date(report.year, report.month - 1), "MMMM", {
-                      locale: fr,
-                    })}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">{report.year}</td>
-                  <td className="py-3 px-4 text-sm">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-semibold ${report.status === "pending_review"
-                          ? "bg-blue-100 text-blue-800"
-                          : report.status === "validated"
-                            ? "bg-green-100 text-green-800"
-                            : report.status === "rejected"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-gray-100 text-gray-800"
-                        }`}
-                    >
-                      {report.status === "pending_review"
-                        ? "En attente"
-                        : report.status === "validated"
-                          ? "Validé"
-                          : "Rejeté"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {report.submittedAt
-                      ? format(parseISO(report.submittedAt), "dd/MM/yyyy HH:mm", {
-                        locale: fr,
-                      })
-                      : "N/A"}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {report.reviewedAt
-                      ? format(parseISO(report.reviewedAt), "dd/MM/yyyy HH:mm", { locale: fr })
-                      : (report.updatedAt && report.status !== "pending_review")
-                        ? format(parseISO(report.updatedAt), "dd/MM/yyyy HH:mm", { locale: fr })
-                        : "N/A"}
-                  </td>
-                  <td className="py-3 px-4 text-sm">
-                    <button
-                      onClick={() => handleViewDetails(report)}
-                      className="px-3 py-1 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition duration-200 text-xs"
-                    >
-                      Voir les détails
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    Voir les détails
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
+      {/* Modal calendrier fusionné CRA + CP */}
       {showCraBoardModal && craBoardReportData && (
-        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h3 className="text-xl font-semibold text-gray-800">
-                Détails du rapport pour {craBoardReportData.userFirstName} -{" "}
-                {format(craBoardReportData.currentMonth, "MMMM yyyy", {
-                  locale: fr,
-                })}
-              </h3>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-800/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Détails du rapport"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col ring-1 ring-gray-200">
+            {/* Header modal */}
+            <div className="flex justify-between items-start p-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Détails du rapport pour {craBoardReportData.userFirstName} —{" "}
+                  {format(craBoardReportData.currentMonth, "MMMM yyyy", {
+                    locale: fr,
+                  })}
+                </h3>
+
+                {/* Statuts + dates validées (niveau rapport) */}
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  {modalMeta?.craStatus && (
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-gray-500">CRA :</span>
+                      <StatusBadge status={modalMeta.craStatus} />
+                      {modalMeta.craStatus === "validated" &&
+                        modalMeta.craValidatedAt && (
+                          <span className="text-gray-500">
+                            • Validé le {fmt(modalMeta.craValidatedAt)}
+                          </span>
+                        )}
+                      {modalMeta.craStatus === "rejected" &&
+                        modalMeta.craValidatedAt && (
+                          <span className="text-gray-500">
+                            • Révisé le {fmt(modalMeta.craValidatedAt)}
+                          </span>
+                        )}
+                    </div>
+                  )}
+                  {modalMeta?.cpStatus && (
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-gray-500">Congés payés :</span>
+                      <StatusBadge status={modalMeta.cpStatus} />
+                      {modalMeta.cpStatus === "validated" &&
+                        modalMeta.cpValidatedAt && (
+                          <span className="text-gray-500">
+                            • Validé le {fmt(modalMeta.cpValidatedAt)}
+                          </span>
+                        )}
+                      {modalMeta.cpStatus === "rejected" &&
+                        modalMeta.cpValidatedAt && (
+                          <span className="text-gray-500">
+                            • Révisé le {fmt(modalMeta.cpValidatedAt)}
+                          </span>
+                        )}
+                    </div>
+                  )}
+                </div>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  * Chaque activité possède un statut et une date de validation
+                  (héritée du rapport si absente). Les congés payés sont
+                  intégrés au même calendrier.
+                </p>
+              </div>
+
               <button
                 onClick={handleCloseCraBoardModal}
-                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none"
+                aria-label="Fermer"
               >
                 &times;
               </button>
             </div>
+
+            {/* Corps modal */}
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
               <CraBoard
                 userId={craBoardReportData.userId}
@@ -362,8 +580,9 @@ export default function CraHistory({
                 clientDefinitions={clientDefinitions}
                 monthlyReports={craBoardReportData.monthlyReports}
                 currentMonth={craBoardReportData.currentMonth}
-                rejectionReason={craBoardReportData.rejectionReason}
-                reportStatus={craBoardReportData.reportStatus}
+                readOnly={true}
+                showMessage={showMessage}
+                isReviewMode={false}
               />
             </div>
           </div>
