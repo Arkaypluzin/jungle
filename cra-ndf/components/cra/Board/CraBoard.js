@@ -1,5 +1,20 @@
-// components/CraBoard.js
-"use client"; // Assurez-vous que c'est bien présent
+// components/cra/Board/CraBoard.jsx
+"use client";
+
+/**
+ * CraBoard
+ * ----------
+ * Calendrier interactif CRA + Congés Payés :
+ * - Ajout/édition/suppression d'activités (avec validations : 1 jour max / jour, jours non travaillés, etc.)
+ * - Sélection multi-jours (modes "activity" et "paid_leave")
+ * - Drag & drop des activités
+ * - Soumission de rapports mensuels (CRA / Congés)
+ * - Aperçu rapport mensuel, résumé mensuel, jours fériés...
+ *
+ * ⚠️ Important:
+ *  - En mode "readOnly" (ex: modal de l'historique), on RELÂCHE le filtre par user_id
+ *    pour afficher correctement les activités fusionnées (CRA + CP) issues du backend.
+ */
 
 import React, {
   useState,
@@ -21,14 +36,11 @@ import {
   isWeekend,
   isValid,
   eachDayOfInterval,
-  isBefore,
-  isToday,
   startOfDay,
-  endOfDay,
 } from "date-fns";
 import { fr } from "date-fns/locale";
 
-// Import sub-components
+// Sous-composants
 import CraCalendar from "./CraCalendar";
 import CraControls from "./CraControls";
 import CraSummary from "./CraSummary";
@@ -36,6 +48,22 @@ import ActivityModal from "../Modals/ActivityModal";
 import MonthlyReportPreviewModal from "../Reports/MonthlyReportPreviewModal";
 import SummaryReport from "../Reports/SummaryReport";
 
+// ————————————————————————————————————————————————————————————————————————
+// Petites constantes / helpers
+// ————————————————————————————————————————————————————————————————————————
+const DRAG_THRESHOLD = 5; // px pour détecter un drag vs un click
+
+// Utilise la fonction de message parent si fournie, sinon console.log
+const makeLocalShowMessage =
+  (showMessage) =>
+    (msg, type = "info") =>
+      showMessage
+        ? showMessage(msg, type)
+        : console.log(`[Message ${String(type).toUpperCase()}] ${msg}`);
+
+// ————————————————————————————————————————————————————————————————————————
+// Composant principal
+// ————————————————————————————————————————————————————————————————————————
 export default function CraBoard({
   activities = [],
   activityTypeDefinitions = [],
@@ -49,31 +77,19 @@ export default function CraBoard({
   showMessage,
   currentMonth: propCurrentMonth,
   onMonthChange,
-  readOnly = false, // This prop is the global read-only status from the parent component
+  readOnly = false, // Mode lecture seule (ex: modal historique)
   monthlyReports = [],
-  rejectionReason = null, // This prop is now used directly for the RO banner
+  rejectionReason = null,
   onSendMonthlyReport,
 }) {
-  console.log("[CraBoard] --- Rendering CraBoard component (Start) ---");
-  console.log(
-    "[CraBoard] Props received: activities.length:",
-    activities.length,
-    "User ID:",
-    userId,
-    "Current Month:",
-    isValid(propCurrentMonth)
-      ? format(propCurrentMonth, "yyyy-MM-dd")
-      : "Invalid Date",
-    "Read-only (global):",
-    readOnly
+  const localShowMessage = useMemo(
+    () => makeLocalShowMessage(showMessage),
+    [showMessage]
   );
-  console.log(
-    "[CraBoard] Monthly reports received (monthlyReports prop):",
-    monthlyReports
-  );
-  console.log("[CraBoard] rejectionReason prop (direct):", rejectionReason);
 
-  // --- 1. State and Ref Declarations (useState, useRef) ---
+  // ——————————————————————————————————————————
+  // States principaux & refs
+  // ——————————————————————————————————————————
   const [currentMonth, setCurrentMonth] = useState(
     propCurrentMonth && isValid(propCurrentMonth)
       ? startOfMonth(propCurrentMonth)
@@ -82,22 +98,14 @@ export default function CraBoard({
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingActivity, setEditingActivity] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [tempSelectedDays, setTempSelectedDays] = useState([]);
+
+  const [tempSelectedDays, setTempSelectedDays] = useState([]); // selection multi-jours
+  const [multiSelectType, setMultiSelectType] = useState("activity"); // "activity" | "paid_leave"
 
   const [publicHolidays, setPublicHolidays] = useState([]);
 
   const [isDeletingActivityFlag, setIsDeletingActivityFlag] = useState(false);
   const deletionTimeoutRef = useRef(null);
-
-  const [activityToDelete, setActivityToDelete] = useState(null);
-  
-
-  const [showSummaryReport, setShowSummaryReport] = useState(false);
-  const [summaryReportMonth, setSummaryReportMonth] = useState(null);
-  const [showMonthlyReportPreview, setShowMonthlyReportPreview] =
-    useState(false);
-  const [monthlyReportPreviewData, setMonthlyReportPreviewData] =
-    useState(null);
 
   const [draggedActivity, setDraggedActivity] = useState(null);
   const [isDraggingActivity, setIsDraggingActivity] = useState(false);
@@ -107,88 +115,86 @@ export default function CraBoard({
   const [dragStartDayForSelection, setDragStartDayForSelection] =
     useState(null);
 
-  const [multiSelectType, setMultiSelectType] = useState("activity");
-  
-
-  // NEW: State to manage single day selection lock
+  // Verrou "sélection 1 jour" (ouvert lors de l'édition/ajout via modal)
   const [isSingleDaySelectionLocked, setIsSingleDaySelectionLocked] =
     useState(false);
 
-  // NEW: State for initial activity type filter in the modal
-  const [initialActivityTypeFilter, setInitialActivityTypeFilter] = useState(null); // 'activity' or 'absence'
+  // Filtre initial du modal (pré-filtrer activité vs absence)
+  const [initialActivityTypeFilter, setInitialActivityTypeFilter] =
+    useState(null); // 'activity' | 'absence'
 
-  const craBoardRef = useRef(null);
-  // NEW REF: To track if the mouse button is down on a calendar day
+  // Modales d'aperçu/rapport
+  const [showSummaryReport, setShowSummaryReport] = useState(false);
+  const [summaryReportMonth, setSummaryReportMonth] = useState(null);
+  const [showMonthlyReportPreview, setShowMonthlyReportPreview] =
+    useState(false);
+  const [monthlyReportPreviewData, setMonthlyReportPreviewData] =
+    useState(null);
+
+  // Refs souris (multi-sélection)
   const isMouseDownOnCalendarDayRef = useRef(false);
-  // NEW REF: To store initial click coordinates for drag detection
   const mouseDownCoordsRef = useRef({ x: 0, y: 0 });
-  // Threshold in pixels to detect a drag (vs a simple click)
-  const DRAG_THRESHOLD = 5;
 
-  // Uses the showMessage prop if provided, otherwise simply logs
-  const localShowMessage =
-    showMessage ||
-    ((msg, type) => console.log(`[Message ${type.toUpperCase()}]: ${msg}`));
-
-  // --- 2. Basic useCallback Functions (minimal dependencies) ---
-
+  // ——————————————————————————————————————————
+  // Types d'absence
+  // ——————————————————————————————————————————
   const paidLeaveTypeId = useMemo(() => {
-    const type = activityTypeDefinitions.find(
+    const t = activityTypeDefinitions.find(
       (t) => t.name && t.name.toLowerCase().includes("congé payé")
     );
-    return type ? type.id : null;
+    return t ? t.id : null;
   }, [activityTypeDefinitions]);
 
-  // Set of all activity type IDs considered as absences
   const absenceActivityTypeIds = useMemo(() => {
+    // Détermine les IDs de type "absence" à partir de is_absence ou mots-clés
     const ids = new Set();
-    const absenceKeywords = [
-      "congé", "absence", "maladie", "formation", "vacances",
-      "rtt", "arrêt", "maternité", "paternité", "familial",
-      "exceptionnel", "ferié", "férié", "repos", "indisponibilité"
+    const keywords = [
+      "congé",
+      "absence",
+      "maladie",
+      "formation",
+      "vacances",
+      "rtt",
+      "arrêt",
+      "maternité",
+      "paternité",
+      "familial",
+      "exceptionnel",
+      "ferié",
+      "férié",
+      "repos",
+      "indisponibilité",
     ];
-
-    if (!activityTypeDefinitions || activityTypeDefinitions.length === 0) {
-      console.warn("absenceActivityTypeIds: activityTypeDefinitions is empty or undefined. Cannot identify absence types.");
-      return ids;
-    }
-
-    activityTypeDefinitions.forEach(type => {
-      // Prioritize the `is_absence` property if it exists and is true
-      const isAbsenceBasedOnProperty = type.is_absence === true;
-      // Fallback to keywords if `is_absence` is not explicitly true
-      const isAbsenceBasedOnKeyword = !isAbsenceBasedOnProperty && type.name && absenceKeywords.some(keyword => type.name.toLowerCase().includes(keyword.toLowerCase()));
-
-      if (isAbsenceBasedOnProperty || isAbsenceBasedOnKeyword) {
-        ids.add(type.id);
-      }
+    activityTypeDefinitions.forEach((type) => {
+      const fromFlag = type.is_absence === true;
+      const fromName =
+        !fromFlag &&
+        type.name &&
+        keywords.some((k) => type.name.toLowerCase().includes(k));
+      if (fromFlag || fromName) ids.add(type.id);
     });
-    console.log("absenceActivityTypeIds: Identified absence activity type IDs:", Array.from(ids));
     return ids;
   }, [activityTypeDefinitions]);
 
-
+  // ——————————————————————————————————————————
+  // Jours fériés & jours non travaillés
+  // ——————————————————————————————————————————
   const fetchPublicHolidays = useCallback(
     async (year) => {
       try {
-        const response = await fetch(`/api/public_holidays?year=${year}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Failed to fetch public holidays."
-          );
+        const res = await fetch(`/api/public_holidays?year=${year}`);
+        if (!res.ok) {
+          const e = await res.json();
+          throw new Error(e.message || "Failed to fetch public holidays.");
         }
-        const data = await response.json();
+        const data = await res.json();
         setPublicHolidays(
-          data.map((holiday) => startOfDay(new Date(holiday.date)))
+          data.map((h) => startOfDay(new Date(h.date))) // normalisation
         );
       } catch (err) {
-        console.error(
-          "CraBoard: Error fetching public holidays:",
-          err
-        );
+        console.error("CraBoard: error fetching public holidays:", err);
         localShowMessage(
-          `Could not load public holidays: ${err.message}. Please try again.`,
+          `Impossible de charger les jours fériés : ${err.message}`,
           "error"
         );
         setPublicHolidays([]);
@@ -200,74 +206,80 @@ export default function CraBoard({
   const isPublicHoliday = useCallback(
     (date) => {
       if (!isValid(date)) return false;
-      const formattedDate = format(date, "yyyy-MM-dd");
+      const key = format(date, "yyyy-MM-dd");
       return publicHolidays.some(
-        (holidayDate) => format(holidayDate, "yyyy-MM-dd") === formattedDate
+        (d) => format(d, "yyyy-MM-dd") === key
       );
     },
     [publicHolidays]
   );
 
   const isNonWorkingDay = useCallback(
-    (date) => {
-      return isWeekend(date, { weekStartsOn: 1 }) || isPublicHoliday(date);
-    },
+    (date) => isWeekend(date, { weekStartsOn: 1 }) || isPublicHoliday(date),
     [isPublicHoliday]
   );
 
+  // ——————————————————————————————————————————
+  // Fermer la modal d'activité
+  // ——————————————————————————————————————————
   const handleCloseActivityModal = useCallback(() => {
-    console.log(
-      "[CraBoard - DEBUG] handleCloseActivityModal: Resetting activity form."
-    );
     setIsModalOpen(false);
     setEditingActivity(null);
     setSelectedDate(new Date());
-    setTempSelectedDays([]); // <-- This is where tempSelectedDays is reset after modal closes
-    // NEW: Reset single day selection lock
+    setTempSelectedDays([]);
     setIsSingleDaySelectionLocked(false);
-    setInitialActivityTypeFilter(null); // Reset modal filter
+    setInitialActivityTypeFilter(null);
   }, []);
 
-  // --- Memoized Values (useMemo) ---
+  // ——————————————————————————————————————————
+  // Activités visibles (mois courant) — Correctif clé readOnly
+  // ——————————————————————————————————————————
   const activitiesForCurrentMonth = useMemo(() => {
     return activities.filter((activity) => {
-      const isUserMatch = String(activity.user_id) === String(userId);
-      const isDateValid =
+      const hasDate =
         activity.date_activite && isValid(new Date(activity.date_activite));
-      const isMonthMatch =
-        isDateValid &&
+      const inMonth =
+        hasDate &&
         isValid(currentMonth) &&
         isSameMonth(new Date(activity.date_activite), currentMonth);
-      return isUserMatch && isDateValid && isMonthMatch;
-    });
-  }, [activities, currentMonth, userId]);
+      if (!inMonth) return false;
 
-  const activitiesByDay = useMemo(() => {
-    const activitiesMap = new Map();
-    activitiesForCurrentMonth.forEach((activity) => {
-      if (activity.date_activite && isValid(new Date(activity.date_activite))) {
-        const dateKey = format(new Date(activity.date_activite), "yyyy-MM-dd");
-        if (!activitiesMap.has(dateKey)) {
-          activitiesMap.set(dateKey, []);
-        }
-        activitiesMap.get(dateKey).push(activity);
-      }
+      // ✅ Correctif : en mode readOnly (modal historique),
+      // on NE filtre PAS par user_id (les activités combinées n'en ont pas toujours).
+      if (readOnly) return true;
+
+      return String(activity.user_id) === String(userId);
     });
-    return activitiesMap;
+  }, [activities, currentMonth, userId, readOnly]);
+
+  // Activités par jour (Map yyyy-MM-dd -> [])
+  const activitiesByDay = useMemo(() => {
+    const map = new Map();
+    activitiesForCurrentMonth.forEach((a) => {
+      if (!a.date_activite || !isValid(new Date(a.date_activite))) return;
+      const k = format(new Date(a.date_activite), "yyyy-MM-dd");
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(a);
+    });
+    return map;
   }, [activitiesForCurrentMonth]);
 
+  // Jours à afficher (mois + bordures semaine)
   const daysInMonth = useMemo(() => {
     const start = startOfMonth(currentMonth);
     const end = endOfMonth(currentMonth);
-    const startDisplay = startOfWeek(start, { weekStartsOn: 1 });
-    const endDisplay = endOfWeek(end, { weekStartsOn: 1 });
-    return eachDayOfInterval({ start: startDisplay, end: endDisplay });
+    return eachDayOfInterval({
+      start: startOfWeek(start, { weekStartsOn: 1 }),
+      end: endOfWeek(end, { weekStartsOn: 1 }),
+    });
   }, [currentMonth]);
 
-  // Calculation of activity and absence summaries for the current month
+  // ——————————————————————————————————————————
+  // Calculs récapitulatif (CRA/Absences)
+  // ——————————————————————————————————————————
   const monthlySummary = useMemo(() => {
     const summary = {
-      totalActivitiesTime: 0, // Total time for activities (excluding absences)
+      totalActivitiesTime: 0,
       totalActivitiesPending: 0,
       totalActivitiesValidated: 0,
       totalActivitiesDraft: 0,
@@ -278,232 +290,162 @@ export default function CraBoard({
       totalAbsenceDaysRejected: 0,
       totalBillableDays: 0,
       totalOvertimeDays: 0,
-      totalWorkingDaysInMonth: 0, // Theoretical working days of the month
+      totalWorkingDaysInMonth: 0,
     };
 
-    // Calculate theoretical working days
-    summary.totalWorkingDaysInMonth = daysInMonth.filter(day =>
-      !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
+    // Jours ouvrés théoriques
+    summary.totalWorkingDaysInMonth = daysInMonth.filter(
+      (d) => !isWeekend(d, { weekStartsOn: 1 }) && !isPublicHoliday(d)
     ).length;
 
-    activities.forEach(activity => {
-      const activityTypeObj = activityTypeDefinitions.find(
-        (type) => String(type.id) === String(activity.type_activite)
+    activities.forEach((activity) => {
+      const def = activityTypeDefinitions.find(
+        (t) => String(t.id) === String(activity.type_activite)
       );
-      const tempsPasse = parseFloat(activity.temps_passe) || 0;
-      const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
+      const t = parseFloat(activity.temps_passe) || 0;
+      const isAbs = absenceActivityTypeIds.has(String(activity.type_activite));
 
-      if (isAbsence) {
-        // Accumulate absences by status
-        if (activity.status === "validated") {
-          summary.totalAbsenceDaysValidated += tempsPasse;
-        } else if (activity.status === "pending_review") {
-          summary.totalAbsenceDaysPending += tempsPasse;
-        } else if (activity.status === "draft") {
-          summary.totalAbsenceDaysDraft += tempsPasse;
-        } else if (activity.status === "rejected") {
-          summary.totalAbsenceDaysRejected += tempsPasse;
-        }
+      if (isAbs) {
+        if (activity.status === "validated")
+          summary.totalAbsenceDaysValidated += t;
+        else if (activity.status === "pending_review")
+          summary.totalAbsenceDaysPending += t;
+        else if (activity.status === "draft")
+          summary.totalAbsenceDaysDraft += t;
+        else if (activity.status === "rejected")
+          summary.totalAbsenceDaysRejected += t;
       } else {
-        // Accumulate time for NON-ABSENCE activities
-        summary.totalActivitiesTime += tempsPasse;
+        summary.totalActivitiesTime += t;
 
-        // Accumulate NON-ABSENCE activities by status
-        if (activity.status === "pending_review") {
-          summary.totalActivitiesPending += tempsPasse;
-        } else if (activity.status === "validated") {
-          summary.totalActivitiesValidated += tempsPasse;
-        } else if (activity.status === "draft") {
-          summary.totalActivitiesDraft += tempsPasse;
-        } else if (activity.status === "rejected") {
-          summary.totalActivitiesRejected += tempsPasse;
-        }
+        if (activity.status === "pending_review")
+          summary.totalActivitiesPending += t;
+        else if (activity.status === "validated")
+          summary.totalActivitiesValidated += t;
+        else if (activity.status === "draft")
+          summary.totalActivitiesDraft += t;
+        else if (activity.status === "rejected")
+          summary.totalActivitiesRejected += t;
 
-        // Accumulate overtime and billable days (which are non-absences)
-        if (activityTypeObj?.is_overtime) {
-          summary.totalOvertimeDays += tempsPasse;
-        }
-        if (activityTypeObj?.is_billable) {
-          summary.totalBillableDays += tempsPasse;
-        }
+        if (def?.is_overtime) summary.totalOvertimeDays += t;
+        if (def?.is_billable) summary.totalBillableDays += t;
       }
     });
 
     return summary;
-  }, [activities, daysInMonth, absenceActivityTypeIds, activityTypeDefinitions, isPublicHoliday]);
+  }, [
+    activities,
+    daysInMonth,
+    absenceActivityTypeIds,
+    activityTypeDefinitions,
+    isPublicHoliday,
+  ]);
 
-
+  // ——————————————————————————————————————————
+  // Repérage des rapports CRA / CP pour le mois
+  // ——————————————————————————————————————————
   const { craReport, paidLeaveReport } = useMemo(() => {
-    console.log(
-      "[CraBoard - useMemo] Calculating craReport/paidLeaveReport..."
-    );
-    console.log("[CraBoard - useMemo] monthlyReports:", monthlyReports);
-    console.log("[CraBoard - useMemo] userId:", userId);
-    console.log("[CraBoard - useMemo] currentMonth:", currentMonth);
-
-    // If in read-only mode and only one report is provided (as in the ReceivedCras modal)
-    // This is the case where CraBoard is used to view an existing report
+    // Cas lecture seule avec un seul report (affichage d'un reçu par ex)
     if (readOnly && monthlyReports.length === 1) {
-      const singleReport = monthlyReports[0];
-      console.log(
-        "[CraBoard - useMemo] Read-only mode with a single report:",
-        singleReport
-      );
-
-      // The report can be of type 'cra' or 'paid_leave'
-      if (singleReport.report_type === "cra") {
-        return { craReport: singleReport, paidLeaveReport: null };
-      } else if (singleReport.report_type === "paid_leave") {
-        return { craReport: null, paidLeaveReport: singleReport };
-      }
+      const r = monthlyReports[0];
+      return {
+        craReport: r.report_type === "cra" ? r : null,
+        paidLeaveReport: r.report_type === "paid_leave" ? r : null,
+      };
     }
+    const monthIdx = isValid(currentMonth) ? currentMonth.getMonth() + 1 : -1;
+    const year = isValid(currentMonth) ? currentMonth.getFullYear() : -1;
 
-    // Standard logic for non-read-only mode or multiple reports
-    // Here, we look for CRA and Paid Leave reports separately
-    const currentMonthCraReport = monthlyReports.find(
-      (report) =>
-        String(report.user_id) === String(userId) &&
-        report.month ===
-          (isValid(currentMonth) ? currentMonth.getMonth() + 1 : -1) &&
-        report.year ===
-          (isValid(currentMonth) ? currentMonth.getFullYear() : -1) &&
-        report.report_type === "cra"
+    const cra = monthlyReports.find(
+      (r) =>
+        String(r.user_id) === String(userId) &&
+        r.month === monthIdx &&
+        r.year === year &&
+        r.report_type === "cra"
     );
-    const currentMonthPaidLeaveReport = monthlyReports.find(
-      (report) =>
-        String(report.user_id) === String(userId) &&
-        report.month ===
-          (isValid(currentMonth) ? currentMonth.getMonth() + 1 : -1) &&
-        report.year ===
-          (isValid(currentMonth) ? currentMonth.getFullYear() : -1) &&
-        report.report_type === "paid_leave"
+    const paid = monthlyReports.find(
+      (r) =>
+        String(r.user_id) === String(userId) &&
+        r.month === monthIdx &&
+        r.year === year &&
+        r.report_type === "paid_leave"
     );
-
-    console.log(
-      "[CraBoard - useMemo] craReport found (standard mode):",
-      currentMonthCraReport
-    );
-    console.log(
-      "[CraBoard - useMemo] paidLeaveReport found (standard mode):",
-      currentMonthPaidLeaveReport
-    );
-
-    return {
-      craReport: currentMonthCraReport,
-      paidLeaveReport: currentMonthPaidLeaveReport,
-    };
-  }, [monthlyReports, userId, currentMonth, readOnly]); // Dependencies unchanged
+    return { craReport: cra || null, paidLeaveReport: paid || null };
+  }, [monthlyReports, userId, currentMonth, readOnly]);
 
   const craReportStatus = craReport ? craReport.status : "empty";
   const paidLeaveReportStatus = paidLeaveReport
     ? paidLeaveReport.status
     : "empty";
 
-  // Determine global report status for banners
+  // Statut global (pour bannières/droits)
   const overallReportStatus = useMemo(() => {
-    // If one of the reports is validated, the whole is considered validated
-    if (
-      craReportStatus === "validated" ||
-      paidLeaveReportStatus === "validated"
-    )
+    if (craReportStatus === "validated" || paidLeaveReportStatus === "validated")
       return "validated";
-    // If one of the reports is pending, the whole is considered pending
     if (
       craReportStatus === "pending_review" ||
       paidLeaveReportStatus === "pending_review"
     )
       return "pending";
-    // If one of the reports is rejected, the whole is considered refused
     if (craReportStatus === "rejected" || paidLeaveReportStatus === "rejected")
       return "refused";
-    // Otherwise, if both are empty or drafts, the whole is empty
     return "empty";
   }, [craReportStatus, paidLeaveReportStatus]);
 
   const overallRejectionReason = useMemo(() => {
-    let reason = null;
-    if (craReportStatus === "rejected" && craReport && craReport.rejection_reason) {
-      reason = craReport.rejection_reason;
-      console.log("[CraBoard - overallRejectionReason] CRA reason found:", reason);
-    } else if (paidLeaveReportStatus === "rejected" && paidLeaveReport && paidLeaveReport.rejection_reason) {
-      reason = paidLeaveReport.rejection_reason;
-      console.log("[CraBoard - overallRejectionReason] Paid Leave reason found:", reason);
-    }
-    console.log("[CraBoard - overallRejectionReason] Final result:", reason);
-    return reason;
+    if (craReportStatus === "rejected" && craReport?.rejection_reason)
+      return craReport.rejection_reason;
+    if (
+      paidLeaveReportStatus === "rejected" &&
+      paidLeaveReport?.rejection_reason
+    )
+      return paidLeaveReport.rejection_reason;
+    return null;
   }, [craReportStatus, paidLeaveReportStatus, craReport, paidLeaveReport]);
-  
 
-  // Determine if CRA activities are editable
+  // Droits d'édition (dépendent des statuts ET du readOnly global)
   const isCraEditable = useMemo(() => {
-    // CRA is editable if:
-    // 1. The global 'readOnly' prop is false
-    // 2. The CRA report status is 'empty', 'draft', or 'rejected'
-    return (
-      !readOnly && ["empty", "draft", "rejected"].includes(craReportStatus)
-    );
+    return !readOnly && ["empty", "draft", "rejected"].includes(craReportStatus);
   }, [craReportStatus, readOnly]);
 
-  // Determine if paid leave activities are editable
   const isPaidLeaveEditable = useMemo(() => {
-    // Paid Leave is editable if:
-    // 1. The global 'readOnly' prop is false
-    // 2. The Paid Leave report status is 'empty', 'draft', or 'rejected'
     return (
-      !readOnly &&
-      ["empty", "draft", "rejected"].includes(paidLeaveReportStatus)
+      !readOnly && ["empty", "draft", "rejected"].includes(paidLeaveReportStatus)
     );
   }, [paidLeaveReportStatus, readOnly]);
 
-  const isAnyReportEditable = useMemo(() => {
-    return isCraEditable || isPaidLeaveEditable;
-  }, [isCraEditable, isPaidLeaveEditable]);
+  const isAnyReportEditable = useMemo(
+    () => isCraEditable || isPaidLeaveEditable,
+    [isCraEditable, isPaidLeaveEditable]
+  );
 
-  console.log("[CraBoard] Calculated isCraEditable:", isCraEditable);
-  console.log(
-    "[CraBoard] Calculated isPaidLeaveEditable:",
-    isPaidLeaveEditable
-  );
-  console.log("[CraBoard] Global readOnly prop:", readOnly);
-  console.log("[CraBoard] Current Report Status (CRA):", craReportStatus);
-  console.log(
-    "[CraBoard] Current Report Status (Paid Leave):",
-    paidLeaveReportStatus
-  );
-  console.log("[DEBUG CraBoard] overallReportStatus:", overallReportStatus);
-  console.log("[DEBUG CraBoard] overallRejectionReason:", overallRejectionReason);
-  
-  /**
-   * Handles saving an activity (add or update).
-   * Called from ActivityModal.
-   * @param {Object} activityData - The new activity data.
-   */
+  // ——————————————————————————————————————————
+  // CRUD activité
+  // ——————————————————————————————————————————
   const handleSaveActivity = useCallback(
     async (activityData) => {
       if (readOnly) {
-        // Check global readOnly prop first
         localShowMessage(
-          "Save operation disabled in read-only mode. Your changes will not be saved.",
+          "En lecture seule : impossible d’enregistrer.",
           "info"
         );
         return;
       }
 
-      // Use absenceActivityTypeIds to determine if it's an absence
-      const isAbsenceActivity = absenceActivityTypeIds.has(String(activityData.type_activite));
-      const isCRAActivity = !isAbsenceActivity;
+      const isAbsence = absenceActivityTypeIds.has(
+        String(activityData.type_activite)
+      );
+      const isCRA = !isAbsence;
 
-      // Determine if the activity is editable based on its type
-      if (isAbsenceActivity && !isPaidLeaveEditable) {
+      if (isAbsence && !isPaidLeaveEditable) {
         localShowMessage(
-          `Cannot save this absence. The leave/absence report is locked (status: '${paidLeaveReportStatus}').`,
+          "Impossible d’enregistrer : le rapport Congés est verrouillé.",
           "info"
         );
         return;
       }
-      if (isCRAActivity && !isCraEditable) {
+      if (isCRA && !isCraEditable) {
         localShowMessage(
-          `Cannot save this activity. The CRA report is locked (status: '${craReportStatus}').`,
+          "Impossible d’enregistrer : le rapport CRA est verrouillé.",
           "info"
         );
         return;
@@ -514,2027 +456,1353 @@ export default function CraBoard({
           ...activityData,
           user_id: userId,
           status: activityData.id ? activityData.status : "draft",
+          temps_passe: parseFloat(activityData.temps_passe),
         };
-        payload.temps_passe = parseFloat(payload.temps_passe);
 
         if (activityData.id) {
-          // If activityData has an ID, it's an update
-          const originalActivity = activities.find(
+          // — Mise à jour
+          const original = activities.find(
             (a) => String(a.id) === String(activityData.id)
           );
-          if (!originalActivity) {
+          if (!original) {
             localShowMessage(
-              "Original activity not found for update. Please refresh the page.",
+              "Activité introuvable pour mise à jour.",
               "error"
             );
             return;
           }
-
           const targetDate = new Date(payload.date_activite);
-          const targetDateKey = format(targetDate, "yyyy-MM-dd");
+          const targetKey = format(targetDate, "yyyy-MM-dd");
+          const sameDay = (activitiesByDay.get(targetKey) || []).filter(
+            (a) => String(a.id) !== String(original.id)
+          );
+          const totalSameDay =
+            sameDay.reduce((s, a) => s + (parseFloat(a.temps_passe) || 0), 0) +
+            payload.temps_passe;
 
-          const activitiesOnTargetDay =
-            activitiesByDay.get(targetDateKey) || [];
-          const totalTimeExcludingEdited = activitiesOnTargetDay
-            .filter((a) => String(a.id) !== String(originalActivity.id))
-            .reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
-
-          const newTotalTimeForDay =
-            totalTimeExcludingEdited + payload.temps_passe;
-
-          if (newTotalTimeForDay > 1) {
+          if (totalSameDay > 1) {
             localShowMessage(
-              `Updating this activity to ${
-                payload.temps_passe
-              } days would exceed the 1-day limit for ${format(
-                targetDate,
-                "dd/MM/yyyy"
-              )}. Current total: ${totalTimeExcludingEdited.toFixed(1)} days.`,
+              `La journée dépasse 1,00j (déjà ${(
+                totalSameDay - payload.temps_passe
+              ).toFixed(1)}j).`,
               "error"
             );
             return;
           }
 
           await onUpdateActivity(activityData.id, payload);
-          localShowMessage("Activity saved successfully!", "success");
+          localShowMessage("Activité enregistrée.", "success");
         } else {
-          // It's a new activity
+          // — Création
           const daysToProcess =
             tempSelectedDays.length > 0
               ? tempSelectedDays
               : selectedDate
-              ? [selectedDate]
-              : [];
+                ? [selectedDate]
+                : [];
 
           if (daysToProcess.length === 0) {
-            console.error(
-              "No day selected for activity creation."
-            );
             localShowMessage(
-              "No day selected for activity creation. Please select at least one day.",
+              "Aucun jour sélectionné pour la création.",
               "error"
             );
             return;
           }
 
-          let successCount = 0;
-          let errorCount = 0;
+          let ok = 0;
+          let ko = 0;
 
           for (const day of daysToProcess) {
-            const dayKey = format(day, "yyyy-MM-dd");
-            const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
-            const existingTimeOnDay = existingActivitiesOnDay.reduce(
-              (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
+            const key = format(day, "yyyy-MM-dd");
+            const existing = activitiesByDay.get(key) || [];
+            const currentTotal = existing.reduce(
+              (s, a) => s + (parseFloat(a.temps_passe) || 0),
               0
             );
-            const newTotalTimeForDay = existingTimeOnDay + payload.temps_passe;
 
-            if (newTotalTimeForDay > 1) {
+            if (currentTotal + payload.temps_passe > 1) {
               localShowMessage(
-                `Adding ${payload.temps_passe} days to ${format(
+                `Impossible d'ajouter sur ${format(
                   day,
                   "dd/MM/yyyy"
-                )} would exceed the 1-day limit for this date. Current total: ${existingTimeOnDay.toFixed(
-                  1
-                )} days.`,
+                )} : dépasse 1,00j.`,
                 "error"
               );
-              errorCount++;
+              ko++;
               continue;
             }
 
-            if (
-              isNonWorkingDay(day) &&
-              !isAbsenceActivity && // Check if it's NOT an absence activity
-              !activityData.override_non_working_day
-            ) {
-              console.warn(
-                `Attempt to add normal activity on a non-working day (multi-selection): ${format(
-                  day,
-                  "yyyy-MM-dd"
-                )}. Ignored.`
-              );
-              errorCount++;
+            if (isNonWorkingDay(day) && !isAbsence && !activityData.override_non_working_day) {
+              // jour non travaillé : seulement absences (ou override)
+              ko++;
               continue;
             }
-            const newActivityPayload = {
-              ...payload,
-              date_activite: format(day, "yyyy-MM-dd"),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
+
             try {
-              await onAddActivity(newActivityPayload);
-              successCount++;
-            } catch (error) {
-              console.error(
-                `Error adding activity for day ${format(
-                  day,
-                  "yyyy-MM-dd"
-                )}:`,
-                error
-              );
-              errorCount++;
+              await onAddActivity({
+                ...payload,
+                date_activite: format(day, "yyyy-MM-dd"),
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              ok++;
+            } catch (e) {
+              console.error("Add activity error:", e);
+              ko++;
             }
           }
-          if (successCount > 0) {
+
+          if (ok > 0) {
             localShowMessage(
-              `Added ${successCount} activities successfully! ${
-                errorCount > 0
-                  ? `(${errorCount} failures on non-working days or others)`
-                  : ""
-              }`,
-              errorCount > 0 ? "warning" : "success"
+              `Création : ${ok} ajout${ok > 1 ? "s" : ""}${ko ? `, ${ko} échec(s)` : ""
+              }.`,
+              ko ? "warning" : "success"
             );
-          } else if (errorCount > 0) {
+          } else {
             localShowMessage(
-              "Failed to add all selected activities. Please check non-working days or time limits.",
+              "Tous les ajouts ont échoué. Vérifie les jours non travaillés ou les limites.",
               "error"
             );
           }
         }
-      } catch (error) {
-        console.error(
-          "CraBoard: Error saving activity:",
-          error
-        );
-        localShowMessage(
-          `Save failed: ${error.message}. Please try again.`,
-          "error"
-        );
+      } catch (err) {
+        console.error("Save activity error:", err);
+        localShowMessage(`Échec enregistrement : ${err.message}`, "error");
       } finally {
         handleCloseActivityModal();
         if (!readOnly && fetchActivitiesForMonth) {
-          // Use global readOnly prop here
           fetchActivitiesForMonth(currentMonth);
         }
       }
     },
     [
-      onAddActivity,
-      onUpdateActivity,
-      localShowMessage,
-      userId,
-      readOnly, // Use global readOnly prop
-      absenceActivityTypeIds, // Used for isAbsenceActivity
-      isCraEditable,
-      isPaidLeaveEditable,
-      tempSelectedDays,
-      selectedDate,
-      isNonWorkingDay,
-      handleCloseActivityModal,
-      fetchActivitiesForMonth,
-      currentMonth,
       activities,
       activitiesByDay,
-      craReportStatus, // Added for error messages
-      paidLeaveReportStatus, // Added for error messages
+      currentMonth,
+      fetchActivitiesForMonth,
+      handleCloseActivityModal,
+      isCraEditable,
+      isPaidLeaveEditable,
+      isNonWorkingDay,
+      localShowMessage,
+      readOnly,
+      selectedDate,
+      tempSelectedDays,
+      userId,
+      absenceActivityTypeIds,
+      onAddActivity,
+      onUpdateActivity,
     ]
   );
 
-  /**
-   * Confirms and executes activity deletion.
-   * This function is now called directly from requestDeleteFromCalendar.
-   * @param {Object} activityToDel - The activity object to delete.
-   */
+  // Supprimer une activité (confirmation déjà gérée côté UI appelant)
   const confirmDeleteActivity = useCallback(
-    async (activityToDel) => {
-      const activity = activityToDel; // Use the activity passed directly
-
+    async (activity) => {
       if (readOnly) {
-        // Check global readOnly prop first
         localShowMessage(
-          "Delete operation disabled in read-only mode. You cannot delete activities.",
+          "Lecture seule : suppression impossible.",
           "info"
         );
         return;
       }
-
       if (!activity) {
-        console.error("No activity to delete provided.");
-        localShowMessage(
-          "No activity selected for deletion. Please try again.",
-          "error"
-        );
+        localShowMessage("Aucune activité à supprimer.", "error");
         return;
       }
 
-      const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
-
-      // Check editability specific to activity type
-      if (!isAbsence && !isCraEditable) {
+      const isAbs = absenceActivityTypeIds.has(String(activity.type_activite));
+      if (!isAbs && !isCraEditable) {
+        localShowMessage("CRA verrouillé : suppression impossible.", "info");
+        return;
+      }
+      if (isAbs && !isPaidLeaveEditable) {
         localShowMessage(
-          `CRA activity locked: report status is '${craReportStatus}'. Deletion impossible.`,
+          "Congés verrouillés : suppression impossible.",
           "info"
         );
         return;
       }
-      if (isAbsence && !isPaidLeaveEditable) {
-        localShowMessage(
-          `Paid leave activity locked: report status is '${paidLeaveReportStatus}'. Deletion impossible.`,
-          "info"
-        );
-        return;
-      }
-
-      // Re-check activity status itself (must be draft or rejected to be deletable)
       if (!["draft", "rejected"].includes(activity.status)) {
         localShowMessage(
-          `Activity locked: status '${activity.status}'. Deletion impossible.`,
+          `Statut '${activity.status}' : suppression impossible.`,
           "info"
         );
         return;
       }
-
       if (String(activity.user_id) !== String(userId)) {
-        localShowMessage(
-          "You cannot delete other users' activities. Please contact an administrator.",
-          "error"
-        );
+        localShowMessage("Vous ne pouvez pas supprimer cette activité.", "error");
         return;
       }
 
       try {
         setEditingActivity(null);
-
         setIsDeletingActivityFlag(true);
-        if (deletionTimeoutRef.current) {
-          clearTimeout(deletionTimeoutRef.current);
-        }
+        if (deletionTimeoutRef.current) clearTimeout(deletionTimeoutRef.current);
 
         await onDeleteActivity(activity.id);
-        localShowMessage("Activity deleted successfully!", "success");
+        localShowMessage("Activité supprimée.", "success");
+
         if (!readOnly && fetchActivitiesForMonth) {
-          // Use global readOnly prop here
           fetchActivitiesForMonth(currentMonth);
         }
-      } catch (error) {
-        console.error(
-          "CraBoard: Error deleting activity:",
-          error
-        );
-        localShowMessage(
-          `Deletion failed: ${error.message}. Please try again.`,
-          "error"
-        );
+      } catch (err) {
+        console.error("Delete error:", err);
+        localShowMessage(`Échec suppression : ${err.message}`, "error");
       } finally {
-        setActivityToDelete(null); // Reset activity to delete
-        deletionTimeoutRef.current = setTimeout(() => {
-          setIsDeletingActivityFlag(false);
-        }, 500);
+        deletionTimeoutRef.current = setTimeout(
+          () => setIsDeletingActivityFlag(false),
+          500
+        );
       }
     },
     [
-      onDeleteActivity,
-      localShowMessage,
-      fetchActivitiesForMonth,
       currentMonth,
-      readOnly, // Use global readOnly prop
-      absenceActivityTypeIds, // Used for isAbsence
-      userId,
+      fetchActivitiesForMonth,
       isCraEditable,
       isPaidLeaveEditable,
-      craReportStatus,
-      paidLeaveReportStatus,
-      setEditingActivity,
-      setIsDeletingActivityFlag,
+      localShowMessage,
+      onDeleteActivity,
+      readOnly,
+      userId,
+      absenceActivityTypeIds,
     ]
   );
 
-  /**
-   * Handles activity deletion request. Calls confirmDeleteActivity directly.
-   * @param {string} activityId - The ID of the activity to delete.
-   * @param {Event} event - The click event.
-   */
+  // Demande de suppression depuis le calendrier (bouton poubelle)
   const requestDeleteFromCalendar = useCallback(
-    async (activityId, event) => {
-      event.stopPropagation();
-      console.log(
-        `[CraBoard - DEBUG] requestDeleteFromCalendar called for activity ID: ${activityId}`
-      );
+    async (activityId, e) => {
+      e.stopPropagation();
 
       if (readOnly) {
-        // Check global readOnly prop first
         localShowMessage(
-          "Activity deletion disabled in read-only mode. You cannot delete activities.",
+          "Lecture seule : suppression impossible.",
           "info"
         );
         return;
       }
 
-      const activity = activities.find(
-        (act) => String(act.id) === String(activityId)
-      );
+      const activity = activities.find((a) => String(a.id) === String(activityId));
       if (!activity) {
-        console.error("Activity not found for deletion:", activityId);
-        localShowMessage(
-          "Activity not found for deletion. It may have already been deleted.",
-          "error"
-        );
+        localShowMessage("Activité introuvable.", "error");
         return;
       }
 
-      const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
-
-      if (!isAbsence && !isCraEditable) {
-        localShowMessage(
-          `CRA activity locked: report status is '${craReportStatus}'. Deletion impossible.`,
-          "info"
-        );
+      const isAbs = absenceActivityTypeIds.has(String(activity.type_activite));
+      if (!isAbs && !isCraEditable) {
+        localShowMessage("CRA verrouillé : suppression impossible.", "info");
         return;
       }
-      if (isAbsence && !isPaidLeaveEditable) {
-        localShowMessage(
-          `Paid leave activity locked: report status is '${paidLeaveReportStatus}'. Deletion impossible.`,
-          "info"
-        );
+      if (isAbs && !isPaidLeaveEditable) {
+        localShowMessage("Congés verrouillés : suppression impossible.", "info");
         return;
       }
-
-      // Re-check activity status itself (must be draft or rejected to be deletable)
       if (!["draft", "rejected"].includes(activity.status)) {
         localShowMessage(
-          `Activity locked: status '${activity.status}'. Deletion impossible.`,
+          `Statut '${activity.status}' : suppression impossible.`,
           "info"
         );
         return;
       }
-
       if (String(activity.user_id) !== String(userId)) {
-        localShowMessage(
-          "You cannot delete other users' activities. Please contact an administrator.",
-          "error"
-        );
+        localShowMessage("Vous ne pouvez pas supprimer cette activité.", "error");
         return;
       }
 
-      // Call the delete function directly
       confirmDeleteActivity(activity);
     },
     [
-      readOnly, // Use global readOnly prop
       activities,
-      localShowMessage,
-      absenceActivityTypeIds, // Used for isAbsence
-      userId,
+      confirmDeleteActivity,
       isCraEditable,
       isPaidLeaveEditable,
-      craReportStatus,
-      paidLeaveReportStatus,
-      confirmDeleteActivity, // confirmDeleteActivity must be defined BEFORE requestDeleteFromCalendar
+      localShowMessage,
+      readOnly,
+      userId,
+      absenceActivityTypeIds,
     ]
   );
-  const handleCycleMultiSelectMode = useCallback(() => {
-    setMultiSelectType((prevMode) => {
-      if (prevMode === 'activity') {
-        return 'paid_leave';
-      } else if (prevMode === 'paid_leave') {
-        return 'activity';
-      }
-    });
-  }, []);
 
+  // ——————————————————————————————————————————
+  // Clic sur un jour (création/édition)
+  // ——————————————————————————————————————————
   const handleDayClick = useCallback(
     (dayDate, e) => {
-      console.log(
-        `[DEBUG - handleDayClick] Multi-selection mode: ${multiSelectType}, Is non-working day: ${isNonWorkingDay(dayDate)}`
-      );
-      
-      // Ignore if a drag and drop (individual activity or multi-selection) is in progress
-      if (
-        isDraggingActivity ||
-        isDeletingActivityFlag ||
-        isDraggingMultiSelect // Added for control
-      ) {
-        console.log(
-          "[CraBoard - DEBUG] handleDayClick: Ignored due to drag/delete in progress."
-        );
+      if (isDraggingActivity || isDeletingActivityFlag || isDraggingMultiSelect)
         return;
-      }
-      // Ignore if the click comes from an activity element (handled by handleActivityClick)
-      if (e && e.target.closest(".cra-activity-item")) {
-        console.log(
-          "[CraBoard - DEBUG] handleDayClick: Ignored because click comes from an activity."
-        );
-        return;
-      }
 
-      console.log(
-        `[CraBoard - DEBUG] handleDayClick (single day mode) called for day: ${
-          isValid(dayDate) ? format(dayDate, "yyyy-MM-dd") : "Invalid Date"
-        }`
-      );
+      if (e?.target?.closest(".cra-activity-item")) return;
 
       if (readOnly) {
-        localShowMessage(
-          "Activity modification disabled in read-only mode. You cannot add or modify activities.",
-          "info"
-        );
+        localShowMessage("Lecture seule : modification impossible.", "info");
         return;
       }
 
       const dateKey = isValid(dayDate) ? format(dayDate, "yyyy-MM-dd") : null;
-      if (!dateKey) {
-        console.error("handleDayClick: Invalid date received.");
-        return;
-      }
-      const existingActivitiesForDay = activitiesByDay.get(dateKey) || [];
-      const totalTimeForDay = existingActivitiesForDay
-        ? existingActivitiesForDay.reduce(
-            (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-            0
-          )
-        : 0;
+      if (!dateKey) return;
 
-        if (existingActivitiesForDay && existingActivitiesForDay.length > 0) {
-          const activity = existingActivitiesForDay[0];
-          const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
-  
-          if (!isAbsence && !isCraEditable) {
-            localShowMessage(
-              `CRA activity locked: report status is '${craReportStatus}'. Modification impossible.`,
-              "info"
-            );
-            return;
-          }
-          if (isAbsence && !isPaidLeaveEditable) {
-            localShowMessage(
-              `Paid leave activity locked: report status is '${paidLeaveReportStatus}'. Modification impossible.`,
-              "info"
-            );
-            return;
-          }
-  
-          if (!["draft", "rejected"].includes(activity.status)) {
-            localShowMessage(
-              `Activity locked: status '${activity.status}'. Modification impossible.`,
-              "info"
-            );
-            return;
-          }
-  
-          if (String(activity.user_id) !== String(userId)) {
-            localShowMessage(
-              "You cannot modify other users' activities. Please contact an administrator.",
-              "error"
-            );
-            return;
-          }
+      const activitiesOnDay = activitiesByDay.get(dateKey) || [];
+      const totalTime = activitiesOnDay.reduce(
+        (s, a) => s + (parseFloat(a.temps_passe) || 0),
+        0
+      );
+
+      if (activitiesOnDay.length > 0) {
+        // Édition de la 1ère activité du jour
+        const activity = activitiesOnDay[0];
+        const isAbs = absenceActivityTypeIds.has(String(activity.type_activite));
+
+        if (!isAbs && !isCraEditable) {
+          localShowMessage("CRA verrouillé : édition impossible.", "info");
+          return;
+        }
+        if (isAbs && !isPaidLeaveEditable) {
+          localShowMessage("Congés verrouillés : édition impossible.", "info");
+          return;
+        }
+        if (!["draft", "rejected"].includes(activity.status)) {
+          localShowMessage(
+            `Statut '${activity.status}' : édition impossible.`,
+            "info"
+          );
+          return;
+        }
+        if (String(activity.user_id) !== String(userId)) {
+          localShowMessage("Vous ne pouvez pas modifier cette activité.", "error");
+          return;
+        }
+
         setSelectedDate(dayDate);
         setEditingActivity(activity);
         setTempSelectedDays([]);
         setIsModalOpen(true);
         setIsSingleDaySelectionLocked(true);
-        // La logique de filtre pour l'édition est correcte
-        const initialFilter = multiSelectType === "paid_leave" ? 'absence' : (isAbsence ? 'absence' : 'activity');
-        setInitialActivityTypeFilter(initialFilter);
-        console.log(
-          `[CraBoard - DEBUG] handleDayClick: Form opened for day: ${format(
-            dayDate,
-            "yyyy-MM-dd"
-          )} (editing)`
+        setInitialActivityTypeFilter(
+          isAbs ? "absence" : "activity"
         );
       } else {
-        if (totalTimeForDay >= 1) {
+        // Création
+        if (totalTime >= 1) {
           localShowMessage(
-            "You have already reached the 1-day limit for this date. Please modify an existing activity or delete one to add a new one.",
+            "Cette journée atteint déjà 1,00j.",
             "warning"
           );
           return;
         }
 
-        // --- DÉBUT DE LA LOGIQUE CORRIGÉE POUR LA CRÉATION (CLIC SIMPLE) ---
-
-        // Logique de blocage en mode congé si le jour est non travaillé
+        // Bloque la création d'absence sur jour non travaillé en sélection simple (si besoin)
         if (multiSelectType === "paid_leave" && isNonWorkingDay(dayDate)) {
           localShowMessage(
-            "Cannot add paid leave on a weekend or public holiday in single-day selection mode.",
+            "Impossible d'ajouter un congé sur weekend/jour férié (sélection simple).",
             "warning"
           );
           return;
         }
 
-        // On vérifie que la création est possible pour le mode actuel
-        if (multiSelectType === 'activity' && !isCraEditable) {
-          localShowMessage(
-            "Cannot add activities. The CRA report is locked.",
-            "info"
-          );
+        if (multiSelectType === "activity" && !isCraEditable) {
+          localShowMessage("CRA verrouillé : ajout impossible.", "info");
           return;
         }
-        if (multiSelectType === 'paid_leave' && !isPaidLeaveEditable) {
-          localShowMessage(
-            "Impossible d'ajouter d'absence",
-            "info"
-          );
+        if (multiSelectType === "paid_leave" && !isPaidLeaveEditable) {
+          localShowMessage("Congés verrouillés : ajout impossible.", "info");
           return;
         }
-
-        // Simplification du filtre initial, basé uniquement sur le multiSelectType
-        const filterType = multiSelectType === 'paid_leave' ? 'absence' : 'activity';
 
         setSelectedDate(dayDate);
         setEditingActivity(null);
         setTempSelectedDays([]);
         setIsModalOpen(true);
         setIsSingleDaySelectionLocked(true);
-        // Le filtre est appliqué ici
-        setInitialActivityTypeFilter(filterType);
-        
-        console.log(
-          `[CraBoard - DEBUG] handleDayClick: Form opened for day: ${format(
-            dayDate,
-            "yyyy-MM-dd"
-          )} (new activity)`
+        setInitialActivityTypeFilter(
+          multiSelectType === "paid_leave" ? "absence" : "activity"
         );
-        // --- FIN DE LA LOGIQUE CORRIGÉE ---
       }
     },
-      [
-        localShowMessage,
-        activitiesByDay,
-        readOnly,
-        absenceActivityTypeIds,
-        isCraEditable,
-        isPaidLeaveEditable,
-        craReportStatus,
-        paidLeaveReportStatus,
-        isDeletingActivityFlag,
-        isDraggingActivity,
-        isDraggingMultiSelect,
-        userId,
-        setSelectedDate,
-        setEditingActivity,
-        setTempSelectedDays,
-        setIsModalOpen,
-        setIsSingleDaySelectionLocked,
-        setInitialActivityTypeFilter,
-        isNonWorkingDay,
-        multiSelectType
-      ]
-    );
-
-    /**
-     * Handles clicking an existing activity item (for editing/deleting).
-     * This function is ALWAYS active.
-     * @param {Object} activity - The clicked activity object.
-     */
-    const handleActivityClick = useCallback(
-      (activity) => {
-        // Ignore if a drag and drop (individual activity or multi-selection) is in progress
-        if (
-          isDeletingActivityFlag ||
-          isDraggingActivity ||
-          isDraggingMultiSelect ||
-          isSingleDaySelectionLocked // NEW: Ignore if single day selection mode is locked
-        ) {
-          console.log(
-            "[CraBoard - DEBUG] handleActivityClick: Ignored due to drag/delete/lock in progress."
-          );
-          return;
-        }
-        console.log(
-          `[CraBoard - DEBUG] handleActivityClick called for activity ID: ${activity.id}`
-        );
-
-        if (readOnly) {
-          // Check global readOnly prop first
-          localShowMessage(
-            "Activity modification is disabled in read-only mode. You cannot modify or delete activities.",
-            "info"
-          );
-          return;
-        }
-
-        const currentActivity = activities.find(
-          (a) => String(a.id) === String(activity.id)
-        );
-        if (!currentActivity) {
-          console.warn(
-            `[CraBoard - DEBUG] handleActivityClick: Activity ID ${activity.id} not found in current state, canceling form opening.`
-          );
-          localShowMessage(
-            "Activity no longer exists or has been deleted. Please refresh the page.",
-            "error"
-          );
-          setEditingActivity(null);
-          return;
-        }
-
-        if (String(currentActivity.user_id) !== String(userId)) {
-          localShowMessage(
-            "You cannot modify other users' activities. Please contact an administrator.",
-            "error"
-          );
-          return;
-        }
-        // Check specific editability flags
-        const isAbsence = absenceActivityTypeIds.has(String(currentActivity.type_activite));
-
-        if (!isAbsence && !isCraEditable) {
-          localShowMessage(
-            `CRA activity locked: report status is '${craReportStatus}'. Modification impossible.`,
-            "info"
-          );
-          return;
-        }
-        if (isAbsence && !isPaidLeaveEditable) {
-          localShowMessage(
-            `Paid leave activity locked: report status is '${paidLeaveReportStatus}'. Modification impossible.`,
-            "info"
-          );
-          return;
-        }
-
-        // Re-check activity status itself
-        if (!["draft", "rejected"].includes(currentActivity.status)) {
-          localShowMessage(
-            `Activity locked: status '${currentActivity.status}'. Modification impossible.`,
-            "info"
-          );
-          return;
-        }
-
-        if (
-          !currentActivity.date_activite ||
-          !isValid(new Date(currentActivity.date_activite))
-        ) {
-          console.error(
-            "CraBoard: Invalid activity date from database",
-            currentActivity.date_activite
-          );
-          localShowMessage(
-            "Error: Invalid existing activity date. Cannot modify. Please contact support.",
-            "error"
-          );
-          return;
-        }
-        setSelectedDate(new Date(currentActivity.date_activite));
-        setEditingActivity(currentActivity);
-        setTempSelectedDays([]);
-        setIsModalOpen(true);
-        // NEW: Lock single day selection if editing an existing activity
-        setIsSingleDaySelectionLocked(true);
-        const initialFilter = multiSelectType === "paid_leave" ? 'absence' : (isAbsence ? 'absence' : 'activity');
-setInitialActivityTypeFilter(initialFilter);
-        console.log(
-          `[CraBoard - DEBUG] handleActivityClick: Form opened for activity ID: ${currentActivity.id}`
-        );
-      },
-      [
-        localShowMessage,
-        userId,
-        readOnly, // Uses global readOnly prop
-        absenceActivityTypeIds, // Used for isAbsence
-        isCraEditable,
-        isPaidLeaveEditable,
-        craReportStatus,
-        paidLeaveReportStatus,
-        activities,
-        isDeletingActivityFlag,
-        isDraggingActivity,
-        isDraggingMultiSelect,
-        isSingleDaySelectionLocked, // Added as dependency
-        setSelectedDate,
-        setEditingActivity,
-        setTempSelectedDays,
-        setIsModalOpen,
-        setIsSingleDaySelectionLocked, // Added as dependency
-        setInitialActivityTypeFilter // Added as dependency
-      ]
-    );
-
-    /**
-     * Handles the start of dragging an individual activity.
-     * This function is ALWAYS active.
-     * @param {Event} e - The drag event.
-     * @param {Object} activity - The activity being dragged.
-     */
-    const handleDragStartActivity = useCallback(
-      (e, activity) => {
-        // NEW: Block if single day selection mode is locked
-        if (isSingleDaySelectionLocked) {
-          e.preventDefault();
-          localShowMessage(
-            "Cannot drag and drop. The calendar is in single day selection mode. Close the modal to unlock.",
-            "info"
-          );
-          return;
-        }
-
-        // If multi-selection mode is active, prevent individual drag and drop
-        if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
-          localShowMessage(
-            "Activity drag and drop is disabled in multi-selection mode. Please change mode.",
-            "info"
-          );
-          e.preventDefault();
-          return;
-        }
-        // Ensure multi-day selection is not active when starting an individual activity drag
-        setIsDraggingMultiSelect(false);
-        setTempSelectedDays([]);
-        setDragStartDayForSelection(null);
-
-        // Check editability before allowing drag
-        const isAbsence = absenceActivityTypeIds.has(String(activity.type_activite));
-
-        if (
-          readOnly || // If global readOnly prop is true
-          (!isAbsence && !isCraEditable) || // Or if it's a CRA activity and CRA is not editable
-          (isAbsence && !isPaidLeaveEditable) || // Or if it's a Paid Leave activity and Paid Leave is not editable
-          String(activity.user_id) !== String(userId) // Or if the activity does not belong to the user
-        ) {
-          e.preventDefault();
-          localShowMessage(
-            "Cannot drag and drop this activity. The calendar is locked or you do not have permissions.",
-            "info"
-          );
-          return;
-        }
-
-        // Re-check the activity's own status (must be draft or rejected to be movable)
-        if (!["draft", "rejected"].includes(activity.status)) {
-          e.preventDefault();
-          localShowMessage(
-            `Activity locked: status '${activity.status}'. Movement impossible.`,
-            "info"
-          );
-          return;
-        }
-
-        setDraggedActivity(activity);
-        setIsDraggingActivity(true);
-        e.dataTransfer.setData("activityId", activity.id);
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.dropEffect = "move";
-        console.log("Drag started for activity:", activity.id);
-      },
-      [
-        readOnly, // Uses global readOnly prop
-        userId,
-        localShowMessage,
-        setIsDraggingMultiSelect,
-        multiSelectType,
-        setTempSelectedDays,
-        absenceActivityTypeIds, // Used for isAbsence
-        isCraEditable,
-        isPaidLeaveEditable,
-        isSingleDaySelectionLocked, // Added as dependency
-      ]
-    );
-
-    /**
-     * Handles hovering over a day cell during an activity drag and drop.
-     * This function is ALWAYS active.
-     * @param {Event} e - The drag event.
-     * @param {Date} day - The date of the hovered day.
-     */
-    const handleDragOverDay = useCallback(
-      (e, day) => {
-        // NEW: Block if single day selection mode is locked
-        if (isSingleDaySelectionLocked) {
-          e.preventDefault();
-          return;
-        }
-
-        // This handler should only be active for individual activity drag and drop
-        if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
-          e.preventDefault();
-          return;
-        }
-
-        e.preventDefault();
-        if (draggedActivity) {
-          const isTargetNonWorkingDay = isNonWorkingDay(day);
-          const isDraggedActivityAbsence = absenceActivityTypeIds.has(String(draggedActivity.type_activite));
-
-          let isDropAllowed = false;
-
-          // Check report editability for the dragged activity type
-          const isCRAActivityType = !isDraggedActivityAbsence;
-
-          if (
-            readOnly || // If global readOnly prop is true
-            (isCRAActivityType && !isCraEditable) || // Or if it's a CRA activity and CRA is not editable
-            (isDraggedActivityAbsence && !isPaidLeaveEditable) // Or if it's a Paid Leave activity and Paid Leave is not editable
-          ) {
-            setIsValidDropTarget(false);
-            e.dataTransfer.dropEffect = "none";
-            return;
-          }
-
-          if (isTargetNonWorkingDay) {
-            isDropAllowed =
-              isDraggedActivityAbsence &&
-              draggedActivity.override_non_working_day;
-          } else {
-            isDropAllowed = true;
-          }
-
-          if (!isSameMonth(day, currentMonth)) {
-            isDropAllowed = false;
-          }
-
-          setIsValidDropTarget(isDropAllowed);
-          e.dataTransfer.dropEffect = isDropAllowed ? "move" : "none";
-        }
-      },
-      [
-        draggedActivity,
-        isNonWorkingDay,
-        absenceActivityTypeIds, // Used for isAbsence
-        currentMonth,
-        multiSelectType,
-        readOnly, // Use global readOnly prop
-        isCraEditable,
-        isPaidLeaveEditable,
-        isSingleDaySelectionLocked, // Added as dependency
-      ]
-    );
-
-    /**
-     * Handles dropping an activity onto a day cell.
-     * This function is ALWAYS active.
-     * @param {Event} e - The drop event.
-     * @param {Date} targetDay - The date of the target day.
-     */
-    const handleDropActivity = useCallback(
-      async (e, targetDay) => {
-        // NEW: Block if single day selection mode is locked
-        if (isSingleDaySelectionLocked) {
-          e.preventDefault();
-          return;
-        }
-
-        // This handler should only be active for individual activity drag and drop
-        if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
-          e.preventDefault();
-          return;
-        }
-
-        e.preventDefault();
-        setIsDraggingActivity(false);
-        setDraggedActivity(null);
-        setIsValidDropTarget(false);
-
-        const activityId = e.dataTransfer.getData("activityId");
-        if (!activityId) return;
-
-        const activityToMove = activities.find(
-          (a) => String(a.id) === String(activityId)
-        );
-
-        if (!activityToMove) {
-          localShowMessage(
-            "Activity to move not found. Please try again.",
-            "error"
-          );
-          return;
-        }
-
-        const isAbsence = absenceActivityTypeIds.has(String(activityToMove.type_activite));
-        const isCRAActivityType = !isAbsence;
-
-        if (
-          readOnly || // If global readOnly prop is true
-          (isCRAActivityType && !isCraEditable) || // Or if it's a CRA activity and CRA is not editable
-          (isAbsence && !isPaidLeaveEditable) // Or if it's a Paid Leave activity and Paid Leave is not editable
-        ) {
-          localShowMessage(
-            "Cannot move this activity. The calendar is locked or you do not have permissions.",
-            "info"
-          );
-          return;
-        }
-
-        const isTargetNonWorkingDay = isNonWorkingDay(targetDay);
-
-        let newOverrideNonWorkingDay = activityToMove.override_non_working_day;
-
-        let isDropAllowed = false;
-        if (isTargetNonWorkingDay) {
-          isDropAllowed =
-            isAbsence && activityToMove.override_non_working_day;
-        } else {
-          isDropAllowed = true;
-          if (
-            isAbsence &&
-            activityToMove.override_non_working_day
-          ) {
-            newOverrideNonWorkingDay = false;
-          }
-        }
-
-        if (!isSameMonth(targetDay, currentMonth)) {
-          localShowMessage(
-            "Cannot move activity here as the month is incorrect. Please drop it within the displayed month.",
-            "warning"
-          );
-          return;
-        }
-
-        // Re-check the activity's own status (must be draft or rejected to be movable)
-        if (!["draft", "rejected"].includes(activityToMove.status)) {
-          localShowMessage(
-            "Cannot move this activity. Its status does not allow it (must be 'draft' or 'rejected').",
-            "info"
-          );
-          return;
-        }
-
-        if (isSameDay(new Date(activityToMove.date_activite), targetDay)) {
-          localShowMessage(
-            "The activity is already on this date. No movement needed.",
-            "info"
-          );
-          return;
-        }
-
-        // 1-day limit check during DROP
-        const targetDateKey = format(targetDay, "yyyy-MM-dd");
-        const activitiesOnTargetDay = activitiesByDay.get(targetDateKey) || [];
-        const totalTimeExcludingMoved = activitiesOnTargetDay
-          .filter((a) => String(a.id) !== String(activityToMove.id)) // Exclude the moved activity from its old position
-          .reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
-        const newTotalTimeForDay =
-          totalTimeExcludingMoved + (parseFloat(activityToMove.temps_passe) || 0);
-
-        if (newTotalTimeForDay > 1) {
-          localShowMessage(
-            `Moving this activity to ${format(
-              targetDay,
-              "dd/MM/yyyy"
-            )} would exceed the 1-day limit. Current total: ${totalTimeExcludingMoved.toFixed(
-              1
-            )} days.`,
-            "error"
-          );
-          return;
-        }
-
-        if (isDropAllowed) {
-          const newDate = startOfDay(targetDay);
-          const updatedActivityData = {
-            ...activityToMove,
-            date_activite: newDate,
-            override_non_working_day: newOverrideNonWorkingDay,
-          };
-          await onUpdateActivity(activityToMove.id, updatedActivityData);
-          localShowMessage("Activity moved successfully!", "success");
-          if (!readOnly && fetchActivitiesForMonth) {
-            fetchActivitiesForMonth(currentMonth);
-          }
-        } else {
-          if (isTargetNonWorkingDay) {
-            if (
-              isAbsence &&
-              !activityToMove.override_non_working_day
-            ) {
-              localShowMessage(
-                "This leave cannot be moved to a weekend or public holiday without override. Please enable the override.",
-                "warning"
-              );
-            } else if (!isCRAActivityType) {
-              localShowMessage(
-                "Cannot move a normal activity to a weekend or public holiday.",
-                "warning"
-              );
-            }
-          }
-        }
-      },
-      [
-        activities,
-        isNonWorkingDay,
-        currentMonth,
-        onUpdateActivity,
-        localShowMessage,
-        absenceActivityTypeIds, // Used for isAbsence
-        isCraEditable,
-        isPaidLeaveEditable,
-        multiSelectType,
-        activitiesByDay,
-        readOnly, // Use global readOnly prop
-        isSingleDaySelectionLocked, // Added as dependency
-      ]
-    );
-
-    /**
-     * Handles the start of a mouse click for multi-day selection.
-     * This function is ALWAYS active if multiSelectType is 'activity' or 'paid_leave'.
-     * @param {Event} e - The mouse event.
-     * @param {Date} day - The date of the clicked day.
-     */
-    const handleMouseDownMultiSelect = useCallback(
-      (e, day) => {
-        // NEW: Block if single day selection mode is locked
-        if (isSingleDaySelectionLocked) {
-          localShowMessage(
-            "Cannot start multi-selection. The calendar is in single day selection mode. Close the modal to unlock.",
-            "info"
-          );
-          return;
-        }
-        if (multiSelectType === "paid_leave" && isNonWorkingDay(day)) {
-          localShowMessage(
-              "Cannot start multi-day selection for paid leave on a weekend or public holiday.",
-              "warning"
-              
-          );
-          e.preventDefault();
-          return;
-      }
-
-        // Block if global readOnly prop is true, or if a drag/delete is in progress
-        if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
-          localShowMessage(
-            "Multi-selection disabled. The calendar is read-only or an operation is in progress.",
-            "info"
-          );
-          return;
-        }
-
-        // Check specific editability based on current multi-selection mode
-        if (multiSelectType === "activity" && !isCraEditable) {
-          localShowMessage(
-            "Cannot start multi-selection for activity. The CRA report is locked.",
-            "info"
-          );
-          return;
-        }
-        if (multiSelectType === "paid_leave" && !isPaidLeaveEditable) {
-          localShowMessage(
-            "Impossible d'ajouter d'absence",
-            "info"
-          );
-          return;
-        }
-
-        // Check 1-day limit before starting multi-selection
-        const dayKey = format(day, "yyyy-MM-dd");
-        const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
-        const existingTimeOnDay = existingActivitiesOnDay.reduce(
-          (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-          0
-        );
-
-        if (existingTimeOnDay >= 1) {
-          localShowMessage(
-            `Cannot start multi-day selection on ${format(
-              day,
-              "dd/MM/yyyy"
-            )}. This day already has 1 day of activities.`,
-            "warning"
-          );
-          return;
-        }
-
-        // If left mouse button is pressed
-        if (e.button === 0) {
-          isMouseDownOnCalendarDayRef.current = true; // Mark that the mouse is down on a day
-          mouseDownCoordsRef.current = { x: e.clientX, y: e.clientY }; // Store coordinates
-          setDragStartDayForSelection(day);
-          setTempSelectedDays([day]); // Start with the clicked day
-          // DO NOT set setIsDraggingMultiSelect(true) here immediately.
-          // This will be done by handleGlobalMouseMove if a drag is detected.
-          console.log(
-            "[CraBoard - handleMouseDownMultiSelect] Potential multi-day selection started."
-          );
-        }
-      },
-      [
-        readOnly, // Use global readOnly prop
-        isDraggingActivity,
-        isDeletingActivityFlag,
-        isCraEditable,
-        isPaidLeaveEditable,
-        isNonWorkingDay,
-        localShowMessage,
-        multiSelectType,
-        setTempSelectedDays,
-        activitiesByDay,
-        isSingleDaySelectionLocked, // Added as dependency
-        setDragStartDayForSelection, // Added as dependency
-      ]
-    );
-
-    /**
-     * Handles hovering over a cell during multi-day selection.
-     * This function is ALWAYS active if multiSelectType is 'activity' or 'paid_leave'.
-     * @param {Date} day - The date of the hovered day.
-     */
-    const handleMouseEnterMultiSelect = useCallback(
-      (day) => {
-        // NEW: Block if single day selection mode is locked
-        if (isSingleDaySelectionLocked) {
-          return;
-        }
-    
-        // Continue multi-selection ONLY if mouse button is down on a day
-        // AND drag has officially started (isDraggingMultiSelect is true)
-        // AND a drag start day for selection is defined.
-        if (
-          !isMouseDownOnCalendarDayRef.current ||
-          !isDraggingMultiSelect ||
-          !dragStartDayForSelection
-        ) {
-          return;
-        }
-        // Prevent multi-selection if global readOnly prop is true, or if a drag/delete is in progress
-        if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
-          return;
-        }
-    
-        const startIndex = daysInMonth.findIndex((d) =>
-          isSameDay(d, dragStartDayForSelection)
-        );
-        const endIndex = daysInMonth.findIndex((d) => isSameDay(d, day));
-    
-        if (startIndex === -1 || endIndex === -1) {
-          return;
-        }
-    
-        const [start, end] =
-          startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
-    
-        const newTempSelectedDays = daysInMonth
-          .slice(start, end + 1)
-          .filter((d) => {
-            // Check if the specific report type is editable for this mode
-            const isCurrentModeEditable =
-              multiSelectType === "paid_leave"
-                ? isPaidLeaveEditable
-                : isCraEditable;
-    
-            // NEW BEHAVIOR: Unified logic to block non-working days for both modes
-            const dayKey = format(d, "yyyy-MM-dd");
-            const existingActivitiesOnDay = activitiesByDay.get(dayKey) || [];
-            const existingTimeOnDay = existingActivitiesOnDay.reduce(
-              (sum, act) => sum + (parseFloat(act.temps_passe) || 0),
-              0
-            );
-    
-            // Allow selection only if the mode is editable, it's a working day, and there's less than 1 day of activity already.
-            return isCurrentModeEditable && !isNonWorkingDay(d) && existingTimeOnDay < 1;
-          });
-    
-        setTempSelectedDays(newTempSelectedDays);
-      },
-      [
-        isMouseDownOnCalendarDayRef, // New dependency
-        isDraggingMultiSelect, // New dependency
-        dragStartDayForSelection,
-        daysInMonth,
-        readOnly, // Use global readOnly prop
-        isDraggingActivity,
-        isDeletingActivityFlag,
-        isNonWorkingDay,
-        multiSelectType,
-        setTempSelectedDays,
-        activitiesByDay,
-        isPaidLeaveEditable, // Added for mode editability check
-        isCraEditable, // Added for mode editability check
-        isSingleDaySelectionLocked, // Added as dependency
-      ]
-    );
-    /**
-     * Handles the end of multi-day selection (mouse release).
-     * Triggers the appropriate action based on `multiSelectType`.
-     * This function is called by handleGlobalMouseUp ONLY if a drag has been confirmed.
-     */
-    const handleMouseUpMultiSelect = useCallback(async () => {
-      // NEW: If single day selection mode is locked, do nothing here
-      if (isSingleDaySelectionLocked) {
-        return;
-      }
-
-      // Block if global readOnly prop is true (redundant but safe check)
-      if (readOnly) {
-        localShowMessage(
-          "Operation disabled. The calendar is read-only.",
-          "info"
-        );
-        setTempSelectedDays([]); // Clear temporary selection
-        return;
-      }
-
-      if (tempSelectedDays.length > 0) {
-        // Check editability before opening the modal
-        if (multiSelectType === "paid_leave") {
-          if (!isPaidLeaveEditable) {
-            localShowMessage(
-              "Cannot add paid leave. The leave report is locked.",
-              "info"
-            );
-            setTempSelectedDays([]);
-            return;
-          }
-          // If mode is "paid leave", set initial modal filter to 'absence'
-          setInitialActivityTypeFilter('absence');
-        } else if (multiSelectType === "activity") {
-          if (!isCraEditable) {
-            localShowMessage(
-              "Cannot add CRA activities. The CRA report is locked.",
-              "info"
-            );
-            setTempSelectedDays([]);
-            return;
-          }
-          // If mode is "activity", set initial modal filter to 'activity'
-          setInitialActivityTypeFilter('activity');
-        }
-
-        // Open the modal with pre-selected days and initial filter
-        setEditingActivity(null);
-        setSelectedDate(null); // Date will be handled by tempSelectedDays
-        setIsModalOpen(true);
-        // tempSelectedDays is NOT cleared here, it's used by the modal and will be cleared by handleCloseActivityModal
-      } else {
-        console.log(
-          "[CraBoard - handleMouseUpMultiSelect] No multi-day selection to finalize."
-        );
-      }
-    }, [
-      tempSelectedDays,
-      multiSelectType,
-      localShowMessage,
-      setEditingActivity,
-      setSelectedDate,
-      setIsModalOpen,
-      setTempSelectedDays,
-      isPaidLeaveEditable,
+    [
+      activitiesByDay,
       isCraEditable,
-      readOnly,
-      isSingleDaySelectionLocked,
-      setInitialActivityTypeFilter, // NEW DEPENDENCY
-    ]);
-    // Define confirmResetMonth FIRST
-    const confirmResetMonth = useCallback(async () => {
-      if (readOnly) {
-        // Check global readOnly prop first
-        localShowMessage(
-          "Reset operation disabled in read-only mode. You cannot reset the month.",
-          "info"
-        );
-        return;
-      }
-      const activitiesToReset = activitiesForCurrentMonth.filter(
-        (activity) =>
-          (activity.status === "draft" || activity.status === "rejected") &&
-          ((!absenceActivityTypeIds.has(String(activity.type_activite)) && // If it's NOT an absence and CRA is editable
-            isCraEditable) ||
-            (absenceActivityTypeIds.has(String(activity.type_activite)) && // If it's an absence and PaidLeave is editable
-              isPaidLeaveEditable))
-      );
-
-      if (activitiesToReset.length === 0) {
-        localShowMessage(
-          `No draft or rejected activities to reset for ${
-            isValid(currentMonth)
-              ? format(currentMonth, "MMMM yyyy", { locale: fr })
-              : "this month"
-          }.`,
-          "info"
-        );
-        return;
-      }
-      let successCount = 0;
-      let errorCount = 0;
-      for (const activity of activitiesToReset) {
-        try {
-          setIsDeletingActivityFlag(true);
-          if (deletionTimeoutRef.current) {
-            clearTimeout(deletionTimeoutRef.current);
-          }
-
-          await onDeleteActivity(activity.id);
-          successCount++;
-        } catch (error) {
-          console.error(
-            `CraBoard: Error deleting activity ${activity.id} during reset:`,
-            error
-          );
-          errorCount++;
-        } finally {
-          deletionTimeoutRef.current = setTimeout(() => {
-            setIsDeletingActivityFlag(false);
-          }, 500);
-        }
-      }
-      fetchActivitiesForMonth(currentMonth);
-      localShowMessage(
-        `Reset complete: ${successCount} activities deleted, ${errorCount} errors.`,
-        errorCount > 0 ? "error" : "success"
-      );
-    }, [
-      activitiesForCurrentMonth,
-      onDeleteActivity,
+      isPaidLeaveEditable,
+      isDraggingActivity,
+      isDraggingMultiSelect,
+      isDeletingActivityFlag,
+      isNonWorkingDay,
       localShowMessage,
+      multiSelectType,
+      readOnly,
+      userId,
+      absenceActivityTypeIds,
+    ]
+  );
+
+  // ——————————————————————————————————————————
+  // Clic sur une activité (édition)
+  // ——————————————————————————————————————————
+  const handleActivityClick = useCallback(
+    (activity) => {
+      if (
+        isDeletingActivityFlag ||
+        isDraggingActivity ||
+        isDraggingMultiSelect ||
+        isSingleDaySelectionLocked
+      )
+        return;
+
+      if (readOnly) {
+        localShowMessage("Lecture seule : édition impossible.", "info");
+        return;
+      }
+
+      const current = activities.find((a) => String(a.id) === String(activity.id));
+      if (!current) {
+        localShowMessage("Activité introuvable (rafraîchir).", "error");
+        setEditingActivity(null);
+        return;
+      }
+
+      if (String(current.user_id) !== String(userId)) {
+        localShowMessage("Vous ne pouvez pas modifier cette activité.", "error");
+        return;
+      }
+
+      const isAbs = absenceActivityTypeIds.has(String(current.type_activite));
+      if (!isAbs && !isCraEditable) {
+        localShowMessage("CRA verrouillé : édition impossible.", "info");
+        return;
+      }
+      if (isAbs && !isPaidLeaveEditable) {
+        localShowMessage("Congés verrouillés : édition impossible.", "info");
+        return;
+      }
+      if (!["draft", "rejected"].includes(current.status)) {
+        localShowMessage(
+          `Statut '${current.status}' : édition impossible.`,
+          "info"
+        );
+        return;
+      }
+      if (!current.date_activite || !isValid(new Date(current.date_activite))) {
+        localShowMessage("Date invalide : édition impossible.", "error");
+        return;
+      }
+
+      setSelectedDate(new Date(current.date_activite));
+      setEditingActivity(current);
+      setTempSelectedDays([]);
+      setIsModalOpen(true);
+      setIsSingleDaySelectionLocked(true);
+      setInitialActivityTypeFilter(isAbs ? "absence" : "activity");
+    },
+    [
+      activities,
+      isCraEditable,
+      isPaidLeaveEditable,
+      isDeletingActivityFlag,
+      isDraggingActivity,
+      isDraggingMultiSelect,
+      isSingleDaySelectionLocked,
+      localShowMessage,
+      readOnly,
+      userId,
+      absenceActivityTypeIds,
+    ]
+  );
+
+  // ——————————————————————————————————————————
+  // Drag & Drop activités (individuelles)
+  // ——————————————————————————————————————————
+  const handleDragStartActivity = useCallback(
+    (e, activity) => {
+      if (isSingleDaySelectionLocked) {
+        e.preventDefault();
+        localShowMessage(
+          "Déplacement désactivé : la modale est ouverte.",
+          "info"
+        );
+        return;
+      }
+
+      // en mode multi-sélection on bloque le DnD individuel
+      if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
+        e.preventDefault();
+        return;
+      }
+
+      const isAbs = absenceActivityTypeIds.has(String(activity.type_activite));
+      const isCRA = !isAbs;
+
+      if (
+        readOnly ||
+        (isCRA && !isCraEditable) ||
+        (isAbs && !isPaidLeaveEditable) ||
+        String(activity.user_id) !== String(userId)
+      ) {
+        e.preventDefault();
+        return;
+      }
+
+      if (!["draft", "rejected"].includes(activity.status)) {
+        e.preventDefault();
+        localShowMessage(
+          `Statut '${activity.status}' : déplacement impossible.`,
+          "info"
+        );
+        return;
+      }
+
+      setDraggedActivity(activity);
+      setIsDraggingActivity(true);
+      e.dataTransfer.setData("activityId", activity.id);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.dropEffect = "move";
+    },
+    [
+      isCraEditable,
+      isPaidLeaveEditable,
+      isSingleDaySelectionLocked,
+      localShowMessage,
+      multiSelectType,
+      readOnly,
+      userId,
+      absenceActivityTypeIds,
+    ]
+  );
+
+  const handleDragOverDay = useCallback(
+    (e, day) => {
+      if (isSingleDaySelectionLocked) {
+        e.preventDefault();
+        return;
+      }
+      if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
+        e.preventDefault();
+        return;
+      }
+
+      e.preventDefault();
+      if (!draggedActivity) return;
+
+      const isTargetNonWorking = isNonWorkingDay(day);
+      const isDraggedAbs = absenceActivityTypeIds.has(
+        String(draggedActivity.type_activite)
+      );
+      const isCRA = !isDraggedAbs;
+
+      if (
+        readOnly ||
+        (isCRA && !isCraEditable) ||
+        (isDraggedAbs && !isPaidLeaveEditable)
+      ) {
+        setIsValidDropTarget(false);
+        e.dataTransfer.dropEffect = "none";
+        return;
+      }
+
+      let allowed = true;
+      if (isTargetNonWorking) {
+        allowed = isDraggedAbs && draggedActivity.override_non_working_day;
+      }
+      if (!isSameMonth(day, currentMonth)) allowed = false;
+
+      setIsValidDropTarget(allowed);
+      e.dataTransfer.dropEffect = allowed ? "move" : "none";
+    },
+    [
+      draggedActivity,
+      currentMonth,
+      isCraEditable,
+      isPaidLeaveEditable,
+      isNonWorkingDay,
+      isSingleDaySelectionLocked,
+      multiSelectType,
+      readOnly,
+      absenceActivityTypeIds,
+    ]
+  );
+
+  const handleDropActivity = useCallback(
+    async (e, targetDay) => {
+      if (isSingleDaySelectionLocked) {
+        e.preventDefault();
+        return;
+      }
+      if (multiSelectType !== "activity" && multiSelectType !== "paid_leave") {
+        e.preventDefault();
+        return;
+      }
+
+      e.preventDefault();
+      setIsDraggingActivity(false);
+      setDraggedActivity(null);
+      setIsValidDropTarget(false);
+
+      const activityId = e.dataTransfer.getData("activityId");
+      if (!activityId) return;
+
+      const act = activities.find((a) => String(a.id) === String(activityId));
+      if (!act) {
+        localShowMessage("Activité introuvable pour déplacement.", "error");
+        return;
+      }
+
+      const isAbs = absenceActivityTypeIds.has(String(act.type_activite));
+      const isCRA = !isAbs;
+
+      if (
+        readOnly ||
+        (isCRA && !isCraEditable) ||
+        (isAbs && !isPaidLeaveEditable)
+      ) {
+        localShowMessage(
+          "Déplacement impossible (droits/verrou).",
+          "info"
+        );
+        return;
+      }
+
+      const isTargetNonWorking = isNonWorkingDay(targetDay);
+      let newOverride = act.override_non_working_day;
+
+      let allowed = true;
+      if (isTargetNonWorking) {
+        allowed = isAbs && act.override_non_working_day;
+      } else {
+        if (isAbs && act.override_non_working_day) newOverride = false;
+      }
+      if (!isSameMonth(targetDay, currentMonth)) {
+        localShowMessage(
+          "Déplacer dans le même mois affiché.",
+          "warning"
+        );
+        return;
+      }
+      if (!["draft", "rejected"].includes(act.status)) {
+        localShowMessage(
+          "Déplacement impossible (statut).",
+          "info"
+        );
+        return;
+      }
+      if (isSameDay(new Date(act.date_activite), targetDay)) {
+        localShowMessage("Déjà sur cette date.", "info");
+        return;
+      }
+
+      // Vérif 1j max
+      const key = format(targetDay, "yyyy-MM-dd");
+      const sameDay = (activitiesByDay.get(key) || []).filter(
+        (a) => String(a.id) !== String(act.id)
+      );
+      const newTotal =
+        sameDay.reduce((s, a) => s + (parseFloat(a.temps_passe) || 0), 0) +
+        (parseFloat(act.temps_passe) || 0);
+      if (newTotal > 1) {
+        localShowMessage(
+          `Déplacement impossible : dépasserait 1,00j.`,
+          "error"
+        );
+        return;
+      }
+
+      if (allowed) {
+        await onUpdateActivity(act.id, {
+          ...act,
+          date_activite: startOfDay(targetDay),
+          override_non_working_day: newOverride,
+        });
+        localShowMessage("Activité déplacée.", "success");
+        if (!readOnly && fetchActivitiesForMonth) {
+          fetchActivitiesForMonth(currentMonth);
+        }
+      } else {
+        localShowMessage(
+          "Déplacement non autorisé (jour non travaillé sans override).",
+          "warning"
+        );
+      }
+    },
+    [
+      activities,
+      activitiesByDay,
       currentMonth,
       fetchActivitiesForMonth,
-      readOnly, // Use global readOnly prop
-      absenceActivityTypeIds, // Used for filtering
       isCraEditable,
       isPaidLeaveEditable,
-      setIsDeletingActivityFlag,
-    ]);
-
-    // Define requestResetMonth SECOND, after confirmResetMonth
-    const requestResetMonth = useCallback(() => {
-      if (readOnly) {
-        // Check global readOnly prop first
-        localShowMessage(
-          "Reset operation disabled in read-only mode.",
-          "info"
-        );
-        return;
-      }
-      // Check if at least one of the reports is in a non-editable status for reset
-      if (
-        !isCraEditable &&
-        !isPaidLeaveEditable // If NONE are editable, then block
-      ) {
-        localShowMessage(
-          "Cannot reset the month. CRA and paid leave reports are already validated, pending review, or finalized. Only an administrator can undo these statuses.",
-          "info"
-        );
-        return;
-      }
-      // Call confirmResetMonth directly without confirmation
-      confirmResetMonth();
-    }, [
-      isCraEditable,
-      isPaidLeaveEditable,
+      isNonWorkingDay,
       localShowMessage,
-      readOnly, // Use global readOnly prop
-      confirmResetMonth,
-    ]);
+      multiSelectType,
+      onUpdateActivity,
+      readOnly,
+      isSingleDaySelectionLocked,
+      absenceActivityTypeIds,
+    ]
+  );
 
-    const sendActivities = useCallback(
-      async (activitiesToSubmit, reportType) => {
-        if (readOnly) {
-          // Check global readOnly prop first
-          localShowMessage(
-            `Submission operation for ${
-              reportType === "cra" ? "CRAs" : "Leaves"
-            } is disabled in read-only mode.`,
-            "info"
-          );
-          return;
-        }
-
-        if (reportType === "cra" && !isCraEditable) {
-          localShowMessage(
-            "Cannot submit CRA. The report is already pending review, validated, or finalized.",
-            "info"
-          );
-          return;
-        }
-        if (reportType === "paid_leave" && !isPaidLeaveEditable) {
-          localShowMessage(
-            "Cannot submit paid leave report. It is already pending review, validated, or finalized.",
-            "info"
-          );
-          return;
-        }
-
-        if (activitiesToSubmit.length === 0) {
-          localShowMessage(
-            `No draft or rejected ${
-              reportType === "cra" ? "CRA" : "paid leave"
-            } activities to submit.`,
-            "info"
-          );
-          return;
-        }
-
-        const existingReport = monthlyReports.find(
-          (r) =>
-            String(r.user_id) === String(userId) &&
-            r.month ===
-              (isValid(currentMonth) ? currentMonth.getMonth() + 1 : -1) &&
-            r.year ===
-              (isValid(currentMonth) ? currentMonth.getFullYear() : -1) &&
-            r.report_type === reportType
-        );
-
-        // Allow submission if report is 'draft' or 'rejected'
-        if (
-          existingReport &&
-          !["draft", "rejected"].includes(existingReport.status)
-        ) {
-          localShowMessage(
-            `A "${reportType}" report is already in status "${existingReport.status}". Cannot resubmit.`,
-            "warning"
-          );
-          return;
-        }
-
-        const activitiesSnapshotIds = activitiesToSubmit.map((act) => act.id);
-
-        const totalDaysWorked = activitiesToSubmit.reduce(
-          (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
-          0
-        );
-        const totalBillableDays = activitiesToSubmit
-          .filter((activity) => {
-            const typeDef = activityTypeDefinitions.find(
-              (def) => String(def.id) === String(activity.type_activite)
-            );
-            return typeDef?.is_billable;
-          })
-          .reduce(
-            (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
-            0
-          );
-
-        const reportData = {
-          user_id: userId,
-          userName: userFirstName,
-          month: isValid(currentMonth) ? currentMonth.getMonth() + 1 : -1,
-          year: isValid(currentMonth) ? currentMonth.getFullYear() : -1,
-          total_days_worked: totalDaysWorked,
-          total_billable_days: totalBillableDays,
-          activities_snapshot: activitiesSnapshotIds,
-          status: "pending_review",
-          submittedAt: new Date(),
-          report_type: reportType,
-        };
-
-        try {
-          await onSendMonthlyReport(reportData);
-          localShowMessage(
-            `Report ${reportType} submitted successfully!`,
-            "success"
-          );
-          fetchActivitiesForMonth(currentMonth);
-        } catch (error) {
-          console.error(
-            `CraBoard: Error submitting monthly report ${reportType}:`,
-            error
-          );
-          localShowMessage(
-            `Failed to submit report ${reportType}: ${error.message}. Please try again.`,
-            "error"
-          );
-        }
-      },
-      [
-        readOnly, // Use global readOnly prop
-        localShowMessage,
-        isCraEditable,
-        isPaidLeaveEditable,
-        monthlyReports,
-        userId,
-        currentMonth,
-        userFirstName,
-        activityTypeDefinitions,
-        fetchActivitiesForMonth,
-        onSendMonthlyReport,
-      ]
-    );
-
-    // Calls sendActivities directly
-    const requestSendCRA = useCallback(() => {
-      if (!isCraEditable) {
-        localShowMessage(
-          "Cannot submit CRA. The report is already pending review, validated, or finalized.",
-          "info"
-        );
-        return;
-      }
-
-      const craActivitiesToSend = activitiesForCurrentMonth.filter(
-        (a) =>
-          !absenceActivityTypeIds.has(String(a.type_activite)) && // Filter non-absences
-          (a.status === "draft" || a.status === "rejected")
-      );
-      if (craActivitiesToSend.length === 0) {
-        localShowMessage(
-          "No draft or rejected CRA activities to submit this month.",
-          "info"
-        );
-        return;
-      }
-      sendActivities(craActivitiesToSend, "cra");
-    }, [
-      isCraEditable,
-      localShowMessage,
-      activitiesForCurrentMonth,
-      absenceActivityTypeIds, // Used for filtering
-      sendActivities,
-    ]);
-
-    // Calls sendActivities directly
-    const requestSendPaidLeaves = useCallback(() => {
-      if (!isPaidLeaveEditable) {
-        localShowMessage(
-          "Cannot submit leave. The paid leave report is already pending review, validated, or finalized.",
-          "info"
-        );
-        return;
-      }
-
-      const paidLeaveActivitiesToSend = activitiesForCurrentMonth.filter(
-        (a) =>
-          absenceActivityTypeIds.has(String(a.type_activite)) && // Filter absences
-          (a.status === "draft" || a.status === "rejected")
-      );
-      if (paidLeaveActivitiesToSend.length === 0) {
-        localShowMessage(
-          "No draft or rejected paid leave activities to submit this month.",
-          "info"
-        );
-        return;
-      }
-      sendActivities(paidLeaveActivitiesToSend, "paid_leave");
-    }, [
-      isPaidLeaveEditable,
-      localShowMessage,
-      activitiesForCurrentMonth,
-      absenceActivityTypeIds, // Used for filtering
-      sendActivities,
-    ]);
-
-    // Function to cycle between multi-selection modes (only 'activity' and 'paid_leave')
-    const cycleMultiSelectMode = useCallback(() => {
-      // The mode change button is disabled if the global readOnly prop is true.
-      if (readOnly) {
-        localShowMessage(
-          "Mode selection change is disabled when the calendar is read-only.",
-          "info"
-        );
-        return;
-      }
-      // NEW: If single day selection mode is locked, do not change mode
+  // ——————————————————————————————————————————
+  // Multi-sélection (drag) — démarrage
+  // ——————————————————————————————————————————
+  const handleMouseDownMultiSelect = useCallback(
+    (e, day) => {
       if (isSingleDaySelectionLocked) {
         localShowMessage(
-          "Cannot change selection mode. The calendar is in single day selection mode. Close the modal to unlock.",
+          "Multi-sélection verrouillée (modale ouverte).",
+          "info"
+        );
+        return;
+      }
+      if (multiSelectType === "paid_leave" && isNonWorkingDay(day)) {
+        localShowMessage(
+          "Impossible de démarrer une sélection de congés sur weekend/férié.",
+          "warning"
+        );
+        e.preventDefault();
+        return;
+      }
+      if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
+        localShowMessage(
+          "Multi-sélection désactivée (lecture seule ou action en cours).",
+          "info"
+        );
+        return;
+      }
+      if (multiSelectType === "activity" && !isCraEditable) {
+        localShowMessage("CRA verrouillé : sélection impossible.", "info");
+        return;
+      }
+      if (multiSelectType === "paid_leave" && !isPaidLeaveEditable) {
+        localShowMessage("Congés verrouillés : sélection impossible.", "info");
+        return;
+      }
+
+      const key = format(day, "yyyy-MM-dd");
+      const existing = activitiesByDay.get(key) || [];
+      const currentTotal = existing.reduce(
+        (s, a) => s + (parseFloat(a.temps_passe) || 0),
+        0
+      );
+      if (currentTotal >= 1) {
+        localShowMessage(
+          `Impossible de démarrer : ${format(day, "dd/MM/yyyy")} est à 1,00j.`,
+          "warning"
+        );
+        return;
+      }
+
+      if (e.button === 0) {
+        isMouseDownOnCalendarDayRef.current = true;
+        mouseDownCoordsRef.current = { x: e.clientX, y: e.clientY };
+        setDragStartDayForSelection(day);
+        setTempSelectedDays([day]);
+        // On active isDraggingMultiSelect plus tard si mouvement > threshold
+      }
+    },
+    [
+      activitiesByDay,
+      isCraEditable,
+      isPaidLeaveEditable,
+      isDeletingActivityFlag,
+      isDraggingActivity,
+      isNonWorkingDay,
+      localShowMessage,
+      multiSelectType,
+      readOnly,
+      isSingleDaySelectionLocked,
+    ]
+  );
+
+  // Étendre la sélection pendant le drag
+  const handleMouseEnterMultiSelect = useCallback(
+    (day) => {
+      if (
+        isSingleDaySelectionLocked ||
+        !isMouseDownOnCalendarDayRef.current ||
+        !isDraggingMultiSelect ||
+        !dragStartDayForSelection ||
+        readOnly ||
+        isDraggingActivity ||
+        isDeletingActivityFlag
+      )
+        return;
+
+      const iStart = daysInMonth.findIndex((d) =>
+        isSameDay(d, dragStartDayForSelection)
+      );
+      const iEnd = daysInMonth.findIndex((d) => isSameDay(d, day));
+      if (iStart === -1 || iEnd === -1) return;
+
+      const [a, b] = iStart < iEnd ? [iStart, iEnd] : [iEnd, iStart];
+
+      const editableMode =
+        multiSelectType === "paid_leave" ? isPaidLeaveEditable : isCraEditable;
+
+      const sel = daysInMonth.slice(a, b + 1).filter((d) => {
+        const key = format(d, "yyyy-MM-dd");
+        const t = (activitiesByDay.get(key) || []).reduce(
+          (s, act) => s + (parseFloat(act.temps_passe) || 0),
+          0
+        );
+        // on bloque les jours non travaillés et ceux déjà à 1,00j
+        return editableMode && !isNonWorkingDay(d) && t < 1;
+      });
+
+      setTempSelectedDays(sel);
+    },
+    [
+      activitiesByDay,
+      daysInMonth,
+      dragStartDayForSelection,
+      isCraEditable,
+      isDeletingActivityFlag,
+      isDraggingActivity,
+      isDraggingMultiSelect,
+      isNonWorkingDay,
+      isPaidLeaveEditable,
+      isSingleDaySelectionLocked,
+      multiSelectType,
+      readOnly,
+    ]
+  );
+
+  // Fin de la multi-sélection (ouvre la modale si besoin)
+  const handleMouseUpMultiSelect = useCallback(() => {
+    if (isSingleDaySelectionLocked) return;
+    if (readOnly) {
+      localShowMessage("Lecture seule.", "info");
+      setTempSelectedDays([]);
+      return;
+    }
+
+    if (tempSelectedDays.length > 0) {
+      if (multiSelectType === "paid_leave" && !isPaidLeaveEditable) {
+        localShowMessage("Congés verrouillés.", "info");
+        setTempSelectedDays([]);
+        return;
+      }
+      if (multiSelectType === "activity" && !isCraEditable) {
+        localShowMessage("CRA verrouillé.", "info");
+        setTempSelectedDays([]);
+        return;
+      }
+
+      // Configure le filtre initial selon le mode
+      setInitialActivityTypeFilter(
+        multiSelectType === "paid_leave" ? "absence" : "activity"
+      );
+      setEditingActivity(null);
+      setSelectedDate(null);
+      setIsModalOpen(true);
+      // tempSelectedDays sera reset à la fermeture de la modale
+    }
+  }, [
+    isSingleDaySelectionLocked,
+    readOnly,
+    localShowMessage,
+    tempSelectedDays,
+    multiSelectType,
+    isPaidLeaveEditable,
+    isCraEditable,
+  ]);
+
+  // ——————————————————————————————————————————
+  // Reset du mois (supprime les brouillons/rejetées éditables)
+  // ——————————————————————————————————————————
+  const confirmResetMonth = useCallback(async () => {
+    if (readOnly) {
+      localShowMessage("Lecture seule : reset impossible.", "info");
+      return;
+    }
+
+    const toReset = activitiesForCurrentMonth.filter(
+      (a) =>
+        (a.status === "draft" || a.status === "rejected") &&
+        ((!absenceActivityTypeIds.has(String(a.type_activite)) && isCraEditable) ||
+          (absenceActivityTypeIds.has(String(a.type_activite)) &&
+            isPaidLeaveEditable))
+    );
+
+    if (toReset.length === 0) {
+      localShowMessage("Aucune activité brouillon/rejetée à supprimer.", "info");
+      return;
+    }
+
+    let ok = 0;
+    let ko = 0;
+
+    for (const a of toReset) {
+      try {
+        setIsDeletingActivityFlag(true);
+        if (deletionTimeoutRef.current) clearTimeout(deletionTimeoutRef.current);
+        await onDeleteActivity(a.id);
+        ok++;
+      } catch (e) {
+        ko++;
+      } finally {
+        deletionTimeoutRef.current = setTimeout(
+          () => setIsDeletingActivityFlag(false),
+          500
+        );
+      }
+    }
+
+    fetchActivitiesForMonth?.(currentMonth);
+    localShowMessage(
+      `Reset terminé : ${ok} supprimée(s), ${ko} échec(s).`,
+      ko ? "warning" : "success"
+    );
+  }, [
+    activitiesForCurrentMonth,
+    currentMonth,
+    fetchActivitiesForMonth,
+    isCraEditable,
+    isPaidLeaveEditable,
+    localShowMessage,
+    onDeleteActivity,
+    readOnly,
+    absenceActivityTypeIds,
+  ]);
+
+  const requestResetMonth = useCallback(() => {
+    if (readOnly) {
+      localShowMessage("Lecture seule : reset impossible.", "info");
+      return;
+    }
+    if (!isCraEditable && !isPaidLeaveEditable) {
+      localShowMessage(
+        "Impossible de réinitialiser : rapports verrouillés.",
+        "info"
+      );
+      return;
+    }
+    confirmResetMonth();
+  }, [confirmResetMonth, isCraEditable, isPaidLeaveEditable, localShowMessage, readOnly]);
+
+  // ——————————————————————————————————————————
+  // Soumission des rapports (CRA / Congés)
+  // ——————————————————————————————————————————
+  const sendActivities = useCallback(
+    async (activitiesToSubmit, reportType) => {
+      if (readOnly) {
+        localShowMessage("Lecture seule : envoi impossible.", "info");
+        return;
+      }
+      if (reportType === "cra" && !isCraEditable) {
+        localShowMessage("CRA verrouillé : envoi impossible.", "info");
+        return;
+      }
+      if (reportType === "paid_leave" && !isPaidLeaveEditable) {
+        localShowMessage("Congés verrouillés : envoi impossible.", "info");
+        return;
+      }
+      if (activitiesToSubmit.length === 0) {
+        localShowMessage(
+          `Aucune ${reportType === "cra" ? "activité CRA" : "absence"} à envoyer.`,
           "info"
         );
         return;
       }
 
-      setMultiSelectType((prevType) => {
-        const newType = prevType === "activity" ? "paid_leave" : "activity";
+      const monthIdx = isValid(currentMonth) ? currentMonth.getMonth() + 1 : -1;
+      const year = isValid(currentMonth) ? currentMonth.getFullYear() : -1;
+
+      const existing = monthlyReports.find(
+        (r) =>
+          String(r.user_id) === String(userId) &&
+          r.month === monthIdx &&
+          r.year === year &&
+          r.report_type === reportType
+      );
+      if (existing && !["draft", "rejected"].includes(existing.status)) {
         localShowMessage(
-          `Multi-selection mode: ${
-            newType === "activity" ? "Activity" : "Paid Leave"
-          } (click to toggle)`,
-          "info"
+          `Un rapport "${reportType}" est déjà au statut "${existing.status}".`,
+          "warning"
         );
-        console.log(
-          "[CraBoard] cycleMultiSelectMode was called. New mode:",
-          newType
+        return;
+      }
+
+      const ids = activitiesToSubmit.map((a) => a.id);
+      const totalDays = activitiesToSubmit.reduce(
+        (s, a) => s + (parseFloat(a.temps_passe) || 0),
+        0
+      );
+      const totalBillable = activitiesToSubmit
+        .filter((a) => {
+          const def = activityTypeDefinitions.find(
+            (d) => String(d.id) === String(a.type_activite)
+          );
+          return def?.is_billable;
+        })
+        .reduce((s, a) => s + (parseFloat(a.temps_passe) || 0), 0);
+
+      const reportData = {
+        user_id: userId,
+        userName: userFirstName,
+        month: monthIdx,
+        year,
+        total_days_worked: totalDays,
+        total_billable_days: totalBillable,
+        activities_snapshot: ids,
+        status: "pending_review",
+        submittedAt: new Date(),
+        report_type: reportType,
+      };
+
+      try {
+        await onSendMonthlyReport(reportData);
+        localShowMessage(`Rapport ${reportType} envoyé.`, "success");
+        fetchActivitiesForMonth?.(currentMonth);
+      } catch (err) {
+        console.error("send report error:", err);
+        localShowMessage(
+          `Échec envoi rapport ${reportType} : ${err.message}`,
+          "error"
         );
-        return newType;
-      });
-      setTempSelectedDays([]);
-      setIsModalOpen(false);
-      setEditingActivity(null);
-      setSelectedDate(new Date());
+      }
+    },
+    [
+      activityTypeDefinitions,
+      currentMonth,
+      fetchActivitiesForMonth,
+      localShowMessage,
+      monthlyReports,
+      onSendMonthlyReport,
+      readOnly,
+      userFirstName,
+      userId,
+      isCraEditable,
+      isPaidLeaveEditable,
+    ]
+  );
+
+  const requestSendCRA = useCallback(() => {
+    if (!isCraEditable) {
+      localShowMessage("CRA verrouillé : envoi impossible.", "info");
+      return;
+    }
+    const list = activitiesForCurrentMonth.filter(
+      (a) =>
+        !absenceActivityTypeIds.has(String(a.type_activite)) &&
+        (a.status === "draft" || a.status === "rejected")
+    );
+    if (!list.length) {
+      localShowMessage("Aucune activité CRA brouillon/rejetée ce mois.", "info");
+      return;
+    }
+    sendActivities(list, "cra");
+  }, [
+    activitiesForCurrentMonth,
+    isCraEditable,
+    localShowMessage,
+    sendActivities,
+    absenceActivityTypeIds,
+  ]);
+
+  const requestSendPaidLeaves = useCallback(() => {
+    if (!isPaidLeaveEditable) {
+      localShowMessage("Congés verrouillés : envoi impossible.", "info");
+      return;
+    }
+    const list = activitiesForCurrentMonth.filter(
+      (a) =>
+        absenceActivityTypeIds.has(String(a.type_activite)) &&
+        (a.status === "draft" || a.status === "rejected")
+    );
+    if (!list.length) {
+      localShowMessage("Aucun congé brouillon/rejeté ce mois.", "info");
+      return;
+    }
+    sendActivities(list, "paid_leave");
+  }, [
+    activitiesForCurrentMonth,
+    isPaidLeaveEditable,
+    localShowMessage,
+    sendActivities,
+    absenceActivityTypeIds,
+  ]);
+
+  // ——————————————————————————————————————————
+  // Changement de mois
+  // ——————————————————————————————————————————
+  const goToPreviousMonth = useCallback(() => {
+    setCurrentMonth((prev) => {
+      const next = subMonths(prev, 1);
+      onMonthChange?.(next);
+      return next;
+    });
+  }, [onMonthChange]);
+
+  const goToNextMonth = useCallback(() => {
+    setCurrentMonth((prev) => {
+      const next = addMonths(prev, 1);
+      onMonthChange?.(next);
+      return next;
+    });
+  }, [onMonthChange]);
+
+  const handleToggleSummaryReport = useCallback(() => {
+    setShowSummaryReport((prev) => {
+      const next = !prev;
+      setSummaryReportMonth(next ? currentMonth : null);
+      return next;
+    });
+  }, [currentMonth]);
+
+  const handleOpenMonthlyReportPreview = useCallback((reportData) => {
+    setMonthlyReportPreviewData(reportData);
+    setShowMonthlyReportPreview(true);
+  }, []);
+
+  const handleCloseMonthlyReportPreview = useCallback(() => {
+    setMonthlyReportPreviewData(null);
+    setShowMonthlyReportPreview(false);
+  }, []);
+
+  // ——————————————————————————————————————————
+  // Effets
+  // ——————————————————————————————————————————
+  useEffect(() => {
+    if (
+      propCurrentMonth instanceof Date &&
+      isValid(propCurrentMonth) &&
+      !isSameMonth(currentMonth, propCurrentMonth)
+    ) {
+      setCurrentMonth(startOfMonth(propCurrentMonth));
+    }
+    if (isValid(currentMonth)) {
+      fetchPublicHolidays(currentMonth.getFullYear());
+    }
+  }, [propCurrentMonth, currentMonth, fetchPublicHolidays]);
+
+  useEffect(() => {
+    const handleDragEnd = () => {
+      setIsDraggingActivity(false);
+      setDraggedActivity(null);
+      setIsValidDropTarget(false);
+    };
+
+    const handleGlobalMouseMove = (e) => {
+      if (isSingleDaySelectionLocked) return;
+
+      // Active la multi-sélection si mouvement > threshold
+      if (
+        isMouseDownOnCalendarDayRef.current &&
+        dragStartDayForSelection &&
+        !isDraggingMultiSelect
+      ) {
+        const dx = e.clientX - mouseDownCoordsRef.current.x;
+        const dy = e.clientY - mouseDownCoordsRef.current.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > DRAG_THRESHOLD) {
+          setIsDraggingMultiSelect(true);
+        }
+      }
+    };
+
+    const handleGlobalMouseUp = (e) => {
+      isMouseDownOnCalendarDayRef.current = false;
       setIsDraggingMultiSelect(false);
       setDragStartDayForSelection(null);
-      setInitialActivityTypeFilter(null); // Added here
-    }, [
-      readOnly, // Use global readOnly prop
-      setTempSelectedDays,
-      setIsModalOpen,
-      setEditingActivity,
-      setSelectedDate,
-      setIsDraggingMultiSelect,
-      setDragStartDayForSelection,
-      localShowMessage,
-      isSingleDaySelectionLocked, // Added as dependency
-      setInitialActivityTypeFilter // Added as dependency
-    ]);
 
-    const goToPreviousMonth = useCallback(() => {
-      setCurrentMonth((prevMonth) => {
-        const newMonth = subMonths(prevMonth, 1);
-        if (onMonthChange) {
-          onMonthChange(newMonth);
-        }
-        return newMonth;
-      });
-    }, [onMonthChange]);
+      if (isSingleDaySelectionLocked) return;
 
-    const goToNextMonth = useCallback(() => {
-      setCurrentMonth((prevMonth) => {
-        const newMonth = addMonths(prevMonth, 1);
-        if (onMonthChange) {
-          onMonthChange(newMonth);
-        }
-        return newMonth;
-      });
-    }, [onMonthChange]);
+      const dx = e.clientX - mouseDownCoordsRef.current.x;
+      const dy = e.clientY - mouseDownCoordsRef.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
-    const handleToggleSummaryReport = useCallback(() => {
-      setShowSummaryReport((prev) => {
-        const newState = !prev;
-        if (newState) {
-          setSummaryReportMonth(currentMonth);
-        } else {
-          setSummaryReportMonth(null);
-        }
-        return newState;
-      });
-    }, [currentMonth]);
-
-    const handleOpenMonthlyReportPreview = useCallback((reportData) => {
-      setMonthlyReportPreviewData(reportData);
-      setShowMonthlyReportPreview(true);
-    }, []);
-
-    const handleCloseMonthlyReportPreview = useCallback(() => {
-      setMonthlyReportPreviewData(null);
-      setShowMonthlyReportPreview(false);
-    }, []);
-
-    // --- Side Effects (useEffect) ---
-
-    useEffect(() => {
-      if (
-        propCurrentMonth instanceof Date &&
-        isValid(propCurrentMonth) &&
-        !isSameMonth(currentMonth, propCurrentMonth)
-      ) {
-        setCurrentMonth(startOfMonth(propCurrentMonth));
+      if (dist > DRAG_THRESHOLD) {
+        // drag confirmé
+        handleMouseUpMultiSelect();
+      } else if (dragStartDayForSelection) {
+        // simple click
+        handleDayClick(dragStartDayForSelection, e);
       }
-      if (isValid(currentMonth)) {
-        fetchPublicHolidays(currentMonth.getFullYear());
-      }
-    }, [propCurrentMonth, currentMonth, fetchPublicHolidays]);
+    };
 
-    useEffect(() => {
-      const handleDragEnd = () => {
-        setIsDraggingActivity(false);
-        setDraggedActivity(null);
-        setIsValidDropTarget(false);
-      };
+    document.addEventListener("dragend", handleDragEnd);
+    document.addEventListener("mouseup", handleGlobalMouseUp);
+    document.addEventListener("mousemove", handleGlobalMouseMove);
 
-      const handleGlobalMouseMove = (e) => {
-        // If single day selection mode is locked, ignore movements for multi-selection
-        if (isSingleDaySelectionLocked) {
-          return;
-        }
+    return () => {
+      document.removeEventListener("dragend", handleDragEnd);
+      document.removeEventListener("mouseup", handleGlobalMouseUp);
+      document.removeEventListener("mousemove", handleGlobalMouseMove);
+    };
+  }, [
+    dragStartDayForSelection,
+    handleDayClick,
+    handleMouseUpMultiSelect,
+    isDraggingMultiSelect,
+    isSingleDaySelectionLocked,
+  ]);
 
-        // If mouse button is down on a day and not already in drag mode
-        if (
-          isMouseDownOnCalendarDayRef.current &&
-          dragStartDayForSelection &&
-          !isDraggingMultiSelect
-        ) {
-          const distance = Math.sqrt(
-            Math.pow(e.clientX - mouseDownCoordsRef.current.x, 2) +
-              Math.pow(e.clientY - mouseDownCoordsRef.current.y, 2)
-          );
+  useEffect(() => {
+    if (!readOnly && typeof fetchActivitiesForMonth === "function") {
+      fetchActivitiesForMonth(currentMonth);
+    }
+  }, [currentMonth, fetchActivitiesForMonth, readOnly]);
 
-          // If movement exceeds threshold, activate drag mode
-          if (distance > DRAG_THRESHOLD) {
-            setIsDraggingMultiSelect(true);
-            // CraCalendar's onMouseEnter will now react to isDraggingMultiSelect being true
-            // and update tempSelectedDays as the mouse moves over day cells.
-          }
-        }
-      };
-
-      const handleGlobalMouseUp = (e) => {
-        // Reset isMouseDownOnCalendarDayRef at the end of any global mouseup event
-        isMouseDownOnCalendarDayRef.current = false;
-        // Always reset multi-selection drag state at the end of mouseup
-        setIsDraggingMultiSelect(false);
-        setDragStartDayForSelection(null);
-
-        // If single day selection mode is locked, do not process multi-selection events
-        if (isSingleDaySelectionLocked) {
-          // Clean up multi-selection states just in case (safety)
-          // tempSelectedDays is already handled by handleCloseActivityModal
-          return;
-        }
-
-        // Calculate movement distance to differentiate click and drag
-        const distance = Math.sqrt(
-          Math.pow(e.clientX - mouseDownCoordsRef.current.x, 2) +
-            Math.pow(e.clientY - mouseDownCoordsRef.current.y, 2)
-        );
-
-        // Determine if it was a drag or a click
-        // If isDraggingMultiSelect was true before this mouseUp, or if distance exceeds threshold
-        if (distance > DRAG_THRESHOLD) {
-          // It was a confirmed drag (or a click that moved beyond threshold)
-          handleMouseUpMultiSelect(); // Process multi-selection
-        } else if (dragStartDayForSelection) {
-          // It was a simple click on a day cell (movement below threshold)
-          // Call handleDayClick with the initially clicked day
-          handleDayClick(dragStartDayForSelection, e);
-        }
-
-        // tempSelectedDays is NOT reset here, it's handled by handleCloseActivityModal or handleMouseUpMultiSelect
-      };
-
-      document.addEventListener("dragend", handleDragEnd);
-      document.addEventListener("mouseup", handleGlobalMouseUp);
-      document.addEventListener("mousemove", handleGlobalMouseMove); // Add global movement listener
-
-      return () => {
-        document.removeEventListener("dragend", handleDragEnd);
-        document.removeEventListener("mouseup", handleGlobalMouseUp);
-        document.removeEventListener("mousemove", handleGlobalMouseMove); // Cleanup listener
-      };
-    }, [
-      handleMouseUpMultiSelect,
-      handleDayClick, // Added as dependency because it's called here
-      isDraggingMultiSelect, // isDraggingMultiSelect is a dependency because we read it here.
-      isMouseDownOnCalendarDayRef,
-      mouseDownCoordsRef,
-      dragStartDayForSelection,
-      setIsDraggingMultiSelect, // Added as dependency because we update it here.
-      setDragStartDayForSelection, // Added as dependency because we update it here.
-      DRAG_THRESHOLD, // Added as dependency
-      isSingleDaySelectionLocked, // Added as dependency
-    ]); // Dependencies updated
-
-    useEffect(() => {
-      if (
-        !readOnly && // Use global readOnly prop here
-        fetchActivitiesForMonth &&
-        typeof fetchActivitiesForMonth === "function"
-      ) {
-        console.log(
-          "[CraBoard] useEffect: Calling fetchActivitiesForMonth for",
-          isValid(currentMonth)
-            ? format(currentMonth, "MMMM yyyy")
-            : "Invalid Date"
-        );
-        fetchActivitiesForMonth(currentMonth);
-      }
-    }, [currentMonth, fetchActivitiesForMonth, readOnly]); // 'readOnly' dependency added
-
+  // ——————————————————————————————————————————
+  // Indicateurs récap
+  // ——————————————————————————————————————————
   const totalWorkingDaysInMonth = useMemo(() => {
     if (!isValid(currentMonth)) return 0;
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
-    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-    // Ensure the result is always a number
-    return (
-      days.filter(
-        (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
-      ).length || 0
-    ); // Added || 0
+    const start = startOfMonth(currentMonth);
+    const end = endOfMonth(currentMonth);
+    const days = eachDayOfInterval({ start, end });
+    return days.filter(
+      (d) => !isWeekend(d, { weekStartsOn: 1 }) && !isPublicHoliday(d)
+    ).length;
   }, [currentMonth, isPublicHoliday]);
 
-  const totalActivitiesTimeInMonth = useMemo(() => {
-    // Ensure the result is always a number
-    return (
+  const totalActivitiesTimeInMonth = useMemo(
+    () =>
       activitiesForCurrentMonth.reduce(
-        (sum, activity) => sum + (parseFloat(activity.temps_passe) || 0),
+        (s, a) => s + (parseFloat(a.temps_passe) || 0),
         0
-      ) || 0
-    ); // Added || 0
-  }, [activitiesForCurrentMonth]);
+      ),
+    [activitiesForCurrentMonth]
+  );
 
-  const timeDifference = useMemo(() => {
-    // Ensure operands are numbers before calculation
-    const diff =
-      (totalActivitiesTimeInMonth || 0) - (totalWorkingDaysInMonth || 0);
-    return diff.toFixed(2);
-  }, [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]);
+  const timeDifference = useMemo(
+    () => (totalActivitiesTimeInMonth - totalWorkingDaysInMonth).toFixed(2),
+    [totalActivitiesTimeInMonth, totalWorkingDaysInMonth]
+  );
 
+  // ——————————————————————————————————————————
+  // Rendu
+  // ——————————————————————————————————————————
   return (
-    <div
-      ref={craBoardRef}
-      className="flex flex-col h-full bg-white rounded-lg shadow-md p-4"
-      // Removed onMouseUp={handleDragEndActivity} and onMouseLeave={handleDragEndActivity}
-      // as the global event listeners in useEffect handle this.
-    >
+    <div className="flex flex-col h-full bg-white rounded-xl shadow-md p-4">
+      {/* Styles scrollbar (léger) */}
       <style>
         {`
-            body {
-              font-family: 'Inter', sans-serif;
-            }
-            .custom-scrollbar::-webkit-scrollbar {
-              width: 4px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-track {
-              background: #f1f1f1;
-              border-radius: 2px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb {
-              background: #888;
-              border-radius: 2px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-              background: #555;
-            }
-          `}
+          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 2px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: #bdbdbd; border-radius: 2px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9e9e9e; }
+        `}
       </style>
-      <h2 className="text-3xl font-extrabold text-gray-900 mb-6 text-center">
-        Your CRA Calendar -{" "}
-        {format(currentMonth, "MMMM yyyy", { locale: fr })}
+
+      <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4 sm:mb-6 text-center">
+        Calendrier de {userFirstName} — {format(currentMonth, "MMMM yyyy", { locale: fr })}
       </h2>
 
-      {/* Read-only banner */}
+      {/* Bandeau read-only */}
       {readOnly && (
-        <div
-          className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded relative mb-4"
-          role="alert"
-        >
-          <strong className="font-bold">Read-Only Mode:</strong>
-          <span className="block sm:inline ml-2">
-            You are viewing a CRA in read-only mode. No modifications are
-            possible.
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded mb-4">
+          <strong className="font-semibold">Mode lecture seule :</strong>
+          <span className="ml-2">
+            vous consultez un CRA sans pouvoir le modifier.
           </span>
         </div>
       )}
 
-
-      {/* Calendar header */}
+      {/* Contrôles calendrier */}
       <CraControls
         currentMonth={currentMonth}
         userFirstName={userFirstName}
         craReportStatus={craReportStatus}
         paidLeaveReportStatus={paidLeaveReportStatus}
-        isCraEditable={isCraEditable} // Pass specific CRA editability
-        isPaidLeaveEditable={isPaidLeaveEditable} // Pass specific Paid Leave editability
+        isCraEditable={isCraEditable}
+        isPaidLeaveEditable={isPaidLeaveEditable}
         goToPreviousMonth={goToPreviousMonth}
         goToNextMonth={goToNextMonth}
         handleToggleSummaryReport={handleToggleSummaryReport}
         showSummaryReport={showSummaryReport}
-        requestSendCRA={requestSendCRA} // Calls requestSendCRA directly
-        requestSendPaidLeaves={requestSendPaidLeaves} // Calls requestSendPaidLeaves directly
+        requestSendCRA={requestSendCRA}
+        requestSendPaidLeaves={requestSendPaidLeaves}
         requestResetMonth={requestResetMonth}
         craDraftsCount={
           activitiesForCurrentMonth.filter(
             (a) =>
-              !absenceActivityTypeIds.has(String(a.type_activite)) && // Filter non-absences
+              !absenceActivityTypeIds.has(String(a.type_activite)) &&
               (a.status === "draft" || a.status === "rejected")
           ).length
         }
         paidLeaveDraftsCount={
           activitiesForCurrentMonth.filter(
             (a) =>
-              absenceActivityTypeIds.has(String(a.type_activite)) && // Filter absences
+              absenceActivityTypeIds.has(String(a.type_activite)) &&
               (a.status === "draft" || a.status === "rejected")
           ).length
         }
         multiSelectType={multiSelectType}
-        onCycleMultiSelectMode={cycleMultiSelectMode}
-        isAnyReportEditable={isAnyReportEditable} // Pass global editability flag
-        readOnly={readOnly} // Pass the global readOnly status for month navigation buttons and multi-select toggle
+        onCycleMultiSelectMode={() =>
+          readOnly
+            ? localShowMessage(
+              "Changement de mode désactivé en lecture seule.",
+              "info"
+            )
+            : setMultiSelectType((t) => (t === "activity" ? "paid_leave" : "activity"))
+        }
+        isAnyReportEditable={isAnyReportEditable}
+        readOnly={readOnly}
       />
 
-      {/* Display report statuses for the current month */}
-      {/* CraSummary should be displayed even in read-only mode to see totals */}
+      {/* Résumé mensuel + statut rapport */}
       <CraSummary
         craReport={craReport}
         paidLeaveReport={paidLeaveReport}
         isCraEditable={isCraEditable}
         isPaidLeaveEditable={isPaidLeaveEditable}
-        onSendMonthlyReport={sendActivities} // Pass sendActivities directly
-        rejectionReason={overallRejectionReason} // Use global rejection reason
+        onSendMonthlyReport={sendActivities}
+        rejectionReason={overallRejectionReason}
         totalWorkingDaysInMonth={totalWorkingDaysInMonth}
         totalActivitiesTimeInMonth={totalActivitiesTimeInMonth}
         timeDifference={timeDifference}
       />
 
-      {/* Section to display CRA and Paid Leave report statuses */}
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
-        <h3 className="text-lg font-semibold text-blue-800 mb-2">
-          Monthly Report Status
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* CRA Report Status */}
-          <div className="bg-white p-3 rounded-md shadow-sm border border-gray-200">
-            <p className="font-medium text-gray-700">CRA Report :</p>
-            {craReportStatus === "validated" && (
-              <p className="text-green-600 font-semibold">Validated ✅</p>
-            )}
-            {craReportStatus === "pending_review" && (
-              <p className="text-yellow-600 font-semibold">
-                Pending Review ⏳
-              </p>
-            )}
-            {craReportStatus === "rejected" && (
-              <div className="text-red-600 font-semibold">
-                <p>
-                  Rejected ❌
-                  {craReport?.rejection_reason && ( // Use craReport.rejection_reason
-                    <span className="text-sm font-normal text-red-700 ml-2">
-                      (Reason : {craReport.rejection_reason})
-                    </span>
-                  )}
-                </p>
-              </div>
-            )}
-            {craReportStatus === "finalized" && (
-              <p className="text-purple-600 font-semibold">Finalized ✔️</p>
-            )}
-            {craReportStatus === "empty" && (
-              <p className="text-gray-500 italic">
-                No CRA report for this month.
-              </p>
-            )}
-            {craReportStatus === "draft" && (
-              <p className="text-blue-500 italic">CRA report in draft.</p>
-            )}
-          </div>
-
-          {/* Paid Leave Report Status */}
-          <div className="bg-white p-3 rounded-md shadow-sm border border-gray-200">
-            <p className="font-medium text-gray-700">Paid Leave Report :</p>
-            {paidLeaveReportStatus === "validated" && (
-              <p className="text-green-600 font-semibold">Validated ✅</p>
-            )}
-            {paidLeaveReportStatus === "pending_review" && (
-              <p className="text-yellow-600 font-semibold">
-                Pending Review ⏳
-              </p>
-            )}
-            {paidLeaveReportStatus === "rejected" && (
-              <div className="text-red-600 font-semibold">
-                <p>
-                  Rejected ❌
-                  {paidLeaveReport?.rejection_reason && ( // Use paidLeaveReport.rejection_reason
-                    <span className="text-sm font-normal text-red-700 ml-2">
-                      (Reason : {paidLeaveReport.rejection_reason})
-                    </span>
-                  )}
-                </p>
-              </div>
-            )}
-            {paidLeaveReportStatus === "finalized" && (
-              <p className="text-purple-600 font-semibold">Finalized ✔️</p>
-            )}
-            {paidLeaveReportStatus === "empty" && (
-              <p className="text-gray-500 italic">
-                No paid leave report for this month.
-              </p>
-            )}
-            {paidLeaveReportStatus === "draft" && (
-              <p className="text-blue-500 italic">
-                Paid leave report in draft.
-              </p>
-            )}
-          </div>
-        </div>
+      {/* Grille calendrier */}
+      <div className="mt-4">
+        <CraCalendar
+          currentMonth={currentMonth}
+          activitiesByDay={activitiesByDay}
+          activityTypeDefinitions={activityTypeDefinitions}
+          clientDefinitions={clientDefinitions}
+          isPublicHoliday={isPublicHoliday}
+          onDayClick={handleDayClick}
+          onActivityClick={handleActivityClick}
+          tempSelectedDays={tempSelectedDays}
+          onMouseDown={handleMouseDownMultiSelect}
+          onMouseEnter={handleMouseEnterMultiSelect}
+          // onMouseUp est global
+          readOnly={readOnly}
+          isCraEditable={isCraEditable}
+          isPaidLeaveEditable={isPaidLeaveEditable}
+          requestDeleteFromCalendar={requestDeleteFromCalendar}
+          showMessage={localShowMessage}
+          userId={userId}
+          userFirstName={userFirstName}
+          paidLeaveTypeId={paidLeaveTypeId}
+          onDragStartActivity={handleDragStartActivity}
+          onDragOverDay={handleDragOverDay}
+          onDropActivity={handleDropActivity}
+          isDraggingActivity={isDraggingActivity}
+          isDropTargetValid={isValidDropTarget}
+          multiSelectType={multiSelectType}
+          isDragging={isDraggingMultiSelect}
+          isSingleDaySelectionLocked={isSingleDaySelectionLocked}
+        />
       </div>
 
-      {/* Activity Modal (conditionally rendered) */}
+      {/* Modal activité */}
       {isModalOpen && (
         <ActivityModal
           onClose={handleCloseActivityModal}
           onSave={handleSaveActivity}
-          onDelete={confirmDeleteActivity} // confirmDeleteActivity is now called directly
+          onDelete={confirmDeleteActivity}
           activity={editingActivity}
           initialDate={selectedDate}
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           showMessage={localShowMessage}
-          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)} // Use global readOnly prop or if no report is editable
-          // paidLeaveTypeId={paidLeaveTypeId} // This prop is no longer strictly necessary if absenceActivityTypeIds is used
+          readOnly={readOnly || (!isCraEditable && !isPaidLeaveEditable)}
           selectedDaysForMultiAdd={tempSelectedDays}
           isNonWorkingDay={isNonWorkingDay}
           activitiesByDay={activitiesByDay}
-          initialActivityTypeFilter={initialActivityTypeFilter} // PASSED FOR INITIAL FILTERING
-          absenceActivityTypeIds={absenceActivityTypeIds} // PASSED FOR INITIAL FILTERING
+          initialActivityTypeFilter={initialActivityTypeFilter}
+          absenceActivityTypeIds={absenceActivityTypeIds}
         />
       )}
 
-      {/* Calendar Grid */}
-      <CraCalendar
-        currentMonth={currentMonth}
-        activitiesByDay={activitiesByDay}
-        activityTypeDefinitions={activityTypeDefinitions}
-        clientDefinitions={clientDefinitions}
-        isPublicHoliday={isPublicHoliday}
-        onDayClick={handleDayClick} // Passed for single clicks (called by handleGlobalMouseUp)
-        onActivityClick={handleActivityClick}
-        tempSelectedDays={tempSelectedDays}
-        onMouseDown={handleMouseDownMultiSelect} // Start drag detection
-        onMouseEnter={handleMouseEnterMultiSelect} // Extend selection if in drag mode
-        // onMouseUp is handled globally
-        readOnly={readOnly} // Pass global readOnly prop
-        isCraEditable={isCraEditable}
-        isPaidLeaveEditable={isPaidLeaveEditable}
-        requestDeleteFromCalendar={requestDeleteFromCalendar} // Calls delete directly
-        showMessage={localShowMessage}
-        userId={userId}
-        userFirstName={userFirstName}
-        paidLeaveTypeId={paidLeaveTypeId}
-        onDragStartActivity={handleDragStartActivity}
-        onDragOverDay={handleDragOverDay}
-        onDropActivity={handleDropActivity}
-        isDraggingActivity={isDraggingActivity}
-        isDropTargetValid={isValidDropTarget}
-        multiSelectType={multiSelectType}
-        isDragging={isDraggingMultiSelect}
-        paidLeaveTypeId={paidLeaveTypeId}
-        isSingleDaySelectionLocked={isSingleDaySelectionLocked} // NEW: Pass state to calendar
-      />
-
-      {/* Monthly Report Preview Modal */}
+      {/* Modal aperçu rapport */}
       {showMonthlyReportPreview && monthlyReportPreviewData && (
         <MonthlyReportPreviewModal
           isOpen={showMonthlyReportPreview}
@@ -2547,27 +1815,26 @@ setInitialActivityTypeFilter(initialFilter);
         />
       )}
 
-      {/* Summary Report Modal */}
+      {/* Modal résumé global */}
       {showSummaryReport && summaryReportMonth && (
         <SummaryReport
           isOpen={showSummaryReport}
           onClose={handleToggleSummaryReport}
           month={summaryReportMonth}
-          userId={userId} // Is userId used in SummaryReport? If not, maybe remove it.
+          userId={userId}
           activities={activitiesForCurrentMonth}
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
           showMessage={localShowMessage}
           onOpenMonthlyReportPreview={handleOpenMonthlyReportPreview}
           readOnly={readOnly}
-          // --- ADD/CHECK THESE PROPS ---
-          publicHolidays={publicHolidays.map(d => format(d, 'yyyy-MM-dd'))} // <--- VERY IMPORTANT: Pass formatted public holidays
+          publicHolidays={publicHolidays.map((d) => format(d, "yyyy-MM-dd"))}
           craReportStatus={craReportStatus}
           paidLeaveReportStatus={paidLeaveReportStatus}
           craReport={craReport}
           paidLeaveReport={paidLeaveReport}
-          userFirstName={userFirstName} 
-          />
+          userFirstName={userFirstName}
+        />
       )}
     </div>
   );
