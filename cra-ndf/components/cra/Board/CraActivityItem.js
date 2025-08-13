@@ -1,9 +1,57 @@
-// components/cra/CraActivityItem.js
 "use client";
+
+/**
+ * CraActivityItem
+ * ----------------
+ * Petit “badge” affiché dans une case du calendrier (CraCalendar).
+ * Affiche :
+ *  - le type d’activité (+ durée), le client, quelques indicateurs (facturable ✔ / ✖)
+ *  - une pastille de statut (F/V/A/R) quand l’activité est verrouillée
+ *  - un bouton suppression (poubelle) au survol si modifiable
+ *  - supporte le drag & drop (déplacement sur une autre date) lorsque l’activité est éditable
+ *
+ * Entrées importantes :
+ *  - activity : l’activité (date_activite, type_activite, client_id, temps_passe, etc.)
+ *  - activityTypeDefinitions / clientDefinitions : tables de référence pour résoudre libellés/couleurs
+ *  - isCraEditable / isPaidLeaveEditable : droits d’édition selon le statut des rapports
+ *  - readOnly : lecture seule globale (ex: modale historique)
+ *
+ * Perf / UX :
+ *  - React.memo + détection fine de props pour éviter des re-renders inutiles
+ *  - useMemo pour calculer labels/styles/flags
+ *  - Comportement robuste pour détecter les absences (Congés payés & co)
+ */
 
 import React, { useCallback, useMemo } from "react";
 
-export default function CraActivityItem({
+/* ──────────────────────────────────────────────────────────────────────────────
+ * Helpers
+ * ──────────────────────────────────────────────────────────────────────────────*/
+
+/** Normalise une valeur en string (ou null) pour comparer des IDs. */
+const s = (v) => (v === null || v === undefined ? null : String(v));
+
+/** Essaye plusieurs champs possibles (name/label/nom_client...) et retourne le 1er défini. */
+const pickLabel = (...candidates) => {
+  for (const c of candidates) {
+    const v = typeof c === "string" ? c : c ?? null;
+    if (v && String(v).trim()) return String(v);
+  }
+  return null;
+};
+
+/** Icône ✓ / ✗ (facturable) — petit helper pour limiter le JSX dans le return. */
+const BillableMark = ({ isBillable }) => (
+  <span className={isBillable ? "ml-1 text-green-600" : "ml-1 text-red-600"} title={isBillable ? "Facturable" : "Non facturable"}>
+    {isBillable ? "✔" : "✖"}
+  </span>
+);
+
+/* ──────────────────────────────────────────────────────────────────────────────
+ * Composant
+ * ──────────────────────────────────────────────────────────────────────────────*/
+
+function CraActivityItemBase({
   activity,
   activityTypeDefinitions,
   clientDefinitions,
@@ -16,186 +64,225 @@ export default function CraActivityItem({
   isCraEditable,
   isPaidLeaveEditable,
   paidLeaveTypeId,
-  onDragStartActivity, // <- handler drag (via CraBoard)
+  onDragStartActivity, // fourni par CraBoard
 }) {
-  // --- Résolution type & client depuis defs + valeurs DB + fallback ---
-  const typeDef = useMemo(
-    () =>
-      activityTypeDefinitions.find(
-        (t) => String(t.id) === String(activity.type_activite)
-      ),
-    [activity.type_activite, activityTypeDefinitions]
-  );
+  /* ────────────────────────────────────────────────────────────────────────
+   * Résolution définitions (type & client)
+   * ────────────────────────────────────────────────────────────────────────*/
+  const typeDef = useMemo(() => {
+    const id = s(activity?.type_activite);
+    if (!id) return undefined;
+    return activityTypeDefinitions.find((t) => s(t?.id) === id);
+  }, [activity?.type_activite, activityTypeDefinitions]);
 
-  const clientDef = useMemo(
-    () =>
-      clientDefinitions.find(
-        (c) => String(c.id) === String(activity.client_id)
-      ),
-    [activity.client_id, clientDefinitions]
-  );
+  const clientDef = useMemo(() => {
+    const id = s(activity?.client_id);
+    if (!id) return undefined;
+    return clientDefinitions.find((c) => s(c?.id) === id);
+  }, [activity?.client_id, clientDefinitions]);
 
-  // Paid leave / absence detection (plus robuste)
+  /* ────────────────────────────────────────────────────────────────────────
+   * Détection “absence” (congés payés & co)
+   *   - via id égal au type Congé Payé détecté par CraBoard
+   *   - via __kind remonté par l’agrégation (CP / paid_leave)
+   *   - via drapeau is_absence
+   *   - via code/type "cp" / "paid_leave" si présent
+   * ────────────────────────────────────────────────────────────────────────*/
   const isPaidLeaveActivity = useMemo(() => {
-    const fromId = String(activity.type_activite) === String(paidLeaveTypeId);
-    const fromKind = activity.__kind === "CP" || activity.__kind === "paid_leave";
-    const fromAbsenceFlag = activity.is_absence === true;
-    const code = (typeDef?.code || "").toString().toLowerCase();
+    const fromId = s(activity?.type_activite) === s(paidLeaveTypeId);
+    const fromKind = activity?.__kind === "CP" || activity?.__kind === "paid_leave";
+    const fromAbsenceFlag = activity?.is_absence === true;
+    const code = String(typeDef?.code || "").toLowerCase();
     const fromCode = code === "cp" || code === "paid_leave";
     return fromId || fromKind || fromAbsenceFlag || fromCode;
-  }, [activity.type_activite, activity.__kind, activity.is_absence, paidLeaveTypeId, typeDef?.code]);
+  }, [activity?.type_activite, activity?.__kind, activity?.is_absence, paidLeaveTypeId, typeDef?.code]);
 
-  // Labels (ordre de confiance : defs -> valeurs enrichies -> valeurs DB -> fallback)
-  const typeLabel =
-    typeDef?.name ||
-    activity.display_type_label ||     // injecté par CraDayCell (patch précédent)
-    activity.activityTypeName ||       // depuis la pipeline d'agrégation Mongo
-    activity.type_label ||             // éventuellement calculé côté history
-    (isPaidLeaveActivity ? "Congés payés" : "Activité");
+  /* ────────────────────────────────────────────────────────────────────────
+   * Libellés (ordre de confiance : defs -> champs enrichis -> DB -> fallback)
+   * ────────────────────────────────────────────────────────────────────────*/
+  const typeLabel = useMemo(() => {
+    return (
+      pickLabel(
+        typeDef?.name,
+        activity?.display_type_label, // injecté côté calendrier
+        activity?.activityTypeName,   // éventuelle jointure côté API
+        activity?.type_label
+      ) || (isPaidLeaveActivity ? "Congés payés" : "Activité")
+    );
+  }, [typeDef?.name, activity?.display_type_label, activity?.activityTypeName, activity?.type_label, isPaidLeaveActivity]);
 
-  const clientLabel =
-    clientDef?.nom_client ||
-    activity.display_client_label ||   // injecté par CraDayCell (patch précédent)
-    activity.clientName ||             // depuis la pipeline d'agrégation Mongo
-    activity.client_label ||           // éventuellement côté history
-    "Non attribué";
+  const clientLabel = useMemo(() => {
+    return (
+      pickLabel(
+        clientDef?.name,       // format le plus courant
+        clientDef?.nom_client, // certains schémas
+        clientDef?.label,
+        activity?.display_client_label,
+        activity?.clientName,
+        activity?.client_label
+      ) || "Non attribué"
+    );
+  }, [clientDef?.name, clientDef?.nom_client, clientDef?.label, activity?.display_client_label, activity?.clientName, activity?.client_label]);
 
-  // Temps passé (format compact)
-  const timeSpentValue = parseFloat(activity.temps_passe);
-  const timeSpentLabel = Number.isFinite(timeSpentValue) ? `${timeSpentValue}j` : "";
-  const displayLabel = `${typeLabel}${timeSpentLabel ? ` (${timeSpentLabel})` : ""}`;
+  /* ────────────────────────────────────────────────────────────────────────
+   * Valeurs calculées / styles
+   * ────────────────────────────────────────────────────────────────────────*/
+  const timeSpentValue = useMemo(() => {
+    const n = parseFloat(activity?.temps_passe);
+    return Number.isFinite(n) ? n : null;
+  }, [activity?.temps_passe]);
 
-  // Éditabilité
-  const canModifyActivity = useCallback(() => {
-    if (String(activity.user_id) !== String(userId)) return false;
-
-    const isActivityStatusEditable = ["draft", "rejected"].includes(activity.status);
-    if (!isActivityStatusEditable) return false;
-
-    const isCRAActivity = !isPaidLeaveActivity;
-    if (isCRAActivity && !isCraEditable) return false;
-    if (isPaidLeaveActivity && !isPaidLeaveEditable) return false;
-
-    return true;
-  }, [activity, userId, isCraEditable, isPaidLeaveEditable, isPaidLeaveActivity]);
+  const displayLabel = useMemo(() => {
+    return `${typeLabel}${timeSpentValue ? ` (${timeSpentValue}j)` : ""}`;
+  }, [typeLabel, timeSpentValue]);
 
   // Couleurs par type
   const typeColorClass = useMemo(() => {
     if (isPaidLeaveActivity) return "bg-red-200 text-red-800";
-    if (activity.is_absence) return "bg-orange-200 text-orange-800";
+    if (activity?.is_absence) return "bg-orange-200 text-orange-800";
     if (typeDef?.is_overtime) return "bg-purple-200 text-purple-800";
-    // fallback CRA normal
-    return "bg-lime-200 text-lime-800";
-  }, [isPaidLeaveActivity, activity.is_absence, typeDef?.is_overtime]);
+    return "bg-lime-200 text-lime-800"; // CRA “classique”
+  }, [isPaidLeaveActivity, activity?.is_absence, typeDef?.is_overtime]);
 
-  // Flags de la définition (fallback sur champs DB si fournis)
-  const isBillable = (typeDef?.is_billable ?? activity.is_billable) || false;
-  const requiresClient = (typeDef?.requires_client ?? activity.requires_client) || false;
-  const isOvertime = (typeDef?.is_overtime ?? activity.is_overtime) || false;
+  // Drapeaux issus de la définition (fallback sur le document si présent)
+  const isBillable = (typeDef?.is_billable ?? activity?.is_billable) || false;
+  const requiresClient = (typeDef?.requires_client ?? activity?.requires_client) || false;
+  const isOvertime = (typeDef?.is_overtime ?? activity?.is_overtime) || false;
 
-  const overrideLabel = activity.override_non_working_day ? " (Dérogation)" : "";
+  const overrideLabel = activity?.override_non_working_day ? " (Dérogation)" : "";
 
-  // Statut visuel
-  let statusColorClass = "";
-  let statusDisplayChar = "";
-  let statusTitle = "";
+  // Pastille statut
+  const { statusColorClass, statusDisplayChar, statusTitle } = useMemo(() => {
+    switch (activity?.status) {
+      case "finalized":
+        return { statusColorClass: "bg-green-300 text-green-900", statusDisplayChar: "F", statusTitle: "Finalisé" };
+      case "validated":
+        return { statusColorClass: "bg-purple-300 text-purple-900", statusDisplayChar: "V", statusTitle: "Validé" };
+      case "pending_review":
+        return { statusColorClass: "bg-blue-300 text-blue-900", statusDisplayChar: "A", statusTitle: "En attente de révision" };
+      case "rejected":
+        return { statusColorClass: "bg-red-300 text-red-900", statusDisplayChar: "R", statusTitle: "Rejeté" };
+      default:
+        return { statusColorClass: "bg-gray-300 text-gray-800", statusDisplayChar: "", statusTitle: "Brouillon" };
+    }
+  }, [activity?.status]);
 
-  switch (activity.status) {
-    case "finalized":
-      statusColorClass = "bg-green-300 text-green-900";
-      statusDisplayChar = "F";
-      statusTitle = "Finalisé";
-      break;
-    case "validated":
-      statusColorClass = "bg-purple-300 text-purple-900";
-      statusDisplayChar = "V";
-      statusTitle = "Validé";
-      break;
-    case "pending_review":
-      statusColorClass = "bg-blue-300 text-blue-900";
-      statusDisplayChar = "A";
-      statusTitle = "En attente de révision";
-      break;
-    case "rejected":
-      statusColorClass = "bg-red-300 text-red-900";
-      statusDisplayChar = "R";
-      statusTitle = "Rejeté";
-      break;
-    default:
-      statusColorClass = "bg-gray-300 text-gray-800";
-      statusDisplayChar = "";
-      statusTitle = "Brouillon";
-      break;
-  }
-
-  const isActivityLockedVisually = useMemo(
-    () => ["finalized", "validated", "pending_review"].includes(activity.status),
-    [activity.status]
+  const isLocked = useMemo(
+    () => ["finalized", "validated", "pending_review"].includes(activity?.status),
+    [activity?.status]
   );
 
-  const isDraggable = canModifyActivity() && !readOnly;
+  /* ────────────────────────────────────────────────────────────────────────
+   * Droits & interactions
+   * ────────────────────────────────────────────────────────────────────────*/
+  const canModifyActivity = useCallback(() => {
+    // propriétaire uniquement
+    if (s(activity?.user_id) !== s(userId)) return false;
+    // statut modifiable
+    if (!["draft", "rejected"].includes(activity?.status)) return false;
 
-  return (
-    <div
-      className={`relative text-xs px-1 py-0.5 rounded-md mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis
-                  ${typeColorClass} ${isActivityLockedVisually ? "opacity-70" : ""}
-                  ${isDraggable ? "cursor-grab active:cursor-grabbing hover:shadow-md" : "cursor-not-allowed opacity-60"}
-                  group cra-activity-item`}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!readOnly && canModifyActivity()) {
-          handleActivityClick(activity);
-        } else {
-          showMessage?.("Cette activité n'est pas modifiable.", "info");
-        }
-      }}
-      draggable={isDraggable}
-      onDragStart={(e) => {
-        e.stopPropagation();
-        if (isDraggable && onDragStartActivity) {
-          onDragStartActivity(e, activity);
-        } else {
-          e.preventDefault();
-        }
-      }}
-      title={`Client: ${clientLabel}
+    // droits selon type (CRA vs Absence)
+    const isCRA = !isPaidLeaveActivity;
+    if (isCRA && !isCraEditable) return false;
+    if (!isCRA && !isPaidLeaveEditable) return false;
+
+    return true;
+  }, [activity?.user_id, activity?.status, userId, isCraEditable, isPaidLeaveEditable, isPaidLeaveActivity]);
+
+  const isDraggable = !readOnly && canModifyActivity();
+
+  const onClickItem = useCallback(
+    (e) => {
+      e.stopPropagation();
+      if (!readOnly && canModifyActivity()) {
+        handleActivityClick?.(activity);
+      } else {
+        showMessage?.("Cette activité n'est pas modifiable.", "info");
+      }
+    },
+    [readOnly, canModifyActivity, handleActivityClick, activity, showMessage]
+  );
+
+  const onStartDrag = useCallback(
+    (e) => {
+      e.stopPropagation();
+      if (isDraggable && onDragStartActivity) {
+        onDragStartActivity(e, activity);
+      } else {
+        e.preventDefault();
+      }
+    },
+    [isDraggable, onDragStartActivity, activity]
+  );
+
+  const onDelete = useCallback(
+    (e) => {
+      e.stopPropagation();
+      requestDeleteFromCalendar?.(activity?.id, e);
+    },
+    [requestDeleteFromCalendar, activity?.id]
+  );
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * Title (tooltip) — information compacte au survol
+   * ────────────────────────────────────────────────────────────────────────*/
+  const titleAttr = useMemo(() => {
+    const t = timeSpentValue ? `${timeSpentValue}j` : "N/A";
+    const desc = activity?.description_activite || "N/A";
+    return `Client: ${clientLabel}
 Type: ${typeLabel}
-Temps: ${timeSpentLabel || "N/A"}
-Description: ${activity.description_activite || "N/A"}${overrideLabel ? "\nDérogation jour non ouvrable" : ""
-        }
+Temps: ${t}
+Description: ${desc}${overrideLabel ? "\nDérogation jour non ouvrable" : ""}
 Statut: ${statusTitle}
 Facturable: ${isBillable ? "Oui" : "Non"}
 Client requis: ${requiresClient ? "Oui" : "Non"}
 Heures sup: ${isOvertime ? "Oui" : "Non"}
-Utilisateur: ${userFirstName || "N/A"}`}
+Utilisateur: ${userFirstName || "N/A"}`;
+  }, [clientLabel, typeLabel, timeSpentValue, activity?.description_activite, overrideLabel, statusTitle, isBillable, requiresClient, isOvertime, userFirstName]);
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * Rendu
+   * ────────────────────────────────────────────────────────────────────────*/
+  return (
+    <div
+      className={[
+        "relative text-xs px-1 py-0.5 rounded-md mb-0.5",
+        "whitespace-nowrap overflow-hidden text-ellipsis group cra-activity-item",
+        typeColorClass,
+        isLocked ? "opacity-70" : "",
+        isDraggable ? "cursor-grab active:cursor-grabbing hover:shadow-md" : "cursor-not-allowed opacity-60",
+      ].join(" ")}
+      role="button"
+      aria-label={`${displayLabel} - ${clientLabel}`}
+      title={titleAttr}
+      onClick={onClickItem}
+      draggable={isDraggable}
+      onDragStart={onStartDrag}
+      data-activity-id={activity?.id}
+      data-activity-type={s(activity?.type_activite) || ""}
+      data-activity-status={activity?.status || "draft"}
     >
-      {/* Label principal */}
+      {/* Libellé principal */}
       {`${displayLabel} - ${clientLabel}${overrideLabel}`}
 
-      {/* Tick facturable */}
-      {isBillable ? (
-        <span className="ml-1 text-green-600" title="Facturable">✔</span>
-      ) : (
-        <span className="ml-1 text-red-600" title="Non facturable">✖</span>
-      )}
+      {/* Marque facturable */}
+      <BillableMark isBillable={isBillable} />
 
-      {/* Pastille statut */}
-      {isActivityLockedVisually && (
+      {/* Pastille statut (verrou visuel) */}
+      {isLocked && (
         <span
           className={`absolute top-0 right-0 h-full flex items-center justify-center p-1 text-xs font-semibold rounded-tr-md rounded-br-md ${statusColorClass}`}
           title={statusTitle}
+          aria-label={`Statut: ${statusTitle}`}
         >
           {statusDisplayChar}
         </span>
       )}
 
-      {/* Bouton suppression (si modifiable) */}
-      {canModifyActivity() && !readOnly && (
+      {/* Suppression (visible au survol uniquement) */}
+      {isDraggable && (
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            requestDeleteFromCalendar(activity.id, e);
-          }}
+          onClick={onDelete}
           className="absolute top-0 right-0 h-full flex items-center justify-center p-1 bg-red-600 hover:bg-red-700 text-white rounded-tr-md rounded-br-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
           title="Supprimer l'activité"
           aria-label="Supprimer l'activité"
@@ -206,3 +293,47 @@ Utilisateur: ${userFirstName || "N/A"}`}
     </div>
   );
 }
+
+/* ──────────────────────────────────────────────────────────────────────────────
+ * Mémoisation : on ne re-render que si les champs pertinents changent
+ *  - On compare l’activité sur ses champs utilisés à l’écran
+ *  - + les flags/readOnly/handlers qui influent sur l’UI
+ * ──────────────────────────────────────────────────────────────────────────────*/
+
+const areEqual = (prevProps, nextProps) => {
+  const A = prevProps.activity || {};
+  const B = nextProps.activity || {};
+
+  const keys = [
+    "id",
+    "user_id",
+    "client_id",
+    "type_activite",
+    "temps_passe",
+    "status",
+    "is_absence",
+    "override_non_working_day",
+    "description_activite",
+    "__kind",
+  ];
+
+  for (const k of keys) {
+    if (s(A[k]) !== s(B[k])) return false;
+  }
+
+  // Props simples qui modifient l’UI
+  if (prevProps.readOnly !== nextProps.readOnly) return false;
+  if (prevProps.userId !== nextProps.userId) return false;
+  if (prevProps.userFirstName !== nextProps.userFirstName) return false;
+  if (prevProps.isCraEditable !== nextProps.isCraEditable) return false;
+  if (prevProps.isPaidLeaveEditable !== nextProps.isPaidLeaveEditable) return false;
+  if (s(prevProps.paidLeaveTypeId) !== s(nextProps.paidLeaveTypeId)) return false;
+
+  // Références des définitions (on suppose stables dans le parent)
+  if (prevProps.activityTypeDefinitions !== nextProps.activityTypeDefinitions) return false;
+  if (prevProps.clientDefinitions !== nextProps.clientDefinitions) return false;
+
+  return true;
+};
+
+export default React.memo(CraActivityItemBase, areEqual);

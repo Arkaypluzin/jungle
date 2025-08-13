@@ -1,4 +1,3 @@
-// components/UnifiedManager.js
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";

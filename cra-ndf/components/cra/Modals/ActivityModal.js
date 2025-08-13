@@ -1,9 +1,7 @@
-// components/ActivityModal.js
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { format, isValid } from "date-fns";
-import { fr } from "date-fns/locale";
 
 export default function ActivityForm({ // Renommé de ActivityModal à ActivityForm
   onClose, // Ce onClose sera appelé pour masquer le formulaire dans CraBoard

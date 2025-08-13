@@ -1,4 +1,3 @@
-// components/cra/DetailedCraReportModal.js
 "use client";
 
 import React, { useRef, useEffect, useCallback } from "react";
@@ -6,7 +5,6 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import {
   format,
-  isSameDay,
   startOfMonth,
   endOfMonth,
   eachDayOfInterval,

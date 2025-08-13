@@ -8,7 +8,6 @@ import {
   eachDayOfInterval,
   isWeekend,
   isValid,
-  isSameMonth,
   isSameDay,
   addMonths,
   subMonths,
@@ -16,9 +15,7 @@ import {
   endOfWeek,
   addDays,
   subDays,
-  parseISO,
-  startOfYear,
-  endOfYear,
+  parseISO
 } from "date-fns";
 import { fr } from "date-fns/locale";
 

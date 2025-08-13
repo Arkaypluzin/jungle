@@ -1,4 +1,3 @@
-// components/SentCraHistory.js
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -9,9 +8,6 @@ export default function SentCraHistory({
   craActivities,
   clientDefinitions,
   activityTypeDefinitions,
-  onAddCraActivity, // Probablement pas utilisé ici mais gardé pour consistance
-  currentUserId,
-  currentUserName,
   showMessage,
   onUpdateCraStatus, // Cette fonction est utilisée pour la finalisation/validation/rejet
 }) {
