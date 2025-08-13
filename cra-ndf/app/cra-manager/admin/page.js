@@ -113,16 +113,15 @@ export default function AdminCRAPage() {
         rawText = await res.text();
         try {
           const errorData = JSON.parse(rawText);
-          errorInfo += ` - Message API: ${
-            errorData.message || JSON.stringify(errorData)
-          }`;
+          errorInfo += ` - Message API: ${errorData.message || JSON.stringify(errorData)
+            }`;
         } catch (jsonParseError) {
           errorInfo += ` - Réponse non-JSON ou invalide (début): "${rawText.substring(
             0,
             200
           )}..."`;
         }
-      } catch (textError) {}
+      } catch (textError) { }
       throw new Error(`Échec du chargement des ${resourceName}: ${errorInfo}`);
     }
     const contentType = res.headers.get("content-type");
@@ -266,7 +265,7 @@ export default function AdminCRAPage() {
           normalizedReport.rejection_reason = reasonValue;
           // Assurer que la propriété camelCase est également cohérente si elle est la source primaire
           if (normalizedReport.rejectionReason && normalizedReport.rejectionReason !== reasonValue) {
-              normalizedReport.rejectionReason = reasonValue;
+            normalizedReport.rejectionReason = reasonValue;
           }
         } else {
           // Si le rapport n'est pas rejeté, s'assurer qu'aucune raison de rejet n'est présente
@@ -374,8 +373,8 @@ export default function AdminCRAPage() {
           const errorData = await response.json();
           throw new Error(
             errorData.message ||
-              `Erreur serveur: ${response.statusText}` ||
-              "Erreur lors de la création de l'activité CRA."
+            `Erreur serveur: ${response.statusText}` ||
+            "Erreur lors de la création de l'activité CRA."
           );
         }
         const newActivity = await response.json();
@@ -432,8 +431,8 @@ export default function AdminCRAPage() {
           const errorData = await response.json();
           throw new Error(
             errorData.message ||
-              `Erreur serveur: ${response.statusText}` ||
-              "Erreur lors de la mise à jour de l'activité CRA."
+            `Erreur serveur: ${response.statusText}` ||
+            "Erreur lors de la mise à jour de l'activité CRA."
           );
         }
         const updatedActivity = await response.json();
@@ -502,8 +501,8 @@ export default function AdminCRAPage() {
           }
           throw new Error(
             errorData.message ||
-              `Erreur serveur: ${response.statusText}` ||
-              "Échec de la suppression de l'activité CRA."
+            `Erreur serveur: ${response.statusText}` ||
+            "Échec de la suppression de l'activité CRA."
           );
         }
       } catch (error) {
@@ -533,9 +532,9 @@ export default function AdminCRAPage() {
         // Ensure activities is an array before mapping
         const activitiesToSend = Array.isArray(reportData.activities)
           ? reportData.activities.map(act => ({
-              ...act,
-              duree_jours: parseFloat(act.duree_jours) || 0 // Ensure numeric
-            }))
+            ...act,
+            duree_jours: parseFloat(act.duree_jours) || 0 // Ensure numeric
+          }))
           : []; // Default to empty array if not an array
 
         const payload = {
@@ -552,8 +551,8 @@ export default function AdminCRAPage() {
           const errorData = await response.json();
           throw new Error(
             errorData.message ||
-              `Erreur serveur: ${response.statusText}` ||
-              "Échec de l'envoi du rapport mensuel."
+            `Erreur serveur: ${response.statusText}` ||
+            "Échec de l'envoi du rapport mensuel."
           );
         }
 
@@ -623,8 +622,8 @@ export default function AdminCRAPage() {
           }
           throw new Error(
             errorData.message ||
-              `Erreur serveur: ${reportResponse.statusText}` ||
-              "Échec de la suppression du rapport mensuel."
+            `Erreur serveur: ${reportResponse.statusText}` ||
+            "Échec de la suppression du rapport mensuel."
           );
         }
         showMessage(
@@ -1007,21 +1006,19 @@ export default function AdminCRAPage() {
         <div className="flex justify-center mb-8 space-x-4">
           <button
             onClick={() => setActiveTab("craManager")}
-            className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
-              activeTab === "craManager"
+            className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${activeTab === "craManager"
                 ? "bg-blue-600 text-white shadow-lg"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+              }`}
           >
             Mon CRA
           </button>
           <button
             onClick={() => setActiveTab("sentCraHistory")}
-            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
-              activeTab === "sentCraHistory"
+            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${activeTab === "sentCraHistory"
                 ? "bg-blue-600 text-white shadow-lg"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+              }`}
           >
             Historique des CRAs envoyés
           </button>
@@ -1030,31 +1027,28 @@ export default function AdminCRAPage() {
 
           <button
             onClick={() => setActiveTab("receivedCras")}
-            className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
-              activeTab === "receivedCras"
+            className={`px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${activeTab === "receivedCras"
                 ? "bg-blue-600 text-white shadow-lg"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+              }`}
           >
             CRAs Reçus
           </button>
           <button
             onClick={() => setActiveTab("overview")}
-            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
-              activeTab === "overview"
+            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${activeTab === "overview"
                 ? "bg-blue-600 text-white shadow-lg"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+              }`}
           >
             Vue d'ensemble
           </button>
           <button
             onClick={() => setActiveTab("unifiedManager")}
-            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
-              activeTab === "unifiedManager"
+            className={`ml-4 px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${activeTab === "unifiedManager"
                 ? "bg-blue-600 text-white shadow-lg"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+              }`}
           >
             Gestion Unifiée
           </button>
@@ -1076,7 +1070,7 @@ export default function AdminCRAPage() {
             showMessage={showMessage}
             monthlyReports={monthlyReports} // Passe les rapports normalisés
             onSendMonthlyReport={handleSendMonthlyReport}
-            // Pas de prop 'rejectionReason' directe ici, elle est gérée par monthlyReports
+          // Pas de prop 'rejectionReason' directe ici, elle est gérée par monthlyReports
           />
         )}
 
@@ -1085,7 +1079,9 @@ export default function AdminCRAPage() {
             userId={currentUserId}
             userFirstName={currentUserName}
             showMessage={showMessage}
-            monthlyReports={monthlyReports} // Passe les rapports normalisés
+            monthlyReports={monthlyReports}
+            clientDefinitions={clientDefinitions}
+            activityTypeDefinitions={activityTypeDefinitions}
             onDeleteMonthlyReport={requestDeleteReportConfirmation}
             onShowDetailedReport={handleShowDetailedReport}
           />
@@ -1135,15 +1131,14 @@ export default function AdminCRAPage() {
           isOpen={showDeleteReportConfirmModal}
           onClose={cancelDeleteReportConfirmation}
           onConfirm={confirmDeleteReportAction}
-          message={`Êtes-vous sûr de vouloir supprimer le rapport de ${
-            reportToDelete.report_type === "paid_leave"
+          message={`Êtes-vous sûr de vouloir supprimer le rapport de ${reportToDelete.report_type === "paid_leave"
               ? "Congés Payés"
               : "CRA"
-          } pour ${reportToDelete.userName || "cet utilisateur"} pour ${format(
-            new Date(reportToDelete.year, reportToDelete.month - 1),
-            "MMMM yyyy",
-            { locale: fr }
-          )}? Cette action supprimera également toutes les activités associées à ce rapport.`}
+            } pour ${reportToDelete.userName || "cet utilisateur"} pour ${format(
+              new Date(reportToDelete.year, reportToDelete.month - 1),
+              "MMMM yyyy",
+              { locale: fr }
+            )}? Cette action supprimera également toutes les activités associées à ce rapport.`}
           title="Confirmer la suppression du rapport"
         />
       )}
