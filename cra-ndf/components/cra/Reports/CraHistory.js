@@ -1,21 +1,5 @@
 "use client";
 
-/**
- * CraHistory
- * -----------
- * Rôle :
- * - Affiche l’historique des rapports envoyés par l’utilisateur (CRA & Congés payés)
- * - Regroupe par (mois, année) dans des blocs pleine largeur
- * - Ouvre un modal qui fusionne toutes les activités du mois (CRA + CP) dans le calendrier (CraBoard)
- * - Montre le statut + la date d’envoi et la date de validation/révision
- *
- * Notes d’implémentation :
- * - Tous les hooks (useState/useEffect/useMemo/useCallback) sont déclarés AVANT tout return conditionnel.
- * - Les dates sont normalisées via `normalizeToDate` pour accepter ISO/String/Date/number.
- * - La date de validation est déduite via (reviewedAt || updatedAt) côté front si absente.
- * - Chaque activité passée à CraBoard reçoit un champ `validatedAt` (hérité du rapport parent si absent).
- */
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
@@ -217,35 +201,49 @@ export default function CraHistory({
     });
   }, [myReports]);
 
+  // 3) Création d'une version enrichie de `activityTypeDefinitions` pour inclure les jours fériés.
+  // Correction: On s'assure que le résultat est un tableau, car CraBoard attend un tableau.
+  const augmentedActivityTypeDefinitions = useMemo(() => {
+    // Si la prop est un objet, on la convertit en tableau de valeurs
+    const originalTypes = Array.isArray(activityTypeDefinitions) ? activityTypeDefinitions : Object.values(activityTypeDefinitions);
+    return [
+      ...originalTypes,
+      {
+        id: "holiday-leave", // ID unique pour ce type
+        name: "Jour Férié",
+        color: "gray-400", 
+      },
+    ];
+  }, [activityTypeDefinitions]);
+
   /* ---------------------------------- */
   /* Handlers                           */
   /* ---------------------------------- */
 
   /**
    * Ouvre le modal avec :
-   * - activités CRA + CP fusionnées et triées
+   * - activités CRA + CP + Jours Fériés fusionnées et triées
    * - méta (statuts + dates de validation au niveau rapport)
    */
   const handleViewDetailsGroup = useCallback(
     async (group) => {
       try {
-        const requests = [];
-        if (group.cra?.id) {
-          requests.push(
-            fetch(`/api/monthly_cra_reports/${group.cra.id}`).then((r) =>
-              r.ok ? r.json() : null
-            )
-          );
-        }
-        if (group.paid?.id) {
-          requests.push(
-            fetch(`/api/monthly_cra_reports/${group.paid.id}`).then((r) =>
-              r.ok ? r.json() : null
-            )
-          );
-        }
-
-        const [craDetail, paidDetail] = await Promise.all(requests);
+        // Déclenche les trois requêtes en parallèle (CRA, CP, Jours Fériés)
+        const [craDetail, paidDetail, holidaysResponse] = await Promise.all([
+          group.cra?.id
+            ? fetch(`/api/monthly_cra_reports/${group.cra.id}`).then((r) =>
+                r.ok ? r.json() : null
+              )
+            : Promise.resolve(null),
+          group.paid?.id
+            ? fetch(`/api/monthly_cra_reports/${group.paid.id}`).then((r) =>
+                r.ok ? r.json() : null
+              )
+            : Promise.resolve(null),
+          fetch(`/api/public_holidays?year=${group.year}&countryCode=FR`).then((r) =>
+            r.ok ? r.json() : []
+          ),
+        ]);
 
         // Dates de validation (rapport) si statut non pending
         const craValidatedAt = getValidatedDate(craDetail);
@@ -293,8 +291,25 @@ export default function CraHistory({
           ? formatActivities(paidDetail.activities_snapshot, "CP")
           : [];
 
-        const combinedActivities = [...craActs, ...cpActs].sort(
-          (a, b) => a.date_activite - b.date_activite
+        // Formate les jours fériés récupérés pour le mois en cours
+        const holidays = (holidaysResponse || [])
+          .filter(h => parseISO(h.date).getMonth() === group.month - 1 && parseISO(h.date).getFullYear() === group.year)
+          .map(h => ({
+            id: `holiday-${h.date}`,
+            client_id: null,
+            client_label: "Jours fériés", // CHANGEMENT : ajout du libellé client
+            date_activite: parseISO(h.date),
+            description: h.name,
+            notes: "Jour férié en France",
+            type_activite: "holiday-leave",
+            __kind: "Holiday",
+            status: "validated",
+            isDayOff: true, // AJOUT : Marque le jour comme non travaillé
+          }));
+
+        // Fusionne et trie toutes les activités
+        const combinedActivities = [...craActs, ...cpActs, ...holidays].sort(
+          (a, b) => a.date_activite.getTime() - b.date_activite.getTime()
         );
 
         const currentMonthDate = new Date(group.year, group.month - 1, 1);
@@ -556,8 +571,8 @@ export default function CraHistory({
 
                 <p className="mt-1 text-xs text-gray-500">
                   * Chaque activité possède un statut et une date de validation
-                  (héritée du rapport si absente). Les congés payés sont
-                  intégrés au même calendrier.
+                  (héritée du rapport si absente). Les congés payés et jours
+                  fériés sont intégrés au même calendrier.
                 </p>
               </div>
 
@@ -576,7 +591,7 @@ export default function CraHistory({
                 userId={craBoardReportData.userId}
                 userFirstName={craBoardReportData.userFirstName}
                 activities={craBoardReportData.activities}
-                activityTypeDefinitions={activityTypeDefinitions}
+                activityTypeDefinitions={augmentedActivityTypeDefinitions}
                 clientDefinitions={clientDefinitions}
                 monthlyReports={craBoardReportData.monthlyReports}
                 currentMonth={craBoardReportData.currentMonth}

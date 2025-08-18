@@ -50,7 +50,6 @@ const buildCalendarDays = (month) => {
   return eachDayOfInterval({ start: startCal, end: endCal });
 };
 
-/** Version "safe" d’un test jour férié (au cas où la prop ne serait pas fournie) */
 const makeSafeIsHoliday = (fn) => (date) => (typeof fn === "function" ? fn(date) : false);
 
 /* ──────────────────────────────────────────────────────────────────────────────
