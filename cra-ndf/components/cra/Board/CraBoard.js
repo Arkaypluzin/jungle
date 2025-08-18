@@ -1177,23 +1177,12 @@ export default function CraBoard({
   // ——————————————————————————————————————————
   const handleMouseDownMultiSelect = useCallback(
     (e, day) => {
-      if (isSingleDaySelectionLocked) {
-        localShowMessage("Multi-sélection verrouillée (modale ouverte).", "info");
-        return;
-      }
       if (multiSelectType === "paid_leave" && isNonWorkingDay(day)) {
         localShowMessage(
           "Impossible de démarrer une sélection de congés sur weekend/férié.",
           "warning"
         );
         e.preventDefault();
-        return;
-      }
-      if (readOnly || isDraggingActivity || isDeletingActivityFlag) {
-        localShowMessage(
-          "Multi-sélection désactivée (lecture seule ou action en cours).",
-          "info"
-        );
         return;
       }
       if (multiSelectType === "activity" && !isCraEditable) {
