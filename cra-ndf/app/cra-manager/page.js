@@ -1,28 +1,14 @@
-"use client";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+export default async function DashboardRedirect() {
+    const session = await auth();
 
-export default function CraManagerEntry() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+    const roles = session?.user?.roles || [];
 
-  useEffect(() => {
-    if (status === "loading") return;
-
-    if (!session) {
-      router.replace("/login"); // ajuste cette route si besoin
-      return;
+    if (roles.includes("Admin")) {
+        return redirect("/cra-manager/admin");
     }
 
-    const role = session?.user?.roles?.[0] || "user";
-    router.replace(role === "admin" ? "/cra-manager/admin" : "/cra-manager/user");
-  }, [status, session, router]);
-
-  return (
-    <div className="flex justify-center items-center h-[50vh] text-gray-600">
-      Redirection…
-    </div>
-  );
+    return redirect("/cra-manager/user");
 }
