@@ -1,17 +1,5 @@
 "use client";
 
-/**
- * CraControls
- * -----------
- * En-tête du calendrier : navigation mois, statut global, bascule de mode
- * (activité ↔ congé), ouverture du rapport, envoi CRA / CP et réinitialisation.
- *
- * Optimisations :
- * - Toutes les dérivations (statut global, libellés, états disabled) sont mémoïsées.
- * - Composant mémoïsé avec comparaison personnalisée (limite les re-renders).
- * - Pas de console.log ni de calculs dans le rendu.
- */
-
 import React, { useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -84,7 +72,7 @@ function CraControlsBase({
   // Texte / style du bouton de mode (activité ↔ congé)
   const { modeButtonText, modeButtonClass } = useMemo(() => {
     if (multiSelectType === "activity") {
-      return { modeButtonText: "Passer en mode Congé", modeButtonClass: "bg-blue-600 text-white hover:bg-blue-700" };
+      return { modeButtonText: "Passer en mode absence", modeButtonClass: "bg-blue-600 text-white hover:bg-blue-700" };
     }
     if (multiSelectType === "paid_leave") {
       return { modeButtonText: "Passer en mode Activité", modeButtonClass: "bg-yellow-600 text-white hover:bg-yellow-700" };
@@ -188,7 +176,7 @@ function CraControlsBase({
             }`}
           disabled={isSendPaidLeavesDisabled}
         >
-          Envoyer les congés ({paidLeaveDraftsCount})
+          Envoyer les absences ({paidLeaveDraftsCount})
         </button>
 
         {/* Réinitialisation du mois */}
@@ -201,14 +189,22 @@ function CraControlsBase({
           Réinitialiser le mois
         </button>
       </div>
+      
+      {/* Message d'information sur le mode */}
+      {multiSelectType !== "none" && (
+        <div className="mt-4 text-left text-xl font-medium text-gray-600">
+          {multiSelectType === "activity" && "Vous êtes en mode : Création d'activités"}
+          {multiSelectType === "paid_leave" && "Vous êtes en mode : Saisie d'absences"}
+        </div>
+      )}
     </>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Mémoïsation du composant :
- *  - Compare uniquement les props qui ont un impact visuel/interaction.
- *  - On considère que les callbacks parents sont stabilisés via useCallback.
+ * - Compare uniquement les props qui ont un impact visuel/interaction.
+ * - On considère que les callbacks parents sont stabilisés via useCallback.
  * ──────────────────────────────────────────────────────────────────────────────*/
 const areEqual = (prev, next) => {
   // Mois affiché (comparaison année/mois pour éviter les re-renders au sein du même mois)

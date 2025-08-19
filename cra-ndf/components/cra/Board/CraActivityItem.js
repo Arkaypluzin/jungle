@@ -1,26 +1,5 @@
 "use client";
 
-/**
- * CraActivityItem
- * ----------------
- * Petit “badge” affiché dans une case du calendrier (CraCalendar).
- * Affiche :
- *  - le type d’activité (+ durée), le client, quelques indicateurs (facturable ✔ / ✖)
- *  - une pastille de statut (F/V/A/R) quand l’activité est verrouillée
- *  - un bouton suppression (poubelle) au survol si modifiable
- *  - supporte le drag & drop (déplacement sur une autre date) lorsque l’activité est éditable
- *
- * Entrées importantes :
- *  - activity : l’activité (date_activite, type_activite, client_id, temps_passe, etc.)
- *  - activityTypeDefinitions / clientDefinitions : tables de référence pour résoudre libellés/couleurs
- *  - isCraEditable / isPaidLeaveEditable : droits d’édition selon le statut des rapports
- *  - readOnly : lecture seule globale (ex: modale historique)
- *
- * Perf / UX :
- *  - React.memo + détection fine de props pour éviter des re-renders inutiles
- *  - useMemo pour calculer labels/styles/flags
- *  - Comportement robuste pour détecter les absences (Congés payés & co)
- */
 
 import React, { useCallback, useMemo } from "react";
 
@@ -83,10 +62,10 @@ function CraActivityItemBase({
 
   /* ────────────────────────────────────────────────────────────────────────
    * Détection “absence” (congés payés & co)
-   *   - via id égal au type Congé Payé détecté par CraBoard
-   *   - via __kind remonté par l’agrégation (CP / paid_leave)
-   *   - via drapeau is_absence
-   *   - via code/type "cp" / "paid_leave" si présent
+   * - via id égal au type Congé Payé détecté par CraBoard
+   * - via __kind remonté par l’agrégation (CP / paid_leave)
+   * - via drapeau is_absence
+   * - via code/type "cp" / "paid_leave" si présent
    * ────────────────────────────────────────────────────────────────────────*/
   const isPaidLeaveActivity = useMemo(() => {
     const fromId = s(activity?.type_activite) === s(paidLeaveTypeId);
@@ -112,17 +91,18 @@ function CraActivityItemBase({
   }, [typeDef?.name, activity?.display_type_label, activity?.activityTypeName, activity?.type_label, isPaidLeaveActivity]);
 
   const clientLabel = useMemo(() => {
-    return (
-      pickLabel(
-        clientDef?.name,       // format le plus courant
-        clientDef?.nom_client, // certains schémas
-        clientDef?.label,
-        activity?.display_client_label,
-        activity?.clientName,
-        activity?.client_label
-      ) || "Non attribué"
+    const label = pickLabel(
+      clientDef?.name,       // format le plus courant
+      clientDef?.nom_client, // certains schémas
+      clientDef?.label,
+      activity?.display_client_label,
+      activity?.clientName,
+      activity?.client_label
     );
+    // Retourne null si le label est 'Non attribué', sinon retourne le label
+    return (label && label !== 'Non attribué') ? label : null;
   }, [clientDef?.name, clientDef?.nom_client, clientDef?.label, activity?.display_client_label, activity?.clientName, activity?.client_label]);
+
 
   /* ────────────────────────────────────────────────────────────────────────
    * Valeurs calculées / styles
@@ -229,7 +209,10 @@ function CraActivityItemBase({
   const titleAttr = useMemo(() => {
     const t = timeSpentValue ? `${timeSpentValue}j` : "N/A";
     const desc = activity?.description_activite || "N/A";
-    return `Client: ${clientLabel}
+    const clientText = clientLabel ? `Client: ${clientLabel}` : "";
+    
+    return `
+${clientText}
 Type: ${typeLabel}
 Temps: ${t}
 Description: ${desc}${overrideLabel ? "\nDérogation jour non ouvrable" : ""}
@@ -246,14 +229,14 @@ Utilisateur: ${userFirstName || "N/A"}`;
   return (
     <div
       className={[
-        "relative text-xs px-1 py-0.5 rounded-md mb-0.5",
-        "whitespace-nowrap overflow-hidden text-ellipsis group cra-activity-item",
+        "relative text-xs px-1 py-1 rounded-md mb-0.5",
+        "flex flex-col group cra-activity-item",
         typeColorClass,
         isLocked ? "opacity-70" : "",
         isDraggable ? "cursor-grab active:cursor-grabbing hover:shadow-md" : "cursor-not-allowed opacity-60",
       ].join(" ")}
       role="button"
-      aria-label={`${displayLabel} - ${clientLabel}`}
+      aria-label={`${displayLabel} ${clientLabel ? `- ${clientLabel}` : ''}`}
       title={titleAttr}
       onClick={onClickItem}
       draggable={isDraggable}
@@ -262,11 +245,23 @@ Utilisateur: ${userFirstName || "N/A"}`;
       data-activity-type={s(activity?.type_activite) || ""}
       data-activity-status={activity?.status || "draft"}
     >
-      {/* Libellé principal */}
-      {`${displayLabel} - ${clientLabel}${overrideLabel}`}
+      {/* Mise en page sur deux lignes :
+        La première ligne contient le type d'activité et la marque "facturable".
+        La deuxième ligne contient le nom du client (si disponible).
+        */}
+      <div className="flex items-center">
+        <span className="truncate">{displayLabel}</span>
+        {/* Marque facturable */}
+        <BillableMark isBillable={isBillable} />
+      </div>
 
-      {/* Marque facturable */}
-      <BillableMark isBillable={isBillable} />
+      {/* Affiche le nom du client uniquement si il existe */}
+      {clientLabel && (
+        <div className="truncate text-[10px] opacity-80">
+          {clientLabel}{overrideLabel}
+        </div>
+      )}
+
 
       {/* Pastille statut (verrou visuel) */}
       {isLocked && (
@@ -296,8 +291,8 @@ Utilisateur: ${userFirstName || "N/A"}`;
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Mémoisation : on ne re-render que si les champs pertinents changent
- *  - On compare l’activité sur ses champs utilisés à l’écran
- *  - + les flags/readOnly/handlers qui influent sur l’UI
+ * - On compare l’activité sur ses champs utilisés à l’écran
+ * - + les flags/readOnly/handlers qui influent sur l’UI
  * ──────────────────────────────────────────────────────────────────────────────*/
 
 const areEqual = (prevProps, nextProps) => {

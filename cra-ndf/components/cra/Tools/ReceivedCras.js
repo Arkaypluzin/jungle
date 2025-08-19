@@ -3,16 +3,18 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { format, parseISO, isValid as isValidDateFns } from "date-fns";
 import { fr } from "date-fns/locale";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 
 import MonthlyReportPreviewModal from "../Reports/MonthlyReportPreviewModal";
 import ConfirmationModal from "../Modals/ConfirmationModal";
 import CraBoard from "../Board/CraBoard";
 
 /* =========================================================================================
- * Helpers - dates & affichage
+ * Helpers - dates & display
  * =======================================================================================*/
 
-/** Normalise une valeur potentielle de date en instance Date valide, sinon null. */
+/** Normalize a potential date value into a valid Date instance, or null. */
 function normalizeToDate(v) {
   if (!v) return null;
   if (v instanceof Date) return isValidDateFns(v) ? v : null;
@@ -29,12 +31,12 @@ function normalizeToDate(v) {
   return null;
 }
 
-/** Format court date/heure FR. */
+/** Short FR date/time format. */
 function fmt(date) {
   return date ? format(date, "dd/MM/yyyy HH:mm", { locale: fr }) : "N/A";
 }
 
-/** Normalise une chaîne (minuscules, sans accents, trim) pour matcher noms/codes. */
+/** Normalize a string (lowercase, no accents, trim) for matching names/codes. */
 function norm(s) {
   return String(s || "")
     .toLowerCase()
@@ -75,11 +77,11 @@ function buildClientIndex(clientDefinitions = []) {
 }
 
 /**
- * Résout le type d’activité attendu par CraBoard.
- * - Garde l’ID réel si présent (type_activite / activity_type_id / type / activityTypeId)
- * - Sinon, si c’est un congé (tag === "CP"), tente de trouver le type "Congés payés"
- *   dans les définitions (par code "CP" ou nom contenant "cong").
- * - Retourne { typeId, typeLabel, typeDef }
+ * Resolves the activity type expected by CraBoard.
+ * - Keeps the real ID if present (type_activite / activity_type_id / type / activityTypeId)
+ * - Otherwise, if it's a leave (tag === "CP"), tries to find the "Paid Leave" type
+ * in the definitions (by code "CP" or name containing "cong").
+ * - Returns { typeId, typeLabel, typeDef }
  */
 function resolveActivityType(activity, tag, typeIdx) {
   const raw =
@@ -89,7 +91,7 @@ function resolveActivityType(activity, tag, typeIdx) {
     activity?.activityTypeId ??
     null;
 
-  // 1) Si on a déjà un identifiant => on le garde (stringifié)
+  // 1) If we already have an identifier => we keep it (stringified)
   if (raw != null) {
     const id = String(raw);
     const def =
@@ -105,9 +107,9 @@ function resolveActivityType(activity, tag, typeIdx) {
     };
   }
 
-  // 2) Fallback spécifique congés payés
+  // 2) Specific paid leave fallback
   if (tag === "CP") {
-    // on essaie : code "CP" -> nom contenant "congé" -> slug "paid_leave"/"conges-payes"
+    // we try: code "CP" -> name containing "congé" -> slug "paid_leave"/"conges-payes"
     const byCpCode = typeIdx.byCode.get(norm("CP"));
     if (byCpCode)
       return {
@@ -136,16 +138,17 @@ function resolveActivityType(activity, tag, typeIdx) {
         typeDef: bySlugPaid,
       };
 
-    // Dernier recours lisible
+    // Last resort legible
     return { typeId: "paid_leave", typeLabel: "Congés payés", typeDef: null };
   }
 
-  // 3) Sinon on ne force plus "CRA" (ça créait l’"Activité inconnue")
+  // 3) Otherwise we no longer force "CRA" (it created the "Unknown activity")
   return { typeId: null, typeLabel: null, typeDef: null };
 }
 
 /* =========================================================================================
- * MultiSelectDropdown — composant léger, sans dépendances
+ * MultiSelectDropdown — light component, no dependencies
+ * **FIXED z-index issue by raising it to z-20**
  * =======================================================================================*/
 function MultiSelectDropdown({
   label,
@@ -159,7 +162,7 @@ function MultiSelectDropdown({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Ferme le menu si clic extérieur
+  // Close the menu if click outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -177,12 +180,17 @@ function MultiSelectDropdown({
   const handleToggle = useCallback(() => setIsOpen((p) => !p), []);
   const handleOptionClick = useCallback(
     (value) => {
-      const newSelectedValues = selectedValues.includes(value)
-        ? selectedValues.filter((v) => v !== value)
-        : [...selectedValues, value];
+      let newSelectedValues;
+      if (value === "ALL") {
+        newSelectedValues = selectedValues.length === options.length ? [] : options.map((o) => o.value);
+      } else {
+        newSelectedValues = selectedValues.includes(value)
+          ? selectedValues.filter((v) => v !== value)
+          : [...selectedValues, value];
+      }
       onSelectionChange(newSelectedValues);
     },
-    [selectedValues, onSelectionChange]
+    [selectedValues, onSelectionChange, options]
   );
 
   const displaySelected = useMemo(() => {
@@ -219,7 +227,8 @@ function MultiSelectDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        // Adjusted z-index to be higher than the table header
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {options.length === 0 ? (
             <div className="px-4 py-2 text-gray-500 text-sm">Aucune option disponible.</div>
           ) : (
@@ -243,7 +252,7 @@ function MultiSelectDropdown({
 }
 
 /* =========================================================================================
- * Page — ReceivedCras : Vue combinée CRA + Congés (1 ligne / user+mois+année)
+ * Page — ReceivedCras : Combined view CRA + Paid Leave (1 row / user+month+year)
  * =======================================================================================*/
 export default function ReceivedCras({
   userId,
@@ -253,61 +262,61 @@ export default function ReceivedCras({
   clientDefinitions,
   activityTypeDefinitions,
   monthlyReports: propMonthlyReports,
-  onDeleteMonthlyReport, // supporté mais non rendu
+  onDeleteMonthlyReport, // supported but not rendered
 }) {
-  // ----------- State principal -----------
+  // ----------- Main state -----------
   const [reports, setReports] = useState(propMonthlyReports);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [allUsersForFilter, setAllUsersForFilter] = useState([]);
 
-  // Filtres (tableau vide = "tous")
+  // Filters (empty array = "all")
   const [filterUserIds, setFilterUserIds] = useState([]);
   const [filterMonths, setFilterMonths] = useState([]);
   const [filterYears, setFilterYears] = useState([]);
   const [filterStatuses, setFilterStatuses] = useState([]);
 
-  // Aperçu “table”
+  // "Table" preview
   const [selectedReportForPreview, setSelectedReportForPreview] = useState(null);
   const [showMonthlyReportPreview, setShowMonthlyReportPreview] = useState(false);
 
-  // Modals validation/rejet
+  // Validation/rejection modals
   const [reportToUpdate, setReportToUpdate] = useState(null);
   const [showValidationConfirmModal, setShowValidationConfirmModal] = useState(false);
   const [showRejectionConfirmModal, setShowRejectionConfirmModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // Modal CraBoard combiné
+  // Combined CraBoard modal
   const [showCraBoardModal, setShowCraBoardModal] = useState(false);
   const [craBoardReportData, setCraBoardReportData] = useState(null);
   const [modalMeta, setModalMeta] = useState(null); // { craDetail?, paidDetail? }
 
   /* -------------------------------------------------------------------------------------
-   * Index définitions (pour résoudre les noms/types d’activités & clients)
+   * Definitions index (to resolve activity/client names/types)
    * -----------------------------------------------------------------------------------*/
   const typeIdx = useMemo(() => buildTypeIndex(activityTypeDefinitions), [activityTypeDefinitions]);
   const clientIdx = useMemo(() => buildClientIndex(clientDefinitions), [clientDefinitions]);
 
   /* -------------------------------------------------------------------------------------
-   * Chargement des utilisateurs (pour le filtre)
+   * Load users (for filter)
    * -----------------------------------------------------------------------------------*/
   const fetchUsersForFilter = useCallback(async () => {
     try {
       const response = await fetch("/api/cras_users");
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Échec de la récupération des utilisateurs pour le filtre.");
+        throw new Error(errorData.message || "Failed to retrieve users for filter.");
       }
       const data = await response.json();
       setAllUsersForFilter(data);
     } catch (err) {
-      console.error("ReceivedCras: Erreur fetch users:", err);
+      console.error("ReceivedCras: fetch users error:", err);
       showMessage?.(`Erreur lors du chargement des utilisateurs: ${err.message}`, "error");
     }
   }, [showMessage]);
 
   /* -------------------------------------------------------------------------------------
-   * Chargement des rapports (selon filtres) — retourne CRA et Congés
+   * Load reports (based on filters) — returns CRA and Paid Leave
    * -----------------------------------------------------------------------------------*/
   const fetchMonthlyReports = useCallback(async () => {
     setLoading(true);
@@ -315,14 +324,14 @@ export default function ReceivedCras({
     try {
       const queryParams = new URLSearchParams();
 
-      // Si aucun utilisateur sélectionné => tous
+      // If no users are selected => all
       const usersToFilter =
         filterUserIds.length > 0 ? filterUserIds : allUsersForFilter.map((u) => u.azureAdUserId);
       if (usersToFilter.length > 0) queryParams.append("userId", usersToFilter.join(","));
       if (filterMonths.length > 0) queryParams.append("month", filterMonths.join(","));
       if (filterYears.length > 0) queryParams.append("year", filterYears.join(","));
 
-      // Si aucun statut sélectionné => tous
+      // If no statuses are selected => all
       const statusesToFilter =
         filterStatuses.length > 0 ? filterStatuses : ["pending_review", "validated", "rejected", "draft"];
       if (statusesToFilter.length > 0) queryParams.append("status", statusesToFilter.join(","));
@@ -330,12 +339,12 @@ export default function ReceivedCras({
       const response = await fetch(`/api/monthly_cra_reports?${queryParams.toString()}`);
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Échec de la récupération des rapports mensuels.");
+        throw new Error(errorData.message || "Failed to retrieve monthly reports.");
       }
       const data = await response.json();
 
       if (data && Array.isArray(data.data)) {
-        // Normalisation: on unifie rejection_reason
+        // Normalization: we unify rejection_reason
         const processed = data.data.map((report) => {
           if (report.status === "rejected" && report.rejectionReason && !report.rejection_reason) {
             return { ...report, rejection_reason: report.rejectionReason };
@@ -356,7 +365,7 @@ export default function ReceivedCras({
     }
   }, [showMessage, filterUserIds, filterMonths, filterYears, filterStatuses, allUsersForFilter]);
 
-  // Sync props -> state (premier rendu)
+  // Sync props -> state (first render)
   useEffect(() => {
     setReports(propMonthlyReports || []);
     setLoading(false);
@@ -370,7 +379,7 @@ export default function ReceivedCras({
     fetchMonthlyReports();
   }, [filterUserIds, filterMonths, filterYears, filterStatuses, fetchMonthlyReports]);
 
-  // Petit rappel si des rapports sont en attente quand on filtre par "pending_review"
+  // Small reminder if reports are pending when we filter by "pending_review"
   useEffect(() => {
     if (!loading && !error && reports?.length > 0 && filterStatuses.includes("pending_review")) {
       const pendingCount = reports.filter((r) => r.status === "pending_review").length;
@@ -381,7 +390,7 @@ export default function ReceivedCras({
   }, [reports, loading, error, filterStatuses, showMessage]);
 
   /* -------------------------------------------------------------------------------------
-   * Aperçu (tableau) existant
+   * Existing "table" preview
    * -----------------------------------------------------------------------------------*/
   const handleOpenMonthlyReportPreview = useCallback((report) => {
     setSelectedReportForPreview(report);
@@ -393,7 +402,7 @@ export default function ReceivedCras({
   }, []);
 
   /* -------------------------------------------------------------------------------------
-   * Mise à jour statut (Valider / Rejeter) — le rejet reste accessible via les actions de tableau
+   * Update status (Validate / Reject) — rejection is still accessible via table actions
    * -----------------------------------------------------------------------------------*/
   const handleUpdateReportStatus = useCallback(
     async (reportId, newStatus) => {
@@ -412,7 +421,7 @@ export default function ReceivedCras({
         });
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.message || "Échec de la mise à jour du statut du rapport.");
+          throw new Error(errorData.message || "Failed to update report status.");
         }
         showMessage?.(
           newStatus === "validated" ? "Rapport validé avec succès." : "Rapport rejeté avec succès.",
@@ -420,7 +429,7 @@ export default function ReceivedCras({
         );
         setRejectionReason("");
 
-        // Rafraîchir liste + éventuel état du modal
+        // Refresh list + potential modal state
         fetchMonthlyReports();
         if (modalMeta?.craDetail || modalMeta?.paidDetail) {
           const updated =
@@ -445,7 +454,7 @@ export default function ReceivedCras({
     [userId, rejectionReason, showMessage, fetchMonthlyReports, modalMeta]
   );
 
-  /** Ouvre la confirm de validation */
+  /** Opens the validation confirmation */
   const requestValidation = useCallback((report) => {
     setReportToUpdate(report);
     setShowValidationConfirmModal(true);
@@ -458,7 +467,7 @@ export default function ReceivedCras({
     setReportToUpdate(null);
   }, []);
 
-  /** Ouvre la confirm de rejet (déclenchée depuis le tableau uniquement) */
+  /** Opens the rejection confirmation (triggered from the table only) */
   const requestRejection = useCallback((report) => {
     setReportToUpdate(report);
     setRejectionReason(report.rejectionReason || report.rejection_reason || "");
@@ -478,12 +487,12 @@ export default function ReceivedCras({
   }, []);
 
   /* -------------------------------------------------------------------------------------
-   * Ouverture modal combiné (récupère 2 rapports: CRA + Congés) — **corrigé: type_activite**
+   * Open combined modal (retrieves 2 reports: CRA + Paid Leave) — **corrected: type_activite**
    * -----------------------------------------------------------------------------------*/
   const handleViewCombined = useCallback(
     async ({ user_id, userName, month, year }) => {
       try {
-        // 1) On récupère les rapports liés (même utilisateur/mois/année)
+        // 1) We retrieve the related reports (same user/month/year)
         const listQuery = new URLSearchParams({
           userId: String(user_id),
           month: String(month),
@@ -492,7 +501,7 @@ export default function ReceivedCras({
         const listRes = await fetch(`/api/monthly_cra_reports?${listQuery.toString()}`);
         if (!listRes.ok) {
           const e = await listRes.json();
-          throw new Error(e.message || "Échec récupération des rapports liés (CRA + Congés).");
+          throw new Error(e.message || "Failed to retrieve related reports (CRA + Paid Leave).");
         }
         const listData = await listRes.json();
         const forMonth = Array.isArray(listData?.data) ? listData.data : [];
@@ -500,13 +509,13 @@ export default function ReceivedCras({
         const cra = forMonth.find((r) => r.report_type === "cra") || null;
         const paid = forMonth.find((r) => r.report_type === "paid_leave") || null;
 
-        // 2) Détaille chaque rapport
+        // 2) Detail each report
         const fetchDetail = async (r) => {
           if (!r?.id) return null;
           const res = await fetch(`/api/monthly_cra_reports/${r.id}`);
           if (!res.ok) return null;
           const det = await res.json();
-          // Normalise raison de rejet
+          // Normalize rejection reason
           if (det.status === "rejected") {
             det.rejection_reason = det.rejectionReason || det.rejection_reason || null;
           } else {
@@ -517,7 +526,7 @@ export default function ReceivedCras({
 
         const [craDetail, paidDetail] = await Promise.all([fetchDetail(cra), fetchDetail(paid)]);
 
-        // 3) Construit la liste d’activités combinée (CRA + CP) avec dates validées
+        // 3) Builds the combined activity list (CRA + CP) with validated dates
         const craValidatedAt =
           craDetail && craDetail.status !== "pending_review"
             ? normalizeToDate(craDetail.reviewedAt) || normalizeToDate(craDetail.updatedAt)
@@ -540,7 +549,7 @@ export default function ReceivedCras({
                 dateObj = normalizeToDate(activity.date_activite);
               }
 
-              // --- type d’activité (ne PAS forcer "CRA"/"CP")
+              // --- activity type (do NOT force "CRA"/"CP")
               const { typeId, typeLabel } = resolveActivityType(activity, tag, typeIdx);
 
               // --- client
@@ -552,18 +561,18 @@ export default function ReceivedCras({
                   : null;
               const clientDef = clientId ? clientIdx.byId.get(clientId) : null;
 
-              // --- validatedAt héritée si absente
+              // --- inherited validatedAt if absent
               const inheritedValidated =
                 tag === "CRA" ? craValidatedAt : cpValidatedAt;
 
               return {
                 ...activity,
-                __kind: tag, // "CRA" ou "CP"
+                __kind: tag, // "CRA" or "CP"
                 date_activite: isValidDateFns(dateObj) ? dateObj : null,
                 client_id: clientId,
                 client_label: clientDef?.name || clientDef?.label || null,
-                type_activite: typeId, // <= ID que CraBoard saura retrouver dans activityTypeDefinitions
-                type_label: typeLabel || null, // facultatif
+                type_activite: typeId, // <= ID that CraBoard will be able to find in activityTypeDefinitions
+                type_label: typeLabel || null, // optional
                 status: activity.status || "draft",
                 id: activity.id || activity._id?.toString(),
                 validatedAt:
@@ -577,7 +586,7 @@ export default function ReceivedCras({
         const cpActs = paidDetail ? formatActivities(paidDetail.activities_snapshot, "CP") : [];
         const combinedActivities = [...craActs, ...cpActs].sort((a, b) => a.date_activite - b.date_activite);
 
-        // 4) Alimente la modale CraBoard
+        // 4) Populate the CraBoard modal
         const currentMonthDate = new Date(year, month - 1, 1);
         setModalMeta({ craDetail, paidDetail });
 
@@ -591,7 +600,7 @@ export default function ReceivedCras({
           currentMonth: currentMonthDate,
           activities: combinedActivities,
           monthlyReports: monthlyReportsForBoard,
-          // On affiche la raison de rejet globale si au moins un des rapports est rejeté
+          // We display the global rejection reason if at least one of the reports is rejected
           rejectionReason: craDetail?.rejection_reason || paidDetail?.rejection_reason || null,
         });
       } catch (err) {
@@ -602,7 +611,7 @@ export default function ReceivedCras({
     [showMessage, typeIdx, clientIdx]
   );
 
-  // Ouvre le modal quand les données sont prêtes
+  // Opens the modal when the data is ready
   useEffect(() => {
     if (craBoardReportData) setShowCraBoardModal(true);
   }, [craBoardReportData]);
@@ -615,7 +624,7 @@ export default function ReceivedCras({
   }, []);
 
   /* -------------------------------------------------------------------------------------
-   * Groupage (vue combinée) : 1 ligne = {user, mois, année} avec 2 sous-rapports (CRA, Congés)
+   * Grouping (combined view): 1 row = {user, month, year} with 2 sub-reports (CRA, Paid Leave)
    * -----------------------------------------------------------------------------------*/
   const groupedRows = useMemo(() => {
     const map = new Map();
@@ -640,7 +649,7 @@ export default function ReceivedCras({
     return Array.from(map.values());
   }, [reports]);
 
-  // Application des filtres sur le groupement
+  // Application of filters on grouping
   const filteredGroupedRows = useMemo(() => {
     return groupedRows.filter((row) => {
       if (filterUserIds.length > 0 && !filterUserIds.includes(String(row.user_id))) return false;
@@ -656,12 +665,10 @@ export default function ReceivedCras({
   }, [groupedRows, filterUserIds, filterMonths, filterYears, filterStatuses]);
 
   /* -------------------------------------------------------------------------------------
-   * Export PDF de la vue combinée
+   * Export PDF of the combined view
    * -----------------------------------------------------------------------------------*/
   const handleDownloadTableViewPdf = useCallback(async () => {
     try {
-      const { jsPDF } = await import("jspdf");
-      const autoTable = (await import("jspdf-autotable")).default;
       const doc = new jsPDF();
       doc.setFontSize(16);
       doc.text("Rapports Mensuels (vue combinée)", 14, 20);
@@ -695,7 +702,7 @@ export default function ReceivedCras({
         return [row.userName || "Utilisateur inconnu", monthName, row.year, daysWorked, daysBill, `${craStatus} | ${paidStatus}`];
       });
 
-      autoTable(doc, {
+      doc.autoTable({
         startY: 30,
         head: [headers],
         body: data,
@@ -716,13 +723,13 @@ export default function ReceivedCras({
       doc.save("rapports_mensuels_combines.pdf");
       showMessage?.("La vue combinée a été téléchargée en PDF !", "success");
     } catch (error) {
-      console.error("Erreur PDF:", error);
+      console.error("PDF Error:", error);
       showMessage?.("Erreur lors de la génération du PDF: " + error.message, "error");
     }
   }, [filteredGroupedRows, showMessage]);
 
   /* -------------------------------------------------------------------------------------
-   * Options des filtres — (avant early returns pour respecter l’ordre des hooks)
+   * Filter options — (before early returns to respect hook order)
    * -----------------------------------------------------------------------------------*/
   const yearOptions = useMemo(() => {
     const years = new Set();
@@ -755,9 +762,16 @@ export default function ReceivedCras({
     () => allUsersForFilter.map((u) => ({ value: u.azureAdUserId, name: u.fullName })),
     [allUsersForFilter]
   );
+  
+  const handleSelectAllFilters = useCallback(() => {
+    setFilterUserIds(userOptions.map(o => o.value));
+    setFilterMonths(monthOptions.map(o => o.value));
+    setFilterYears(yearOptions.map(o => o.value));
+    setFilterStatuses(statusOptions.map(o => o.value));
+  }, [userOptions, monthOptions, yearOptions, statusOptions]);
 
   /* -------------------------------------------------------------------------------------
-   * Early returns — aucun hook après ceci
+   * Early returns — no hooks after this
    * -----------------------------------------------------------------------------------*/
   if (loading)
     return (
@@ -768,7 +782,7 @@ export default function ReceivedCras({
   if (error) return <div className="text-red-500 text-center py-8 text-lg">Erreur: {error}</div>;
 
   /* =========================================================================================
-   * Rendu
+   * Render
    * =======================================================================================*/
   return (
     <div className="bg-white shadow-xl rounded-2xl p-6 sm:p-8 w-full mt-8">
@@ -776,7 +790,7 @@ export default function ReceivedCras({
         Rapports Mensuels Reçus
       </h3>
 
-      {/* Barre de filtres */}
+      {/* Filter bar */}
       <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-xl shadow-inner flex flex-wrap gap-4 justify-center items-end">
         <MultiSelectDropdown
           label="Utilisateur(s):"
@@ -817,6 +831,12 @@ export default function ReceivedCras({
 
         <div className="flex gap-2 ml-auto">
           <button
+            onClick={handleSelectAllFilters}
+            className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 active:scale-95 transition shadow-sm"
+          >
+            Tout sélectionner
+          </button>
+          <button
             onClick={() => {
               setFilterUserIds([]);
               setFilterMonths([]);
@@ -837,7 +857,7 @@ export default function ReceivedCras({
         </div>
       </div>
 
-      {/* Tableau — 1 ligne combinée par (user, mois, année) */}
+      {/* Table — 1 combined row per (user, month, year) */}
       {Array.isArray(filteredGroupedRows) && filteredGroupedRows.length === 0 ? (
         <div className="text-gray-600 text-center py-10 text-lg">
           Aucun rapport trouvé avec les filtres actuels.
@@ -934,7 +954,7 @@ export default function ReceivedCras({
                           Voir les détails
                         </button>
 
-                        {/* Actions rapides par sous-rapport : Valider / Rejeter (sur le tableau) */}
+                        {/* Quick actions by sub-report: Validate / Reject (on the table) */}
                         {row.craReport?.status === "pending_review" && (
                           <>
                             <button
@@ -977,7 +997,7 @@ export default function ReceivedCras({
         </div>
       )}
 
-      {/* Aperçu "tableau" (existant) */}
+      {/* "table" Preview (existing) */}
       {selectedReportForPreview && (
         <MonthlyReportPreviewModal
           isOpen={showMonthlyReportPreview}
@@ -990,7 +1010,7 @@ export default function ReceivedCras({
         />
       )}
 
-      {/* Confirmations globales */}
+      {/* Global Confirmations */}
       <ConfirmationModal
         isOpen={showValidationConfirmModal}
         onClose={cancelValidation}
@@ -1049,12 +1069,12 @@ export default function ReceivedCras({
         inputPlaceholder="Motif du rejet (obligatoire)"
       />
 
-      {/* MODAL CraBoard — COMBINÉ CRA + CONGÉS
-          On masque switch activité/congé + Envoyer + Réinitialiser via uiVisibility */}
+      {/* MODAL CraBoard — COMBINED CRA + PAID LEAVE
+          We hide switch activity/leave + Send + Reset via uiVisibility */}
       {showCraBoardModal && craBoardReportData && (
         <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
-            {/* Entête modal (statuts simples) */}
+            {/* Modal header (simple statuses) */}
             <div className="flex flex-col gap-3 p-4 border-b border-gray-200">
               <div className="flex justify-between items-start">
                 <h3 className="text-xl font-semibold text-gray-900">
@@ -1106,7 +1126,7 @@ export default function ReceivedCras({
               </div>
             </div>
 
-            {/* Corps modal : CraBoard lecture seule (les noms d’activités s’affichent maintenant) */}
+            {/* Modal body: Read-only CraBoard (activity names are now displayed) */}
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
               <CraBoard
                 userId={craBoardReportData.userId}
@@ -1120,10 +1140,10 @@ export default function ReceivedCras({
                 monthlyReports={craBoardReportData.monthlyReports}
                 rejectionReason={craBoardReportData.rejectionReason}
                 uiVisibility={{
-                  hideModeSwitch: true,   // cache le changement activité/congé
-                  hideSendButton: true,   // cache "Envoyer"
-                  hideResetButton: true,  // cache "Réinitialiser"
-                  hideAddButtons: true,   // si CraBoard affiche des + d’ajout
+                  hideModeSwitch: true,   // hides the activity/leave switch
+                  hideSendButton: true,   // hides "Send"
+                  hideResetButton: true,  // hides "Reset"
+                  hideAddButtons: true,   // if CraBoard displays + add buttons
                 }}
                 isReviewMode={true}
               />
@@ -1134,3 +1154,4 @@ export default function ReceivedCras({
     </div>
   );
 }
+  
