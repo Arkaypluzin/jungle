@@ -15,7 +15,9 @@ import {
   endOfWeek,
   addDays,
   subDays,
-  parseISO
+  parseISO,
+  addWeeks, // Corrected: Added addWeeks import
+  subWeeks,
 } from "date-fns";
 import { fr } from "date-fns/locale";
 
