@@ -51,6 +51,13 @@ export default function AddNdfDetailModal({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // --- États pour la modale "Ajouter un projet"
+  const [addProjetOpen, setAddProjetOpen] = useState(false);
+  const [newProjetName, setNewProjetName] = useState("");
+  const [addProjetLoading, setAddProjetLoading] = useState(false);
+  const [addProjetError, setAddProjetError] = useState("");
+  const [targetDetailIdx, setTargetDetailIdx] = useState(null); // ligne de dépense à mettre à jour après création
+
   // Bornes min/max
   const monthIndex = parentNdfMonth ? MONTHS_MAP[parentNdfMonth] : null;
   const yearValue = parentNdfYear || new Date().getFullYear();
@@ -285,6 +292,56 @@ export default function AddNdfDetailModal({
       setError(err.message || err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ---------- Création d’un projet depuis la modale détail ----------
+  function openAddProjetModal(forDetailIdx) {
+    setTargetDetailIdx(forDetailIdx);
+    setNewProjetName("");
+    setAddProjetError("");
+    setAddProjetOpen(true);
+  }
+
+  async function handleCreateProjetFromDetail(e) {
+    e.preventDefault();
+    if (!newProjetName.trim()) {
+      setAddProjetError("Le nom du projet est requis.");
+      return;
+    }
+    try {
+      setAddProjetLoading(true);
+      setAddProjetError("");
+      const res = await fetch("/api/projets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nom: newProjetName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddProjetError(data.message || "Erreur lors de la création du projet.");
+        setAddProjetLoading(false);
+        return;
+      }
+
+      // Ajouter le nouveau projet à la liste locale + sélectionner automatiquement
+      setProjets((prev) => {
+        const next = [...prev, data];
+        return next.sort((a, b) => String(a.nom).localeCompare(String(b.nom)));
+      });
+
+      if (targetDetailIdx !== null && typeof data.id !== "undefined") {
+        setDetails((prev) =>
+          prev.map((d, i) => (i === targetDetailIdx ? { ...d, selectedProjet: data.id } : d))
+        );
+      }
+
+      setAddProjetOpen(false);
+      setNewProjetName("");
+      setAddProjetLoading(false);
+    } catch (err) {
+      setAddProjetError("Erreur serveur.");
+      setAddProjetLoading(false);
     }
   }
 
@@ -525,15 +582,15 @@ export default function AddNdfDetailModal({
                         })}
                         <div className="flex flex-col gap-1 mt-3 text-sm text-gray-700">
                           <div>
-                            <span className="font-medium">Total HT : </span>
+                            <span className="font-medium">Total HT : </span>
                             <span>{auto.totalHTMulti?.toFixed(2)} €</span>
                           </div>
                           <div>
-                            <span className="font-medium">Total TVA : </span>
+                            <span className="font-medium">Total TVA : </span>
                             <span>{auto.totalTVA?.toFixed(2)} €</span>
                           </div>
                           <div>
-                            <span className="font-medium">Total TTC attendu : </span>
+                            <span className="font-medium">Total TTC attendu : </span>
                             <span>{((auto.totalHTMulti || 0) + (auto.totalTVA || 0)).toFixed(2)} €</span>
                           </div>
                         </div>
@@ -582,7 +639,18 @@ export default function AddNdfDetailModal({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Projet :</label>
+                        <div className="flex items-end justify-between gap-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Projet :</label>
+                          {/* Bouton Ajouter un projet (ouvre une petite modale) */}
+                          <button
+                            type="button"
+                            className="px-3 py-1 text-sm bg-green-600 text-white rounded-md shadow hover:bg-green-700"
+                            onClick={() => openAddProjetModal(idx)}
+                            title="Créer un nouveau projet"
+                          >
+                            + Ajouter un projet
+                          </button>
+                        </div>
                         <select
                           className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-white"
                           value={d.selectedProjet}
@@ -649,6 +717,53 @@ export default function AddNdfDetailModal({
                     {loading ? "Ajout..." : "Ajouter toutes les dépenses"}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------- Modale "Ajouter un projet" ------- */}
+      {addProjetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+            <button
+              onClick={() => { setAddProjetOpen(false); setAddProjetError(""); setNewProjetName(""); setTargetDetailIdx(null); }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 text-xl"
+              aria-label="Fermer"
+            >
+              ✕
+            </button>
+            <h2 className="text-2xl font-bold mb-4 text-blue-700">Nouveau projet</h2>
+            <form onSubmit={handleCreateProjetFromDetail} className="space-y-5">
+              <div>
+                <label className="block mb-1 font-medium text-gray-700">Nom du projet</label>
+                <input
+                  type="text"
+                  value={newProjetName}
+                  onChange={(e) => setNewProjetName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300 text-black"
+                  placeholder="Nom du projet"
+                  required
+                />
+              </div>
+              {addProjetError && <div className="text-red-500 text-sm">{addProjetError}</div>}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => { setAddProjetOpen(false); setAddProjetError(""); setNewProjetName(""); setTargetDetailIdx(null); }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  disabled={addProjetLoading}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  disabled={addProjetLoading}
+                >
+                  {addProjetLoading ? "Création..." : "Créer"}
+                </button>
               </div>
             </form>
           </div>
