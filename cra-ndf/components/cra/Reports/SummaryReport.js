@@ -27,6 +27,7 @@ export default function SummaryReport({
   const [isDrawing, setIsDrawing] = useState(false);
   const isDrawingRef = useRef(false);
   const [isSignatureLoading, setIsSignatureLoading] = useState(true);
+  const [hasDownloaded, setHasDownloaded] = useState(false);
 
   const monthName = useMemo(() => {
     if (isValid(month)) {
@@ -299,7 +300,7 @@ export default function SummaryReport({
     const stopDrawing = () => {
       isDrawingRef.current = false;
       setIsDrawing(false);
-      if (signatureCtxRef.current) signatureCtxRef.current.closePath();
+      if (signatureCtxRef.current) signatureCtx.closePath();
       if (signatureCanvasRef.current) {
         setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
       }
@@ -390,6 +391,7 @@ export default function SummaryReport({
         ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
       }
       setIsSignatureLoading(true);
+      setHasDownloaded(false);
     }
   }, [isOpen, userFirstName, showMessage]);
 
@@ -514,32 +516,36 @@ export default function SummaryReport({
       pdf.text("Statuts des rapports :", margin, yPos);
       yPos += defaultLineHeight;
 
+      const statutLabelX = margin + 5;
+      const statutValueX = statutLabelX + 50;
+
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       pdf.setTextColor(...colors.textGray);
+
       let craStatusText = craReportStatus === "pending_review" ? "En attente" : craReportStatus === "validated" ? "Validé" : craReportStatus === "rejected" ? "Rejeté" : "Brouillon";
       let craStatusColor = craReportStatus === "pending_review" ? colors.pendingYellow : craReportStatus === "validated" ? colors.validatedGreen : craReportStatus === "rejected" ? colors.rejectedRed : colors.mediumGray;
-
-      pdf.text(`Statut CRA : `, margin + 5, yPos);
+      
+      pdf.text(`Statut CRA : `, statutLabelX, yPos);
       pdf.setTextColor(...craStatusColor);
-      pdf.text(craStatusText, margin + 5 + pdf.getStringUnitWidth('Statut CRA : ') * pdf.internal.getFontSize(), yPos);
+      pdf.text(craStatusText, statutValueX, yPos);
       pdf.setTextColor(...colors.textGray);
       if (craReportStatus === "rejected" && craReport?.rejection_reason) {
         yPos += defaultLineHeight;
-        pdf.text(`  (Raison : ${craReport.rejection_reason})`, margin + 5, yPos);
+        pdf.text(`  (Raison : ${craReport.rejection_reason})`, statutLabelX, yPos);
       }
       yPos += defaultLineHeight;
 
       let paidLeaveStatusText = paidLeaveReportStatus === "pending_review" ? "En attente" : paidLeaveReportStatus === "validated" ? "Validé" : paidLeaveReportStatus === "rejected" ? "Rejeté" : "Brouillon";
       let paidLeaveStatusColor = paidLeaveReportStatus === "pending_review" ? colors.pendingYellow : paidLeaveReportStatus === "validated" ? colors.validatedGreen : paidLeaveReportStatus === "rejected" ? colors.rejectedRed : colors.mediumGray;
-
-      pdf.text(`Statut Congés Payés : `, margin + 5, yPos);
+      
+      pdf.text(`Statut Congés Payés : `, statutLabelX, yPos);
       pdf.setTextColor(...paidLeaveStatusColor);
-      pdf.text(paidLeaveStatusText, margin + 5 + pdf.getStringUnitWidth('Statut Congés Payés : ') * pdf.internal.getFontSize(), yPos);
+      pdf.text(paidLeaveStatusText, statutValueX, yPos);
       pdf.setTextColor(...colors.textGray);
       if (paidLeaveReportStatus === "rejected" && paidLeaveReport?.rejection_reason) {
         yPos += defaultLineHeight;
-        pdf.text(`  (Raison : ${paidLeaveReport.rejection_reason})`, margin + 5, yPos);
+        pdf.text(`  (Raison : ${paidLeaveReport.rejection_reason})`, statutLabelX, yPos);
       }
       yPos += sectionSpacing;
 
@@ -565,7 +571,6 @@ export default function SummaryReport({
             yPos += sectionSpacing / 2;
           }
 
-          // CORRECTION: Utiliser format(date, 'd') au lieu de getDate(date)
           const startDay = format(group[0].day, 'd', { locale: fr });
           const endDay = format(group[group.length - 1].day, 'd', { locale: fr });
           pdf.setFont("helvetica", "bold");
@@ -695,26 +700,57 @@ export default function SummaryReport({
         yPos += defaultLineHeight;
       }
 
-      if (signatureData) {
-        const signatureHeight = 40;
-        const signatureWidth = 100;
-        const signatureX = pageWidth - margin - signatureWidth;
-        let signatureY = pageHeight - margin - signatureHeight;
+      // Définition de la position verticale pour les deux blocs de signature
+      const commonSignatureY = pageHeight - margin - 50; 
+      const signatureLineWidth = 60;
+      const dateLineWidth = 40;
+      const spaceBetweenLines = 10;
+      const signatureClientX = margin;
+      const signatureUserX = pageWidth - margin - signatureLineWidth;
 
-        if (signatureY < yPos + sectionSpacing) {
+      // Signature de l'utilisateur
+      if (signatureData) {
+        let signatureHeight = 40;
+        let signatureUserY = commonSignatureY - signatureHeight;
+        let signatureLineY = commonSignatureY;
+        
+        if (signatureUserY < yPos + sectionSpacing) {
           pdf.addPage();
           yPos = margin;
-          signatureY = pageHeight - margin - signatureHeight;
+          signatureUserY = pageHeight - margin - signatureHeight;
+          signatureLineY = pageHeight - margin; 
         }
 
-        pdf.addImage(signatureData, 'PNG', signatureX, signatureY, signatureWidth, signatureHeight);
+        pdf.addImage(signatureData, 'PNG', signatureUserX, signatureUserY, signatureLineWidth, signatureHeight);
+        pdf.line(signatureUserX, signatureLineY, signatureUserX + signatureLineWidth, signatureLineY);
+
+        const currentDate = format(new Date(), "dd/MM/yyyy", { locale: fr });
         pdf.setFontSize(10);
         pdf.setTextColor(...colors.textGray);
-        pdf.text(`Signature de ${userFirstName}`, signatureX + signatureWidth / 2, signatureY + signatureHeight + 5, { align: 'center' });
+        pdf.text(currentDate, signatureUserX + signatureLineWidth / 2, signatureLineY + 5, { align: 'center' });
+        pdf.text(`Signature de ${userFirstName}`, signatureUserX + signatureLineWidth / 2, signatureLineY + 10, { align: 'center' });
       }
+
+      // Signature du client
+      const lineY = commonSignatureY;
+      const textY = lineY + 5;
+      const dateTextY = textY + 5;
+
+      pdf.setFontSize(10);
+      pdf.setTextColor(...colors.textGray);
+
+      pdf.line(signatureClientX, lineY, signatureClientX + signatureLineWidth, lineY);
+      pdf.text("Nom du Client:", signatureClientX + signatureLineWidth / 2, textY, { align: 'center' });
+
+      pdf.line(signatureClientX + signatureLineWidth + spaceBetweenLines, lineY, signatureClientX + signatureLineWidth + spaceBetweenLines + dateLineWidth, lineY);
+      pdf.text("Date", signatureClientX + signatureLineWidth + spaceBetweenLines + dateLineWidth / 2, textY, { align: 'center' });
+
 
       const monthYear = format(month, "MMMM_yyyy", { locale: fr });
       pdf.save(`Rapport_CRA_${userFirstName}_${monthYear}.pdf`);
+      
+      setHasDownloaded(true);
+      
       showMessage("PDF généré avec succès !", "success");
     } catch (error) {
       console.error("Erreur lors de la génération du PDF:", error);
@@ -902,7 +938,11 @@ export default function SummaryReport({
               </div>
             )}
           </div>
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-col items-center mt-2">
+            <div className="w-40 h-px bg-gray-400"></div>
+            <p className="text-xs text-gray-500 mt-1">Signature de {userFirstName}</p>
+          </div>
+          <div className="flex gap-2 mt-4">
             <button
               onClick={clearSignature}
               className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-200 text-sm"
@@ -917,6 +957,22 @@ export default function SummaryReport({
             </button>
           </div>
         </div>
+        
+        {hasDownloaded && (
+          <div className="flex flex-col items-center mt-8 pt-8 border-t border-gray-200">
+            <h4 className="text-lg font-semibold text-gray-700 mb-2">Signature du Client:</h4>
+            <div className="flex justify-center w-full gap-8">
+              <div className="flex flex-col items-center">
+                <div className="w-40 h-px bg-gray-400"></div>
+                <p className="text-xs text-gray-500 mt-1">Nom du Client</p>
+              </div>
+              <div className="flex flex-col items-center">
+                <div className="w-24 h-px bg-gray-400"></div>
+                <p className="text-xs text-gray-500 mt-1">Date</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-end gap-4 mt-8">
           <button

@@ -33,8 +33,8 @@ export default async function AdminDashboard() {
     {
       href: "/projets/admin",
       icon: <Briefcase className="w-8 h-8 text-orange-600 mb-2" />,
-      label: "Projets",
-      description: "Voir et gérer les projets"
+      label: "Gestionnaire",
+      description: "Voir et gérer les projets, clients et activités"
     }
   ];
 

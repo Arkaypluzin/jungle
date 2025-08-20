@@ -7,7 +7,7 @@
  * - Affiche le jour + les badges (week-end / férié).
  * - Liste les activités du jour, avec libellés robustes (types/clients), triés et total du jour.
  * - Gère le clic simple (création/édition), la sélection multiple (mousedown / enter / mouseup),
- *   et le drag & drop d’activité individuelle (dragOver/drop).
+ * et le drag & drop d’activité individuelle (dragOver/drop).
  *
  * Optimisations :
  * - Mémoïsation lourde (classes CSS, activités enrichies, total du jour).
@@ -19,6 +19,9 @@
 import React, { useCallback, useMemo } from "react";
 import { isValid } from "date-fns";
 import CraActivityItem from "./CraActivityItem";
+
+// Helper pour normaliser une valeur en string
+const s = (v) => (v === null || v === undefined ? null : String(v));
 
 function CraDayCellBase({
   day,
@@ -145,6 +148,15 @@ function CraDayCellBase({
     return { enhancedActivities: list, totalLabel: `${total.toFixed(1)}j` };
   }, [activitiesForDay, typeIndex, clientIndex]);
 
+  // NOUVEAUTÉ : Vérifier si une activité est un jour férié, indépendamment des props
+  const hasPublicHolidayActivity = useMemo(() => {
+    return (activitiesForDay || []).some(
+      (activity) => s(activity?.type_activite) === "holiday-leave"
+    );
+  }, [activitiesForDay]);
+
+  const shouldShowHolidayBadge = isPublicHolidayDay || hasPublicHolidayActivity;
+
   /* ──────────────────────────────────────────────
    * Classes CSS de la cellule (mémoïsées)
    * ──────────────────────────────────────────────*/
@@ -239,9 +251,10 @@ function CraDayCellBase({
       </span>
 
       {/* Badges contexte (W-E / Férié) */}
-      {isNonWorkingDay && !isOutsideCurrentMonth && (
+      {/* CORRECTION: La condition pour afficher le badge prend désormais en compte isPublicHolidayDay et hasPublicHolidayActivity */}
+      {(isNonWorkingDay || hasPublicHolidayActivity) && !isOutsideCurrentMonth && (
         <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
-          {isWeekendDay && isPublicHolidayDay ? "Férié & W-E" : isWeekendDay ? "Week-end" : "Férié"}
+          {shouldShowHolidayBadge && isWeekendDay ? "Férié & W-E" : shouldShowHolidayBadge ? "Férié" : "Week-end"}
         </span>
       )}
 
@@ -277,11 +290,11 @@ function CraDayCellBase({
   );
 }
 
-/* ──────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────────
  * Comparateur personnalisé pour React.memo
  * - On évite un re-render si rien de pertinent n'a changé visuellement.
  * - On compare jour + flags + activités (faible profondeur).
- * ──────────────────────────────────────────────*/
+ * ──────────────────────────────────────────────────────────────────────────────*/
 const areEqual = (prev, next) => {
   // Jour (timestamp) & format affiché
   if (+prev.day !== +next.day) return false;
