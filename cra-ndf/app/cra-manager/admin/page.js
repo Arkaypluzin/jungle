@@ -1041,7 +1041,7 @@ export default function AdminCRAPage() {
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
               }`}
           >
-            Vue d'ensemble
+            Vue d&apos;ensemble
           </button>
           <button
             onClick={() => setActiveTab("unifiedManager")}

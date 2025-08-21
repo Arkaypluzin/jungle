@@ -769,7 +769,7 @@ export default function SummaryReport({
         </button>
 
         <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">
-          Rapport Mensuel d'Activités
+          Rapport Mensuel d&apsos;Activités
         </h2>
         <p className="text-gray-600 text-center mb-6">
           Rapport pour {userFirstName} - {monthName}
@@ -788,7 +788,7 @@ export default function SummaryReport({
               {totalWorkingDays} jours
             </p>
             <p>
-              <span className="font-medium">Total jours d'activités sur jours ouvrés :</span>{" "}
+              <span className="font-medium">Total jours d&apsos;activités sur jours ouvrés :</span>{" "}
               {totalWorkingDaysActivitiesTime.toFixed(1)} jours
             </p>
             <p>

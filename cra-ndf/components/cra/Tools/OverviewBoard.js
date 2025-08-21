@@ -599,7 +599,7 @@ export default function OverviewBoard({
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64 text-gray-600">
-        Chargement du planning d'ensemble...
+        Chargement du planning s&apsos;ensemble...
       </div>
     );
   }
