@@ -10,13 +10,13 @@ import React, { useCallback, useMemo } from "react";
 import { isValid } from "date-fns";
 import CraActivityItem from "./CraActivityItem";
 
-// Helper pour normaliser une valeur en string
+// Normalisation en string
 const s = (v) => (v === null || v === undefined ? null : String(v));
 
-function CraDayCellBase({
+function CraDayCell({
   day,
   formattedDate,
-  activitiesForDay,
+  activitiesForDay = [],
   isTodayHighlight,
   isWeekendDay,
   isPublicHolidayDay,
@@ -29,7 +29,7 @@ function CraDayCellBase({
   handleMouseEnter,
   handleMouseUp,
 
-  // Clic simple / édition 1 jour
+  // Clic simple / édition
   handleDayClick,
   onActivityClick,
 
@@ -37,8 +37,8 @@ function CraDayCellBase({
   requestDeleteFromCalendar,
 
   // Définitions
-  activityTypeDefinitions,
-  clientDefinitions,
+  activityTypeDefinitions = [],
+  clientDefinitions = [],
 
   // Contexte
   showMessage,
@@ -54,8 +54,8 @@ function CraDayCellBase({
   isDraggingActivity,
   isDropTargetValid,
 
-  // Sélection multiple (mode & état)
-  multiSelectType, // "none" | "activity" | "paid_leave"
+  // Sélection multiple
+  multiSelectType = "none",
   isDragging,
 
   // Déduction congés
@@ -69,34 +69,31 @@ function CraDayCellBase({
     return null;
   }
 
-  /** ────────────────────────────────
-   * Jour interactif ?
-   * ──────────────────────────────── */
-  const checkDayInteractable = useCallback(() => {
-    if (readOnly) return false;
-    return isCraEditable || isPaidLeaveEditable;
+  /** ────────────
+   * Jour interactif
+   * ──────────── */
+  const isInteractable = useCallback(() => {
+    return !readOnly && (isCraEditable || isPaidLeaveEditable);
   }, [readOnly, isCraEditable, isPaidLeaveEditable]);
 
-  /** ────────────────────────────────
-   * Index O(1) pour types & clients
-   * ──────────────────────────────── */
-  const typeIndex = useMemo(() => {
-    const m = new Map();
-    for (const t of activityTypeDefinitions || []) m.set(String(t.id), t);
-    return m;
-  }, [activityTypeDefinitions]);
+  /** ────────────
+   * Index rapide pour types et clients
+   * ──────────── */
+  const typeIndex = useMemo(
+    () => new Map(activityTypeDefinitions.map((t) => [String(t.id), t])),
+    [activityTypeDefinitions]
+  );
 
-  const clientIndex = useMemo(() => {
-    const m = new Map();
-    for (const c of clientDefinitions || []) m.set(String(c.id), c);
-    return m;
-  }, [clientDefinitions]);
+  const clientIndex = useMemo(
+    () => new Map(clientDefinitions.map((c) => [String(c.id), c])),
+    [clientDefinitions]
+  );
 
-  /** ────────────────────────────────
-   * Enrichissement + tri + total
-   * ──────────────────────────────── */
+  /** ────────────
+   * Activités enrichies + total
+   * ──────────── */
   const { enhancedActivities, totalLabel } = useMemo(() => {
-    const list = (activitiesForDay || []).map((activity) => {
+    const enriched = activitiesForDay.map((activity) => {
       const typeDef = typeIndex.get(String(activity.type_activite));
       const clientDef = clientIndex.get(String(activity.client_id));
 
@@ -104,9 +101,9 @@ function CraDayCellBase({
         typeDef?.name ||
         activity.activityTypeName ||
         activity.type_label ||
-        (activity.__kind === "CP" || activity.__kind === "paid_leave"
+        ["CP", "paid_leave"].includes(activity.__kind)
           ? "Congés payés"
-          : "Activité");
+          : "Activité";
 
       const clientLabel =
         clientDef?.nom_client || activity.clientName || activity.client_label || "";
@@ -121,58 +118,44 @@ function CraDayCellBase({
       };
     });
 
-    list.sort((a, b) => {
-      const tA = a.display_type_label || "";
-      const tB = b.display_type_label || "";
-      if (tA < tB) return -1;
-      if (tA > tB) return 1;
-      const cA = a.display_client_label || "";
-      const cB = b.display_client_label || "";
-      if (cA < cB) return -1;
-      if (cA > cB) return 1;
+    enriched.sort((a, b) => {
+      if (a.display_type_label < b.display_type_label) return -1;
+      if (a.display_type_label > b.display_type_label) return 1;
+      if (a.display_client_label < b.display_client_label) return -1;
+      if (a.display_client_label > b.display_client_label) return 1;
       return 0;
     });
 
-    const total = list.reduce((s, act) => s + (parseFloat(act.temps_passe) || 0), 0);
-    return { enhancedActivities: list, totalLabel: `${total.toFixed(1)}j` };
+    const total = enriched.reduce((sum, act) => sum + (parseFloat(act.temps_passe) || 0), 0);
+    return { enhancedActivities: enriched, totalLabel: `${total.toFixed(1)}j` };
   }, [activitiesForDay, typeIndex, clientIndex]);
 
-  /** ────────────────────────────────
-   * Vérifier si jour férié
-   * ──────────────────────────────── */
-  const hasPublicHolidayActivity = useMemo(() => {
-    return (activitiesForDay || []).some(
-      (activity) => s(activity?.type_activite) === "holiday-leave"
-    );
-  }, [activitiesForDay]);
+  /** ────────────
+   * Badge jours fériés
+   * ──────────── */
+  const hasPublicHolidayActivity = useMemo(
+    () => activitiesForDay.some((a) => s(a?.type_activite) === "holiday-leave"),
+    [activitiesForDay]
+  );
 
   const shouldShowHolidayBadge = isPublicHolidayDay || hasPublicHolidayActivity;
 
-  /** ────────────────────────────────
+  /** ────────────
    * Classes CSS
-   * ──────────────────────────────── */
+   * ──────────── */
   const cellClassName = useMemo(() => {
-    const cls = [
-      "relative p-2 h-32 sm:h-40 flex flex-col justify-start border rounded-lg m-0.5 transition duration-200 overflow-hidden",
-    ];
+    const cls = ["relative p-2 h-32 sm:h-40 flex flex-col justify-start border rounded-lg m-0.5 transition duration-200 overflow-hidden"];
 
     if (isOutsideCurrentMonth) {
-      cls.push(
-        "bg-gray-100 text-gray-400 border-gray-200 opacity-50 cursor-not-allowed"
-      );
+      cls.push("bg-gray-100 text-gray-400 border-gray-200 opacity-50 cursor-not-allowed");
       return cls.join(" ");
     }
 
-    if (isTodayHighlight)
-      cls.push("bg-blue-100 border-blue-500 shadow-md text-blue-800");
-    else if (isNonWorkingDay)
-      cls.push("bg-gray-200 text-gray-500 border-gray-300");
+    if (isTodayHighlight) cls.push("bg-blue-100 border-blue-500 shadow-md text-blue-800");
+    else if (isNonWorkingDay) cls.push("bg-gray-200 text-gray-500 border-gray-300");
     else cls.push("bg-white text-gray-900 border-gray-300");
 
-    if (
-      isTempSelected &&
-      (multiSelectType === "activity" || multiSelectType === "paid_leave")
-    ) {
+    if (isTempSelected && multiSelectType !== "none") {
       cls.push("ring-2 ring-blue-400 border-blue-500 bg-blue-50");
     }
 
@@ -184,8 +167,7 @@ function CraDayCellBase({
       );
     }
 
-    cls.push(checkDayInteractable() ? "cursor-pointer hover:bg-blue-50" : "cursor-not-allowed");
-
+    cls.push(isInteractable() ? "cursor-pointer hover:bg-blue-50" : "cursor-not-allowed");
     return cls.join(" ");
   }, [
     isOutsideCurrentMonth,
@@ -195,33 +177,24 @@ function CraDayCellBase({
     multiSelectType,
     isDraggingActivity,
     isDropTargetValid,
-    checkDayInteractable,
+    isInteractable,
   ]);
 
-  /** ────────────────────────────────
+  /** ────────────
    * Handlers
-   * ──────────────────────────────── */
+   * ──────────── */
   const handleCellClick = useCallback(
     (e) => {
-      if (isOutsideCurrentMonth || !checkDayInteractable()) return;
+      if (isOutsideCurrentMonth || !isInteractable()) return;
       if (e?.target?.closest(".cra-activity-item")) return;
 
       if (multiSelectType !== "none") {
-        if (isDragging) return;
-        handleMouseDown?.(e, day);
+        if (!isDragging) handleMouseDown?.(e, day);
       } else {
         handleDayClick?.(day, e);
       }
     },
-    [
-      isOutsideCurrentMonth,
-      checkDayInteractable,
-      multiSelectType,
-      isDragging,
-      handleMouseDown,
-      day,
-      handleDayClick,
-    ]
+    [isOutsideCurrentMonth, isInteractable, multiSelectType, isDragging, handleMouseDown, day, handleDayClick]
   );
 
   const onCellDragOver = onDragOverDay;
@@ -229,28 +202,28 @@ function CraDayCellBase({
 
   const onCellMouseDown = useCallback(
     (e) => {
-      if (!checkDayInteractable() || multiSelectType === "none") return;
+      if (!isInteractable() || multiSelectType === "none") return;
       handleMouseDown?.(e, day);
     },
-    [checkDayInteractable, multiSelectType, handleMouseDown, day]
+    [isInteractable, multiSelectType, handleMouseDown, day]
   );
 
   const onCellMouseEnter = useCallback(() => {
-    if (!checkDayInteractable() || multiSelectType === "none") return;
+    if (!isInteractable() || multiSelectType === "none") return;
     handleMouseEnter?.(day);
-  }, [checkDayInteractable, multiSelectType, handleMouseEnter, day]);
+  }, [isInteractable, multiSelectType, handleMouseEnter, day]);
 
   const onCellMouseUp = useCallback(
     (e) => {
-      if (!checkDayInteractable() || multiSelectType === "none") return;
+      if (!isInteractable() || multiSelectType === "none") return;
       handleMouseUp?.(e, day);
     },
-    [checkDayInteractable, multiSelectType, handleMouseUp, day]
+    [isInteractable, multiSelectType, handleMouseUp, day]
   );
 
-  /** ────────────────────────────────
+  /** ────────────
    * Rendu JSX
-   * ──────────────────────────────── */
+   * ──────────── */
   return (
     <div
       className={cellClassName}
@@ -262,11 +235,7 @@ function CraDayCellBase({
       onDrop={onCellDrop}
     >
       {/* Jour */}
-      <span
-        className={`text-sm font-semibold mb-1 ${
-          isTodayHighlight ? "text-blue-800" : ""
-        }`}
-      >
+      <span className={`text-sm font-semibold mb-1 ${isTodayHighlight ? "text-blue-800" : ""}`}>
         {formattedDate}
       </span>
 
@@ -313,9 +282,9 @@ function CraDayCellBase({
   );
 }
 
-/* ────────────────────────────────
- * Comparateur personnalisé
- * ──────────────────────────────── */
+/** ────────────
+ * Comparateur personnalisé pour React.memo
+ * ──────────── */
 const areEqual = (prev, next) => {
   if (+prev.day !== +next.day) return false;
   if (prev.formattedDate !== next.formattedDate) return false;
@@ -342,4 +311,4 @@ const areEqual = (prev, next) => {
   return true;
 };
 
-export default React.memo(CraDayCellBase, areEqual);
+export default React.memo(CraDayCell, areEqual);
