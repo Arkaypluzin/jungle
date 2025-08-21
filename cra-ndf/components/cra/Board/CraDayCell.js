@@ -3,17 +3,7 @@
 /**
  * CraDayCell
  * ----------
- * Cellule d’un jour dans la grille du calendrier CRA :
- * - Affiche le jour + les badges (week-end / férié).
- * - Liste les activités du jour, avec libellés robustes (types/clients), triés et total du jour.
- * - Gère le clic simple (création/édition), la sélection multiple (mousedown / enter / mouseup),
- * et le drag & drop d’activité individuelle (dragOver/drop).
- *
- * Optimisations :
- * - Mémoïsation lourde (classes CSS, activités enrichies, total du jour).
- * - Index O(1) (Map) pour types/clients au lieu de .find() à chaque activité.
- * - Handlers enveloppés avec useCallback pour rester stables.
- * - Composant mémoïsé (React.memo) avec comparaison personnalisée (areEqual).
+ * Cellule d’un jour dans la grille du calendrier CRA
  */
 
 import React, { useCallback, useMemo } from "react";
@@ -34,7 +24,7 @@ function CraDayCellBase({
   isOutsideCurrentMonth,
   isTempSelected,
 
-  // Sélection multiple (passés conditionnellement par CraCalendar)
+  // Sélection multiple
   handleMouseDown,
   handleMouseEnter,
   handleMouseUp,
@@ -43,10 +33,10 @@ function CraDayCellBase({
   handleDayClick,
   onActivityClick,
 
-  // Suppression (icône sur l’activité)
+  // Suppression
   requestDeleteFromCalendar,
 
-  // Définitions pour résolution des libellés
+  // Définitions
   activityTypeDefinitions,
   clientDefinitions,
 
@@ -66,12 +56,12 @@ function CraDayCellBase({
 
   // Sélection multiple (mode & état)
   multiSelectType, // "none" | "activity" | "paid_leave"
-  isDragging,      // drag de sélection multiple en cours ?
+  isDragging,
 
   // Déduction congés
   paidLeaveTypeId,
 
-  // DnD — passe-plat vers CraActivityItem
+  // DnD
   onDragStartActivity,
 }) {
   if (!isValid(day)) {
@@ -82,13 +72,12 @@ function CraDayCellBase({
   /** Jour interactif ? (autorise clic/drag côté UI) */
   const isDayInteractable = useCallback(() => {
     if (readOnly) return false;
-    // Interactif si AU MOINS un rapport est éditable
     return isCraEditable || isPaidLeaveEditable;
   }, [readOnly, isCraEditable, isPaidLeaveEditable]);
 
-  /* ──────────────────────────────────────────────
-   * Index O(1) pour types & clients (évite .find)
-   * ──────────────────────────────────────────────*/
+  /* ────────────────────────────────
+   * Index O(1) pour types & clients
+   * ────────────────────────────────*/
   const typeIndex = useMemo(() => {
     const m = new Map();
     for (const t of activityTypeDefinitions || []) m.set(String(t.id), t);
@@ -101,9 +90,9 @@ function CraDayCellBase({
     return m;
   }, [clientDefinitions]);
 
-  /* ──────────────────────────────────────────────
-   * Enrichissement des activités + tri + total
-   * ──────────────────────────────────────────────*/
+  /* ────────────────────────────────
+   * Enrichissement + tri + total
+   * ────────────────────────────────*/
   const { enhancedActivities, totalLabel } = useMemo(() => {
     const list = (activitiesForDay || []).map((activity) => {
       const typeDef = typeIndex.get(String(activity.type_activite));
@@ -111,14 +100,14 @@ function CraDayCellBase({
 
       const typeLabel =
         typeDef?.name ||
-        activity.activityTypeName || // DB (aggregation)
-        activity.type_label ||       // éventuellement injecté côté history
-        (activity.__kind === "CP" || activity.__kind === "paid_leave" ? "Congés payés" : "Activité");
+        activity.activityTypeName ||
+        activity.type_label ||
+        (activity.__kind === "CP" || activity.__kind === "paid_leave"
+          ? "Congés payés"
+          : "Activité");
 
       const clientLabel =
-        clientDef?.nom_client ||
-        activity.clientName ||       // DB (aggregation)
-        activity.client_label || "";
+        clientDef?.nom_client || activity.clientName || activity.client_label || "";
 
       return {
         ...activity,
@@ -126,11 +115,10 @@ function CraDayCellBase({
         is_overtime: typeDef?.is_overtime || activity.is_overtime || false,
         display_type_label: typeLabel,
         display_client_label: clientLabel,
-        name: activity.name || typeLabel, // clé d’affichage utilisée par l’item
+        name: activity.name || typeLabel,
       };
     });
 
-    // Tri stable : Type -> Client (alphabétique)
     list.sort((a, b) => {
       const tA = a.display_type_label || "";
       const tB = b.display_type_label || "";
@@ -143,12 +131,14 @@ function CraDayCellBase({
       return 0;
     });
 
-    // Total (j) du jour
-    const total = list.reduce((s, act) => s + (parseFloat(act.temps_passe) || 0), 0);
+    const total = list.reduce(
+      (s, act) => s + (parseFloat(act.temps_passe) || 0),
+      0
+    );
     return { enhancedActivities: list, totalLabel: `${total.toFixed(1)}j` };
   }, [activitiesForDay, typeIndex, clientIndex]);
 
-  // NOUVEAUTÉ : Vérifier si une activité est un jour férié, indépendamment des props
+  // Vérifier si une activité est un jour férié
   const hasPublicHolidayActivity = useMemo(() => {
     return (activitiesForDay || []).some(
       (activity) => s(activity?.type_activite) === "holiday-leave"
@@ -157,35 +147,42 @@ function CraDayCellBase({
 
   const shouldShowHolidayBadge = isPublicHolidayDay || hasPublicHolidayActivity;
 
-  /* ──────────────────────────────────────────────
-   * Classes CSS de la cellule (mémoïsées)
-   * ──────────────────────────────────────────────*/
+  /* ────────────────────────────────
+   * Classes CSS mémoïsées
+   * ────────────────────────────────*/
   const cellClassName = useMemo(() => {
     const cls = [
       "relative p-2 h-32 sm:h-40 flex flex-col justify-start border rounded-lg m-0.5 transition duration-200 overflow-hidden",
     ];
 
     if (isOutsideCurrentMonth) {
-      cls.push("bg-gray-100 text-gray-400 border-gray-200 opacity-50 cursor-not-allowed");
+      cls.push(
+        "bg-gray-100 text-gray-400 border-gray-200 opacity-50 cursor-not-allowed"
+      );
       return cls.join(" ");
     }
 
-    // Couleur de fond / texte selon le contexte
-    if (isTodayHighlight) cls.push("bg-blue-100 border-blue-500 shadow-md text-blue-800");
-    else if (isNonWorkingDay) cls.push("bg-gray-200 text-gray-500 border-gray-300");
+    if (isTodayHighlight)
+      cls.push("bg-blue-100 border-blue-500 shadow-md text-blue-800");
+    else if (isNonWorkingDay)
+      cls.push("bg-gray-200 text-gray-500 border-gray-300");
     else cls.push("bg-white text-gray-900 border-gray-300");
 
-    // Sélection multiple (temporaire)
-    if (isTempSelected && (multiSelectType === "activity" || multiSelectType === "paid_leave")) {
+    if (
+      isTempSelected &&
+      (multiSelectType === "activity" || multiSelectType === "paid_leave")
+    ) {
       cls.push("ring-2 ring-blue-400 border-blue-500 bg-blue-50");
     }
 
-    // Feedback DnD individuel
     if (isDraggingActivity) {
-      cls.push(isDropTargetValid ? "border-dashed border-green-500 bg-green-50" : "border-dashed border-red-500 bg-red-50");
+      cls.push(
+        isDropTargetValid
+          ? "border-dashed border-green-500 bg-green-50"
+          : "border-dashed border-red-500 bg-red-50"
+      );
     }
 
-    // Curseur / hover
     cls.push(isDayInteractable() ? "cursor-pointer hover:bg-blue-50" : "cursor-not-allowed");
 
     return cls.join(" ");
@@ -200,72 +197,101 @@ function CraDayCellBase({
     isDayInteractable,
   ]);
 
-  /* ──────────────────────────────────────────────
-   * Handlers enveloppés (stables)
-   * ──────────────────────────────────────────────*/
-
-  // Clic sur la cellule : selon le mode (multi-select vs simple clic)
+  /* ────────────────────────────────
+   * Handlers stables
+   * ────────────────────────────────*/
   const handleCellClick = useCallback(
     (e) => {
       if (isOutsideCurrentMonth || !isDayInteractable()) return;
-
-      // Si clic sur une activité : laisser CraActivityItem gérer
       if (e?.target?.closest(".cra-activity-item")) return;
 
       if (multiSelectType !== "none") {
-        // Mode sélection multiple : le mousedown lance la sélection
-        if (isDragging) return; // un drag est déjà en cours
+        if (isDragging) return;
         handleMouseDown?.(e, day);
       } else {
-        // Mode simple : ouvrir la modale (création/édition)
         handleDayClick?.(day, e);
       }
     },
-    [isOutsideCurrentMonth, isDayInteractable, multiSelectType, isDragging, handleMouseDown, day, handleDayClick]
+    [
+      isOutsideCurrentMonth,
+      isDayInteractable,
+      multiSelectType,
+      isDragging,
+      handleMouseDown,
+      day,
+      handleDayClick,
+    ]
   );
 
-  // DnD sur la cellule (le filtrage d'autorisation est géré dans CraBoard)
   const onCellDragOver = onDragOverDay;
-  const onCellDrop = useCallback((e) => onDropActivity?.(e, day), [onDropActivity, day]);
+  const onCellDrop = useCallback(
+    (e) => onDropActivity?.(e, day),
+    [onDropActivity, day]
+  );
 
-  // Sélection multiple (attachés seulement si le jour est interactif + mode actif)
-  const onCellMouseDown = useCallback((e) => handleMouseDown?.(e, day), [handleMouseDown, day]);
-  const onCellMouseEnter = useCallback(() => handleMouseEnter?.(day), [handleMouseEnter, day]);
+  const onCellMouseDown = useCallback(
+    (e) => {
+      if (!isDayInteractable() || multiSelectType === "none") return;
+      handleMouseDown?.(e, day);
+    },
+    [isDayInteractable, multiSelectType, handleMouseDown, day]
+  );
 
-  /* ──────────────────────────────────────────────
+  const onCellMouseEnter = useCallback(() => {
+    if (!isDayInteractable() || multiSelectType === "none") return;
+    handleMouseEnter?.(day);
+  }, [isDayInteractable, multiSelectType, handleMouseEnter, day]);
+
+  const onCellMouseUp = useCallback(
+    (e) => {
+      if (!isDayInteractable() || multiSelectType === "none") return;
+      handleMouseUp?.(e, day);
+    },
+    [isDayInteractable, multiSelectType, handleMouseUp, day]
+  );
+
+  /* ────────────────────────────────
    * Rendu
-   * ──────────────────────────────────────────────*/
+   * ────────────────────────────────*/
   return (
     <div
       className={cellClassName}
       onClick={handleCellClick}
-      onMouseDown={isDayInteractable() && multiSelectType !== "none" ? onCellMouseDown : undefined}
-      onMouseEnter={isDayInteractable() && multiSelectType !== "none" ? onCellMouseEnter : undefined}
-      onMouseUp={isDayInteractable() && multiSelectType !== "none" ? handleMouseUp : undefined}
+      onMouseDown={onCellMouseDown}
+      onMouseEnter={onCellMouseEnter}
+      onMouseUp={onCellMouseUp}
       onDragOver={onCellDragOver}
       onDrop={onCellDrop}
     >
-      {/* Jour (numéro) */}
-      <span className={`text-sm font-semibold mb-1 ${isTodayHighlight ? "text-blue-800" : ""}`}>
+      {/* Jour */}
+      <span
+        className={`text-sm font-semibold mb-1 ${
+          isTodayHighlight ? "text-blue-800" : ""
+        }`}
+      >
         {formattedDate}
       </span>
 
-      {/* Badges contexte (W-E / Férié) */}
-      {/* CORRECTION: La condition pour afficher le badge prend désormais en compte isPublicHolidayDay et hasPublicHolidayActivity */}
-      {(isNonWorkingDay || hasPublicHolidayActivity) && !isOutsideCurrentMonth && (
-        <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
-          {shouldShowHolidayBadge && isWeekendDay ? "Férié & W-E" : shouldShowHolidayBadge ? "Férié" : "Week-end"}
-        </span>
-      )}
+      {/* Badges */}
+      {(isNonWorkingDay || hasPublicHolidayActivity) &&
+        !isOutsideCurrentMonth && (
+          <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
+            {shouldShowHolidayBadge && isWeekendDay
+              ? "Férié & W-E"
+              : shouldShowHolidayBadge
+              ? "Férié"
+              : "Week-end"}
+          </span>
+        )}
 
-      {/* Total du jour (en haut à droite) */}
+      {/* Total du jour */}
       {enhancedActivities.length > 0 && (
         <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
           {totalLabel}
         </div>
       )}
 
-      {/* Liste des activités (triées) */}
+      {/* Activités */}
       <div className="flex-grow overflow-y-auto w-full pr-1 custom-scrollbar">
         {enhancedActivities.map((activity) => (
           <CraActivityItem
@@ -290,17 +316,13 @@ function CraDayCellBase({
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────
- * Comparateur personnalisé pour React.memo
- * - On évite un re-render si rien de pertinent n'a changé visuellement.
- * - On compare jour + flags + activités (faible profondeur).
- * ──────────────────────────────────────────────────────────────────────────────*/
+/* ────────────────────────────────
+ * Comparateur personnalisé
+ * ────────────────────────────────*/
 const areEqual = (prev, next) => {
-  // Jour (timestamp) & format affiché
   if (+prev.day !== +next.day) return false;
   if (prev.formattedDate !== next.formattedDate) return false;
 
-  // Flags visuels / interaction
   const boolKeys = [
     "isTodayHighlight",
     "isWeekendDay",
@@ -317,23 +339,21 @@ const areEqual = (prev, next) => {
   ];
   for (const k of boolKeys) if (prev[k] !== next[k]) return false;
 
-  // Mode & identités utilisateur (affecte tooltips)
   if (prev.multiSelectType !== next.multiSelectType) return false;
   if (prev.userId !== next.userId) return false;
   if (prev.userFirstName !== next.userFirstName) return false;
   if (prev.paidLeaveTypeId !== next.paidLeaveTypeId) return false;
 
-  // Définitions : si elles changent, on veut re-render
   if (prev.activityTypeDefinitions !== next.activityTypeDefinitions) return false;
   if (prev.clientDefinitions !== next.clientDefinitions) return false;
 
-  // Activités du jour : comparaison légère (taille + champs principaux)
   const a = prev.activitiesForDay || [];
   const b = next.activitiesForDay || [];
   if (a.length !== b.length) return false;
 
   for (let i = 0; i < a.length; i++) {
-    const A = a[i], B = b[i];
+    const A = a[i],
+      B = b[i];
     if (A === B) continue;
     if (
       String(A.id) !== String(B.id) ||
@@ -341,13 +361,13 @@ const areEqual = (prev, next) => {
       String(A.client_id ?? "") !== String(B.client_id ?? "") ||
       (A.temps_passe ?? null) !== (B.temps_passe ?? null) ||
       (A.status ?? "draft") !== (B.status ?? "draft") ||
-      (A.override_non_working_day ?? false) !== (B.override_non_working_day ?? false)
+      (A.override_non_working_day ?? false) !==
+        (B.override_non_working_day ?? false)
     ) {
       return false;
     }
   }
 
-  // Handlers : supposés stabilisés par le parent via useCallback (si non, on re-render quand même)
   return (
     prev.handleMouseDown === next.handleMouseDown &&
     prev.handleMouseEnter === next.handleMouseEnter &&
