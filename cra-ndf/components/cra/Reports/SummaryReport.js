@@ -20,6 +20,7 @@ export default function SummaryReport({
   paidLeaveReport,
   publicHolidays,
 }) {
+  // --- 1. DÉCLAREZ TOUS VOS HOOKS EN PREMIER ---
   const reportRef = useRef();
   const signatureCanvasRef = useRef(null);
   const signatureCtxRef = useRef(null);
@@ -62,6 +63,7 @@ export default function SummaryReport({
   }, [clientDefinitions]);
 
   const totals = useMemo(() => {
+    // ... votre logique de calcul des totaux, inchangée
     if (!isValid(month)) {
       return {
         totalWorkingDays: 0,
@@ -73,61 +75,62 @@ export default function SummaryReport({
         timeDifference: "0.00",
       };
     }
-
+    
+    // ... le reste de votre logique de calcul ici
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
     const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
-
+    
     const totalWorkingDays = allDaysInMonth.filter(
       (day) => !isWeekend(day, { weekStartsOn: 1 }) && !isPublicHoliday(day)
     ).length || 0;
-
+    
     let totalActivitiesTime = 0;
     let totalWorkingDaysActivitiesTime = 0;
     let totalPaidLeaveDaysInMonth = 0;
     let nonWorkingDaysWorked = 0;
     let totalOvertimeHours = 0;
-
+    
     const paidLeaveType = activityTypeDefinitions.find(t => t.name && t.name.toLowerCase().includes("congé payé"));
     const paidLeaveTypeId = paidLeaveType ? paidLeaveType.id : null;
-
+    
     const overtimeType = activityTypeDefinitions.find(t => t.is_overtime);
     const overtimeTypeId = overtimeType ? overtimeType.id : null;
-
+    
     activities.forEach(activity => {
       const duration = parseFloat(activity.temps_passe) || 0;
       totalActivitiesTime += duration;
-
+      
       let dateObj = null;
       if (typeof activity.date_activite === "string") {
         dateObj = parseISO(activity.date_activite);
       } else if (activity.date_activite) {
         dateObj = new Date(activity.date_activite);
       }
-
+      
       if (isValid(dateObj) && isSameMonth(dateObj, month)) {
         const isNonWorkingDay = isWeekend(dateObj, { weekStartsOn: 1 }) || isPublicHoliday(dateObj);
-
+        
         if (isNonWorkingDay && duration > 0) {
           nonWorkingDaysWorked += duration;
         }
-
+        
         if (!isNonWorkingDay) {
           totalWorkingDaysActivitiesTime += duration;
         }
-
+        
         if (String(activity.type_activite) === String(paidLeaveTypeId)) {
           totalPaidLeaveDaysInMonth += duration;
         }
-
+        
         if (String(activity.type_activite) === String(overtimeTypeId)) {
-            totalOvertimeHours += duration;
+          totalOvertimeHours += duration;
         }
       }
     });
-
+    
     const timeDifference = (totalActivitiesTime - totalWorkingDays).toFixed(2);
-
+    
     return {
       totalWorkingDays,
       totalActivitiesTime,
@@ -149,52 +152,8 @@ export default function SummaryReport({
     timeDifference,
   } = totals;
 
-  useEffect(() => {
-    if (isOpen) {
-      console.log("[SummaryReport] Component is open. Props received:", {
-        month: isValid(month) ? format(month, 'yyyy-MM-dd') : month,
-        activitiesCount: activities.length,
-        activityTypeDefinitionsCount: activityTypeDefinitions.length,
-        clientDefinitionsCount: clientDefinitions.length,
-        publicHolidaysCount: publicHolidays ? publicHolidays.length : 0,
-        craReportStatus,
-        paidLeaveReportStatus,
-        userFirstName,
-        calculatedTotals: totals,
-        sampleActivities: activities.slice(0, 3).map(a => ({ id: a.id, type_activite: a.type_activite, temps_passe: a.temps_passe })),
-        sampleActivityTypeDefinitions: activityTypeDefinitions.slice(0, 3).map(def => ({ id: def.id, name: def.name })),
-      });
-    }
-  }, [
-    isOpen, month, activities, activityTypeDefinitions, clientDefinitions,
-    publicHolidays, craReportStatus, paidLeaveReportStatus, craReport,
-    paidLeaveReport, userFirstName, totals
-  ]);
-
-  if (!isOpen) {
-    return null;
-  }
-
-  if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
-    console.error("[SummaryReport] Essential data missing or invalid for report rendering.", { month, activities, clientDefinitions, activityTypeDefinitions, publicHolidays });
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
-          >
-            &times;
-          </button>
-          <p className="text-red-700 text-center">
-            Erreur: Impossible d&apsos;afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const allDaysWithActivities = useMemo(() => {
+    // ... votre logique de calcul des jours d'activités, inchangée
     if (!isValid(month)) return [];
 
     const monthStart = startOfMonth(month);
@@ -215,7 +174,6 @@ export default function SummaryReport({
             if (!activitiesMap.has(dateKey)) {
                 activitiesMap.set(dateKey, []);
             }
-            // Retrouve la définition du type d'activité pour obtenir is_absence
             const activityType = activityTypeDefinitions.find(t => String(t.id) === String(activity.type_activite));
             activitiesMap.get(dateKey).push({ ...activity, date_activite: dateObj, is_absence: activityType?.is_absence });
         }
@@ -238,170 +196,17 @@ export default function SummaryReport({
     });
   }, [activities, month, isPublicHoliday, activityTypeDefinitions]);
 
-  // Définition de l'ID du type "Congé Payé" (inchangé)
   const paidLeaveTypeId = useMemo(() => {
     const type = activityTypeDefinitions.find(t => t.name && t.name.toLowerCase().includes("congé payé"));
     return type ? type.id : null;
   }, [activityTypeDefinitions]);
 
-
-  // Signature drawing logic (inchangé)
-  useEffect(() => {
-    const canvas = signatureCanvasRef.current;
-    if (!canvas) return;
-
-    isDrawingRef.current = false;
-    setIsDrawing(false);
-
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
-
-    const ctx = canvas.getContext('2d');
-    signatureCtxRef.current = ctx;
-    if (!ctx) return;
-
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#000000';
-
-    let lastX = 0;
-    let lastY = 0;
-
-    const getCoords = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-      return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      };
-    };
-
-    const startDrawing = (e) => {
-      if (isSignatureLoading) return;
-      isDrawingRef.current = true;
-      setIsDrawing(true);
-      const { x, y } = getCoords(e);
-      lastX = x;
-      lastY = y;
-      ctx.beginPath();
-      ctx.moveTo(lastX, lastY);
-    };
-
-    const draw = (e) => {
-      if (!isDrawingRef.current || !signatureCtxRef.current) return;
-      const { x, y } = getCoords(e);
-      signatureCtxRef.current.lineTo(x, y);
-      signatureCtxRef.current.stroke();
-      lastX = x;
-      lastY = y;
-    };
-
-    const stopDrawing = () => {
-      isDrawingRef.current = false;
-      setIsDrawing(false);
-      if (signatureCtxRef.current) signatureCtx.closePath();
-      if (signatureCanvasRef.current) {
-        setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
-      }
-    };
-
-    canvas.addEventListener('mousedown', startDrawing);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('mouseup', stopDrawing);
-    canvas.addEventListener('mouseout', stopDrawing);
-
-    canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      startDrawing(e);
-    }, { passive: false });
-    canvas.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      draw(e);
-    }, { passive: false });
-    canvas.addEventListener('touchend', stopDrawing);
-    canvas.addEventListener('touchcancel', stopDrawing);
-
-    return () => {
-      canvas.removeEventListener('mousedown', startDrawing);
-      canvas.removeEventListener('mousemove', draw);
-      canvas.removeEventListener('mouseup', stopDrawing);
-      canvas.removeEventListener('mouseout', stopDrawing);
-
-      canvas.removeEventListener('touchstart', startDrawing);
-      canvas.removeEventListener('touchmove', draw);
-      canvas.removeEventListener('touchend', stopDrawing);
-      canvas.removeEventListener('touchcancel', stopDrawing);
-    };
-  }, [isSignatureLoading]);
-
-
-  useEffect(() => {
-    const loadSignatureFromApi = async () => {
-      setIsSignatureLoading(true);
-      try {
-        const response = await fetch(`/api/signature?userId=${userFirstName}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.image) {
-            setSignatureData(data.image);
-            if (signatureCanvasRef.current) {
-              const ctx = signatureCanvasRef.current.getContext('2d');
-              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-              const img = new Image();
-              img.onload = () => {
-                ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-              };
-              img.src = data.image;
-            }
-          } else {
-            setSignatureData(null);
-            if (signatureCanvasRef.current) {
-              const ctx = signatureCanvasRef.current.getContext('2d');
-              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-            }
-          }
-        } else {
-          console.error("Failed to load signature from API:", response.status, response.statusText);
-          setSignatureData(null);
-          if (signatureCanvasRef.current) {
-            const ctx = signatureCanvasRef.current.getContext('2d');
-            ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching signature:", error);
-        showMessage("Erreur lors du chargement de la signature: " + error.message, "error");
-        setSignatureData(null);
-        if (signatureCanvasRef.current) {
-          const ctx = signatureCanvasRef.current.getContext('2d');
-          ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-        }
-      } finally {
-        setIsSignatureLoading(false);
-      }
-    };
-
-    if (isOpen) {
-      loadSignatureFromApi();
-    } else {
-      setSignatureData(null);
-      if (signatureCanvasRef.current) {
-        const ctx = signatureCanvasRef.current.getContext('2d');
-        ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-      }
-      setIsSignatureLoading(true);
-      setHasDownloaded(false);
-    }
-  }, [isOpen, userFirstName, showMessage]);
-
-
-  const clearSignature = async () => {
+  const clearSignature = useCallback(async () => {
+    // ... votre logique de suppression de signature, inchangée
     if (signatureCanvasRef.current) {
       const ctx = signatureCanvasRef.current.getContext('2d');
       ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
       setSignatureData(null);
-
       try {
         const response = await fetch(`/api/signature?userId=${userFirstName}`, {
           method: 'DELETE',
@@ -418,13 +223,13 @@ export default function SummaryReport({
         showMessage("Erreur lors de l'effacement de la signature: " + error.message, "error");
       }
     }
-  };
+  }, [userFirstName, showMessage]);
 
-  const saveSignature = async () => {
+  const saveSignature = useCallback(async () => {
+    // ... votre logique d'enregistrement de signature, inchangée
     if (signatureCanvasRef.current) {
       const dataURL = signatureCanvasRef.current.toDataURL('image/png');
       setSignatureData(dataURL);
-
       try {
         const response = await fetch('/api/signature', {
           method: 'POST',
@@ -445,10 +250,10 @@ export default function SummaryReport({
         showMessage("Erreur lors de l'enregistrement de la signature: " + error.message, "error");
       }
     }
-  };
+  }, [userFirstName, showMessage]);
 
-
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = useCallback(async () => {
+    // ... votre logique de téléchargement PDF, inchangée
     if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
       showMessage("Impossible de générer le PDF: Données essentielles manquantes ou invalides.", "error");
       return;
@@ -700,7 +505,6 @@ export default function SummaryReport({
         yPos += defaultLineHeight;
       }
 
-      // Définition de la position verticale pour les deux blocs de signature
       const commonSignatureY = pageHeight - margin - 50; 
       const signatureLineWidth = 60;
       const dateLineWidth = 40;
@@ -708,7 +512,6 @@ export default function SummaryReport({
       const signatureClientX = margin;
       const signatureUserX = pageWidth - margin - signatureLineWidth;
 
-      // Signature de l'utilisateur
       if (signatureData) {
         let signatureHeight = 40;
         let signatureUserY = commonSignatureY - signatureHeight;
@@ -731,7 +534,6 @@ export default function SummaryReport({
         pdf.text(`Signature de ${userFirstName}`, signatureUserX + signatureLineWidth / 2, signatureLineY + 10, { align: 'center' });
       }
 
-      // Signature du client
       const lineY = commonSignatureY;
       const textY = lineY + 5;
       const dateTextY = textY + 5;
@@ -756,8 +558,209 @@ export default function SummaryReport({
       console.error("Erreur lors de la génération du PDF:", error);
       showMessage("Erreur lors de la génération du PDF: " + error.message, "error");
     }
-  };
+  }, [activities, activityTypeDefinitions, clientDefinitions, month, monthName, userFirstName, showMessage, getClientName, getActivityTypeName, isPublicHoliday, craReportStatus, craReport, paidLeaveReportStatus, paidLeaveReport, totalWorkingDays, totalActivitiesTime, totalWorkingDaysActivitiesTime, totalPaidLeaveDaysInMonth, nonWorkingDaysWorked, totalOvertimeHours, timeDifference, allDaysWithActivities, signatureData, publicHolidays]);
 
+  // useEffect pour le log des props, doit rester en haut
+  useEffect(() => {
+    if (isOpen) {
+      console.log("[SummaryReport] Component is open. Props received:", {
+        month: isValid(month) ? format(month, 'yyyy-MM-dd') : month,
+        activitiesCount: activities.length,
+        activityTypeDefinitionsCount: activityTypeDefinitions.length,
+        clientDefinitionsCount: clientDefinitions.length,
+        publicHolidaysCount: publicHolidays ? publicHolidays.length : 0,
+        craReportStatus,
+        paidLeaveReportStatus,
+        userFirstName,
+        calculatedTotals: totals,
+        sampleActivities: activities.slice(0, 3).map(a => ({ id: a.id, type_activite: a.type_activite, temps_passe: a.temps_passe })),
+        sampleActivityTypeDefinitions: activityTypeDefinitions.slice(0, 3).map(def => ({ id: def.id, name: def.name })),
+      });
+    }
+  }, [
+    isOpen, month, activities, activityTypeDefinitions, clientDefinitions,
+    publicHolidays, craReportStatus, paidLeaveReportStatus, craReport,
+    paidLeaveReport, userFirstName, totals
+  ]);
+
+  // useEffect pour la logique de signature, doit rester en haut
+  useEffect(() => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+
+    isDrawingRef.current = false;
+    setIsDrawing(false);
+
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+
+    const ctx = canvas.getContext('2d');
+    signatureCtxRef.current = ctx;
+    if (!ctx) return;
+
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000000';
+
+    let lastX = 0;
+    let lastY = 0;
+
+    const getCoords = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    };
+
+    const startDrawing = (e) => {
+      if (isSignatureLoading) return;
+      isDrawingRef.current = true;
+      setIsDrawing(true);
+      const { x, y } = getCoords(e);
+      lastX = x;
+      lastY = y;
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+    };
+
+    const draw = (e) => {
+      if (!isDrawingRef.current || !signatureCtxRef.current) return;
+      const { x, y } = getCoords(e);
+      signatureCtxRef.current.lineTo(x, y);
+      signatureCtxRef.current.stroke();
+      lastX = x;
+      lastY = y;
+    };
+
+    const stopDrawing = () => {
+      isDrawingRef.current = false;
+      setIsDrawing(false);
+      if (signatureCtxRef.current) signatureCtxRef.current.closePath();
+      if (signatureCanvasRef.current) {
+        setSignatureData(signatureCanvasRef.current.toDataURL('image/png'));
+      }
+    };
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      startDrawing(e);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      draw(e);
+    }, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing);
+    canvas.addEventListener('touchcancel', stopDrawing);
+
+    return () => {
+      canvas.removeEventListener('mousedown', startDrawing);
+      canvas.removeEventListener('mousemove', draw);
+      canvas.removeEventListener('mouseup', stopDrawing);
+      canvas.removeEventListener('mouseout', stopDrawing);
+
+      canvas.removeEventListener('touchstart', startDrawing);
+      canvas.removeEventListener('touchmove', draw);
+      canvas.removeEventListener('touchend', stopDrawing);
+      canvas.removeEventListener('touchcancel', stopDrawing);
+    };
+  }, [isSignatureLoading]);
+
+
+  useEffect(() => {
+    const loadSignatureFromApi = async () => {
+      setIsSignatureLoading(true);
+      try {
+        const response = await fetch(`/api/signature?userId=${userFirstName}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.image) {
+            setSignatureData(data.image);
+            if (signatureCanvasRef.current) {
+              const ctx = signatureCanvasRef.current.getContext('2d');
+              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+              const img = new Image();
+              img.onload = () => {
+                ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+              };
+              img.src = data.image;
+            }
+          } else {
+            setSignatureData(null);
+            if (signatureCanvasRef.current) {
+              const ctx = signatureCanvasRef.current.getContext('2d');
+              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+            }
+          }
+        } else {
+          console.error("Failed to load signature from API:", response.status, response.statusText);
+          setSignatureData(null);
+          if (signatureCanvasRef.current) {
+            const ctx = signatureCanvasRef.current.getContext('2d');
+            ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching signature:", error);
+        showMessage("Erreur lors du chargement de la signature: " + error.message, "error");
+        setSignatureData(null);
+        if (signatureCanvasRef.current) {
+          const ctx = signatureCanvasRef.current.getContext('2d');
+          ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+        }
+      } finally {
+        setIsSignatureLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      loadSignatureFromApi();
+    } else {
+      setSignatureData(null);
+      if (signatureCanvasRef.current) {
+        const ctx = signatureCanvasRef.current.getContext('2d');
+        ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+      }
+      setIsSignatureLoading(true);
+      setHasDownloaded(false);
+    }
+  }, [isOpen, userFirstName, showMessage]);
+
+  // --- 2. RETOURNEZ NULL SI LA MODALE EST FERMÉE ---
+  // Cette condition est la seule qui peut être avant le JSX
+  if (!isOpen) {
+    return null;
+  }
+
+  // --- 3. GESTION DE LA DONNÉE MANQUANTE ---
+  // Doit aussi être placé avant le JSX
+  if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
+    console.error("[SummaryReport] Essential data missing or invalid for report rendering.", { month, activities, clientDefinitions, activityTypeDefinitions, publicHolidays });
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+          >
+            &times;
+          </button>
+          <p className="text-red-700 text-center">
+            Erreur: Impossible d&apsos;afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- 4. LE JSX DU COMPOSANT ---
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
       <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl relative overflow-y-auto max-h-[90vh]">

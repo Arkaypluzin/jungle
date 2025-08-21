@@ -64,11 +64,6 @@ function CraDayCell({
   // DnD
   onDragStartActivity,
 }) {
-  if (!isValid(day)) {
-    console.error("CraDayCell: Prop 'day' invalide reçue:", day);
-    return null;
-  }
-
   /** ────────────
    * Jour interactif
    * ──────────── */
@@ -101,9 +96,9 @@ function CraDayCell({
         typeDef?.name ||
         activity.activityTypeName ||
         activity.type_label ||
-        ["CP", "paid_leave"].includes(activity.__kind)
+        (["CP", "paid_leave"].includes(activity.__kind)
           ? "Congés payés"
-          : "Activité";
+          : "Activité");
 
       const clientLabel =
         clientDef?.nom_client || activity.clientName || activity.client_label || "";
@@ -220,6 +215,12 @@ function CraDayCell({
     },
     [isInteractable, multiSelectType, handleMouseUp, day]
   );
+  
+  // Cette condition est déplacée après tous les appels de hooks
+  if (!isValid(day)) {
+    console.error("CraDayCell: Prop 'day' invalide reçue:", day);
+    return null;
+  }
 
   /** ────────────
    * Rendu JSX

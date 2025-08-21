@@ -22,9 +22,7 @@ export default function MonthlyReportPreviewModal({
   onRejectCra,
   isAdminOrManager,
 }) {
-  if (!isOpen) return null;
-
-  const currentMonthDate = new Date(year, month - 1);
+  // Déplacez TOUS les appels de hooks ici, au-dessus de la condition 'if (!isOpen)'
 
   // Callback pour messages
   const showMessage = useCallback((message, type = "info") => {
@@ -43,6 +41,13 @@ export default function MonthlyReportPreviewModal({
   const fetchActivitiesForMonth = useCallback(() => {
     console.log("CraBoard en mode lecture seule : pas de fetch interne.");
   }, []);
+
+  // Ensuite, après tous les hooks, vous pouvez mettre la condition.
+  if (!isOpen) {
+    return null;
+  }
+
+  const currentMonthDate = new Date(year, month - 1);
 
   // Déterminer si les boutons Valider/Rejeter doivent être affichés
   const canActOnReport = isAdminOrManager && reportStatus === "pending_review";
