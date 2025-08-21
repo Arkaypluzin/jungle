@@ -72,7 +72,7 @@ function CraDayCellBase({
   /** ────────────────────────────────
    * Jour interactif ?
    * ──────────────────────────────── */
-  const isDayInteractable = useCallback(() => {
+  const checkDayInteractable = useCallback(() => {
     if (readOnly) return false;
     return isCraEditable || isPaidLeaveEditable;
   }, [readOnly, isCraEditable, isPaidLeaveEditable]);
@@ -184,7 +184,7 @@ function CraDayCellBase({
       );
     }
 
-    cls.push(isDayInteractable() ? "cursor-pointer hover:bg-blue-50" : "cursor-not-allowed");
+    cls.push(checkDayInteractable() ? "cursor-pointer hover:bg-blue-50" : "cursor-not-allowed");
 
     return cls.join(" ");
   }, [
@@ -195,7 +195,7 @@ function CraDayCellBase({
     multiSelectType,
     isDraggingActivity,
     isDropTargetValid,
-    isDayInteractable,
+    checkDayInteractable,
   ]);
 
   /** ────────────────────────────────
@@ -203,7 +203,7 @@ function CraDayCellBase({
    * ──────────────────────────────── */
   const handleCellClick = useCallback(
     (e) => {
-      if (isOutsideCurrentMonth || !isDayInteractable()) return;
+      if (isOutsideCurrentMonth || !checkDayInteractable()) return;
       if (e?.target?.closest(".cra-activity-item")) return;
 
       if (multiSelectType !== "none") {
@@ -215,7 +215,7 @@ function CraDayCellBase({
     },
     [
       isOutsideCurrentMonth,
-      isDayInteractable,
+      checkDayInteractable,
       multiSelectType,
       isDragging,
       handleMouseDown,
@@ -229,23 +229,23 @@ function CraDayCellBase({
 
   const onCellMouseDown = useCallback(
     (e) => {
-      if (!isDayInteractable() || multiSelectType === "none") return;
+      if (!checkDayInteractable() || multiSelectType === "none") return;
       handleMouseDown?.(e, day);
     },
-    [isDayInteractable, multiSelectType, handleMouseDown, day]
+    [checkDayInteractable, multiSelectType, handleMouseDown, day]
   );
 
   const onCellMouseEnter = useCallback(() => {
-    if (!isDayInteractable() || multiSelectType === "none") return;
+    if (!checkDayInteractable() || multiSelectType === "none") return;
     handleMouseEnter?.(day);
-  }, [isDayInteractable, multiSelectType, handleMouseEnter, day]);
+  }, [checkDayInteractable, multiSelectType, handleMouseEnter, day]);
 
   const onCellMouseUp = useCallback(
     (e) => {
-      if (!isDayInteractable() || multiSelectType === "none") return;
+      if (!checkDayInteractable() || multiSelectType === "none") return;
       handleMouseUp?.(e, day);
     },
-    [isDayInteractable, multiSelectType, handleMouseUp, day]
+    [checkDayInteractable, multiSelectType, handleMouseUp, day]
   );
 
   /** ────────────────────────────────
@@ -334,48 +334,12 @@ const areEqual = (prev, next) => {
     "isDropTargetValid",
     "isDragging",
   ];
-  for (const k of boolKeys) if (prev[k] !== next[k]) return false;
 
-  if (prev.multiSelectType !== next.multiSelectType) return false;
-  if (prev.userId !== next.userId) return false;
-  if (prev.userFirstName !== next.userFirstName) return false;
-  if (prev.paidLeaveTypeId !== next.paidLeaveTypeId) return false;
+  for (const key of boolKeys) if (prev[key] !== next[key]) return false;
 
-  if (prev.activityTypeDefinitions !== next.activityTypeDefinitions) return false;
-  if (prev.clientDefinitions !== next.clientDefinitions) return false;
+  if (prev.activitiesForDay?.length !== next.activitiesForDay?.length) return false;
 
-  const a = prev.activitiesForDay || [];
-  const b = next.activitiesForDay || [];
-  if (a.length !== b.length) return false;
-
-  for (let i = 0; i < a.length; i++) {
-    const A = a[i],
-      B = b[i];
-    if (A === B) continue;
-    if (
-      String(A.id) !== String(B.id) ||
-      String(A.type_activite) !== String(B.type_activite) ||
-      String(A.client_id ?? "") !== String(B.client_id ?? "") ||
-      (A.temps_passe ?? null) !== (B.temps_passe ?? null) ||
-      (A.status ?? "draft") !== (B.status ?? "draft") ||
-      (A.override_non_working_day ?? false) !== (B.override_non_working_day ?? false)
-    ) {
-      return false;
-    }
-  }
-
-  return (
-    prev.handleMouseDown === next.handleMouseDown &&
-    prev.handleMouseEnter === next.handleMouseEnter &&
-    prev.handleMouseUp === next.handleMouseUp &&
-    prev.handleDayClick === next.handleDayClick &&
-    prev.onActivityClick === next.onActivityClick &&
-    prev.requestDeleteFromCalendar === next.requestDeleteFromCalendar &&
-    prev.onDragOverDay === next.onDragOverDay &&
-    prev.onDropActivity === next.onDropActivity &&
-    prev.onDragStartActivity === next.onDragStartActivity &&
-    prev.showMessage === next.showMessage
-  );
+  return true;
 };
 
 export default React.memo(CraDayCellBase, areEqual);
