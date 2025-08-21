@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useCallback } from "react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import {
@@ -15,9 +15,26 @@ import { fr } from "date-fns/locale";
 export default function DetailedCraReportModal({
   isOpen,
   onClose,
-  reportData, // Contient toutes les données nécessaires (activités, définitions, totaux, mois, nom utilisateur)
+  reportData,
 }) {
-  const reportRef = useRef(); // Référence au div du rapport pour la capture PDF
+  const reportRef = useRef();
+
+  // Déclarer les hooks avant tout return conditionnel
+  const getClientName = useCallback(
+    (clientId, clientDefinitions = []) => {
+      const client = clientDefinitions.find((c) => c.id === clientId);
+      return client ? client.nom_client : "Client Inconnu";
+    },
+    []
+  );
+
+  const getActivityTypeName = useCallback(
+    (activityTypeId, activityTypeDefinitions = []) => {
+      const type = activityTypeDefinitions.find((t) => t.id === activityTypeId);
+      return type ? type.name : "Type Inconnu";
+    },
+    []
+  );
 
   if (!isOpen || !reportData) return null;
 
@@ -32,24 +49,6 @@ export default function DetailedCraReportModal({
     userName,
   } = reportData;
 
-  // Fonction pour obtenir le nom du client par son ID
-  const getClientName = useCallback(
-    (clientId) => {
-      const client = clientDefinitions.find((c) => c.id === clientId);
-      return client ? client.nom_client : "Client Inconnu";
-    },
-    [clientDefinitions]
-  );
-
-  // Fonction pour obtenir le nom du type d'activité par son ID
-  const getActivityTypeName = useCallback(
-    (activityTypeId) => {
-      const type = activityTypeDefinitions.find((t) => t.id === activityTypeId);
-      return type ? type.name : "Type Inconnu";
-    },
-    [activityTypeDefinitions]
-  );
-
   // Regrouper les activités par jour
   const activitiesByDay = activities.reduce((acc, activity) => {
     const dateKey = format(activity.date_activite, "yyyy-MM-dd");
@@ -60,15 +59,15 @@ export default function DetailedCraReportModal({
     return acc;
   }, {});
 
-  // Générer tous les jours du mois pour afficher même les jours sans activité
+  // Générer tous les jours du mois
   const start = startOfMonth(currentMonth);
   const end = endOfMonth(currentMonth);
   const allDaysInMonth = eachDayOfInterval({ start, end });
 
-  // Filtrer les jours ouvrés (lundi à vendredi)
+  // Filtrer les jours ouvrés
   const workingDays = allDaysInMonth.filter((day) => {
-    const dayOfWeek = getDay(day); // Dimanche = 0, Lundi = 1, ..., Samedi = 6
-    return dayOfWeek >= 1 && dayOfWeek <= 5; // Lundi (1) à Vendredi (5)
+    const dayOfWeek = getDay(day);
+    return dayOfWeek >= 1 && dayOfWeek <= 5;
   });
 
   const handleDownloadPdf = async () => {
@@ -78,24 +77,22 @@ export default function DetailedCraReportModal({
       return;
     }
 
-    // Temporairement ajuster le style pour l'impression si nécessaire (ex: enlever les ombres, marges)
-    // C'est souvent utile si le CSS d'écran ne rend pas bien en PDF
     const originalStyles = input.style.cssText;
-    input.style.padding = "20px"; // Ajouter un peu de padding pour le PDF
-    input.style.boxShadow = "none"; // Enlever les ombres pour un rendu plus propre
+    input.style.padding = "20px";
+    input.style.boxShadow = "none";
 
     try {
       const canvas = await html2canvas(input, {
-        scale: 2, // Augmenter l'échelle pour une meilleure qualité
-        useCORS: true, // Important si vous avez des images externes
+        scale: 2,
+        useCORS: true,
         windowWidth: input.scrollWidth,
         windowHeight: input.scrollHeight,
       });
 
       const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4"); // 'p' pour portrait, 'mm' pour millimètres, 'a4' pour format A4
-      const imgWidth = 210; // Largeur A4 en mm
-      const pageHeight = 297; // Hauteur A4 en mm
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgWidth = 210;
+      const pageHeight = 297;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       let heightLeft = imgHeight;
       let position = 0;
@@ -118,7 +115,6 @@ export default function DetailedCraReportModal({
         "Une erreur est survenue lors de la génération du PDF. Veuillez réessayer."
       );
     } finally {
-      // Restaurer les styles originaux
       input.style.cssText = originalStyles;
     }
   };
@@ -159,13 +155,13 @@ export default function DetailedCraReportModal({
           </button>
         </div>
 
-        {/* Contenu du Rapport (sera capturé par html2canvas) */}
+        {/* Contenu du Rapport */}
         <div
           ref={reportRef}
           className="p-6 bg-white rounded-lg font-sans text-gray-800"
         >
           <h1 className="text-4xl font-extrabold text-center text-indigo-700 mb-8">
-            Rapport d'Activité Mensuel
+            Rapport d&apos;Activité Mensuel
           </h1>
 
           {/* Section Informations Générales */}
@@ -174,7 +170,6 @@ export default function DetailedCraReportModal({
               Informations Générales
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-lg">
-
               <p>
                 <span className="font-semibold">Mois du rapport :</span>{" "}
                 {format(currentMonth, "MMMM yyyy", { locale: fr })}
@@ -185,11 +180,10 @@ export default function DetailedCraReportModal({
                 </span>{" "}
                 {totalWorkingDaysInMonth} jours
               </p>
-              
             </div>
           </div>
 
-          {/* Section Détail des Activités par Jour */}
+          {/* Détail des Activités par Jour */}
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-indigo-600 mb-4">
               Détail des Activités
@@ -202,13 +196,10 @@ export default function DetailedCraReportModal({
                 0
               );
 
-              // Ne pas afficher les jours du week-end s'il n'y a pas d'activités
               const dayOfWeek = getDay(day);
-              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Dimanche ou Samedi
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-              if (isWeekend && dailyActivities.length === 0) {
-                return null; // Ne pas afficher les jours de week-end vides
-              }
+              if (isWeekend && dailyActivities.length === 0) return null;
 
               return (
                 <div
@@ -232,11 +223,11 @@ export default function DetailedCraReportModal({
                         >
                           <p className="text-gray-900 font-medium">
                             <span className="text-indigo-500">Client :</span>{" "}
-                            {getClientName(activity.client_id)}
+                            {getClientName(activity.client_id, clientDefinitions)}
                           </p>
                           <p className="text-gray-700 text-sm">
                             <span className="text-indigo-500">Type :</span>{" "}
-                            {getActivityTypeName(activity.activity_type_id)}
+                            {getActivityTypeName(activity.activity_type_id, activityTypeDefinitions)}
                           </p>
                           <p className="text-gray-700 text-sm">
                             <span className="text-indigo-500">Durée :</span>{" "}
@@ -244,7 +235,7 @@ export default function DetailedCraReportModal({
                           </p>
                           {activity.description && (
                             <p className="text-gray-600 text-sm italic mt-1">
-                              "{activity.description}"
+                              &quot;{activity.description}&quot;
                             </p>
                           )}
                         </li>
@@ -260,7 +251,7 @@ export default function DetailedCraReportModal({
             })}
           </div>
 
-          {/* Section Statistiques et Résumé Final */}
+          {/* Statistiques et Résumé Final */}
           <div className="border-t-2 border-indigo-200 pt-6 mt-8">
             <h2 className="text-2xl font-bold text-indigo-600 mb-4">
               Statistiques Clés
@@ -268,7 +259,7 @@ export default function DetailedCraReportModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-lg">
               <p>
                 <span className="font-semibold">
-                  Nombre total d'activités :
+                  Nombre total d&apos;activités :
                 </span>{" "}
                 {activities.length}
               </p>
@@ -277,20 +268,22 @@ export default function DetailedCraReportModal({
                 {
                   [
                     ...new Set(
-                      activities.map((a) => getClientName(a.client_id))
+                      activities.map((a) =>
+                        getClientName(a.client_id, clientDefinitions)
+                      )
                     ),
                   ].length
                 }
               </p>
               <p>
                 <span className="font-semibold">
-                  Types d'activités uniques :
+                  Types d&apos;activités uniques :
                 </span>{" "}
                 {
                   [
                     ...new Set(
                       activities.map((a) =>
-                        getActivityTypeName(a.activity_type_id)
+                        getActivityTypeName(a.activity_type_id, activityTypeDefinitions)
                       )
                     ),
                   ].length

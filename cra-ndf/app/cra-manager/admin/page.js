@@ -970,7 +970,7 @@ export default function AdminCRAPage() {
   if (status === "loading") {
     return (
       <div className="flex justify-center items-center h-screen text-xl text-gray-700">
-        Chargement des données de session et de l'application...
+        Chargement des données de session et de l&apos;application...
       </div>
     );
   }

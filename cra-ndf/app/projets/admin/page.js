@@ -716,7 +716,7 @@ export default function UnifiedAdminPage() {
                 Êtes-vous sûr de vouloir supprimer{" "}
                 {activeTab === "projets" && <b>le projet {itemToDelete.nom}</b>}
                 {activeTab === "clients" && <b>le client {itemToDelete.nom_client}</b>}
-                {activeTab === "activityTypes" && <b>le type d'activité {itemToDelete.name}</b>} ?
+                {activeTab === "activityTypes" && <b>le type d&apos;activité {itemToDelete.name}</b>} ?
                 <br />
                 <span className="text-red-500 font-bold">Cette action est irréversible.</span>
               </p>

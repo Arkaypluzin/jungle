@@ -3,39 +3,35 @@
 import React, { useCallback } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import CraBoard from "../Board/CraBoard"; // Importez le CraBoard
+import CraBoard from "../Board/CraBoard";
 
 export default function MonthlyReportPreviewModal({
   isOpen,
   onClose,
-  reportData, // C'est le tableau des activités snapshotées du rapport mensuel
+  reportData,
   year,
   month,
   userName,
-  userId, // L'ID de l'utilisateur du CRA
-  reportId, // L'ID du rapport mensuel lui-même
-  reportStatus, // Le statut actuel du rapport (ex: pending_review, validated, rejected)
-  rejectionReason, // Motif de rejet si applicable
-
-  clientDefinitions, // Définitions des clients
-  activityTypeDefinitions, // Définitions des types d'activités
-
-  onValidateCra, // Fonction de callback pour valider le CRA
-  onRejectCra, // Fonction de callback pour rejeter le CRA
-  isAdminOrManager, // Indique si l'utilisateur connecté est admin/manager
+  userId,
+  reportId,
+  reportStatus,
+  rejectionReason,
+  clientDefinitions,
+  activityTypeDefinitions,
+  onValidateCra,
+  onRejectCra,
+  isAdminOrManager,
 }) {
   if (!isOpen) return null;
 
   const currentMonthDate = new Date(year, month - 1);
 
-  // Fonction pour les messages (simple console.log pour cette modale)
+  // Callback pour messages
   const showMessage = useCallback((message, type = "info") => {
     console.log(`MonthlyReportPreviewModal Message (${type}): ${message}`);
-    // Vous pouvez intégrer un toast ici si vous le souhaitez
   }, []);
 
-  // Fonction factice pour onAddActivity, onUpdateActivity, onDeleteActivity
-  // car CraBoard sera en lecture seule dans cette modale.
+  // Callback factice pour actions désactivées
   const noOp = useCallback(() => {
     showMessage(
       "Opération non autorisée en mode visualisation de CRA.",
@@ -43,7 +39,12 @@ export default function MonthlyReportPreviewModal({
     );
   }, [showMessage]);
 
-  // Déterminer si les boutons Valider/Rejeter doivent être affichés et actifs
+  // Callback pour fetchActivitiesForMonth en lecture seule
+  const fetchActivitiesForMonth = useCallback(() => {
+    console.log("CraBoard en mode lecture seule : pas de fetch interne.");
+  }, []);
+
+  // Déterminer si les boutons Valider/Rejeter doivent être affichés
   const canActOnReport = isAdminOrManager && reportStatus === "pending_review";
 
   return (
@@ -90,30 +91,22 @@ export default function MonthlyReportPreviewModal({
           )}
         </div>
 
-        {/* Intégration du CraBoard */}
         <CraBoard
-          activities={reportData} // Les activités snapshotées du rapport
+          activities={reportData}
           activityTypeDefinitions={activityTypeDefinitions}
           clientDefinitions={clientDefinitions}
-          userId={userId} // L'ID de l'utilisateur du CRA
+          userId={userId}
           userFirstName={userName.split(" ")[0]}
-          showMessage={showMessage} // Passe la fonction showMessage
+          showMessage={showMessage}
           currentMonth={currentMonthDate}
-          onMonthChange={noOp} // Désactive le changement de mois
-          onAddActivity={noOp} // Désactive l'ajout d'activité
-          onUpdateActivity={noOp} // Désactive la modification d'activité
-          onDeleteActivity={noOp} // Désactive la suppression d'activité
-          fetchActivitiesForMonth={useCallback(() => {
-            // Cette fonction est appelée par CraBoard.
-            // En mode lecture seule ici, elle ne doit pas refetcher.
-            console.log(
-              "CraBoard en mode lecture seule : pas de fetch interne."
-            );
-          }, [])}
-          readOnly={true} // Rend le CraBoard en lecture seule
+          onMonthChange={noOp}
+          onAddActivity={noOp}
+          onUpdateActivity={noOp}
+          onDeleteActivity={noOp}
+          fetchActivitiesForMonth={fetchActivitiesForMonth}
+          readOnly={true}
         />
 
-        {/* Boutons d'action pour le rapport mensuel */}
         {canActOnReport && (
           <div className="mt-8 flex justify-center space-x-4">
             <button

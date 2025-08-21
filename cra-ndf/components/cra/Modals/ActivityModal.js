@@ -380,7 +380,7 @@ export default function ActivityForm({ // Renommé de ActivityModal à ActivityF
                 htmlFor="type_activite"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Type d'activité:
+                Type d&apos;activité:
               </label>
               <select
                 id="type_activite"

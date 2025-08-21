@@ -358,7 +358,7 @@ export default function CraHistory({
         className="flex justify-center items-center h-64 text-xl text-gray-700"
         aria-busy="true"
       >
-        Chargement de l'historique...
+        Chargement de l&apos;historique...
       </div>
     );
   }
