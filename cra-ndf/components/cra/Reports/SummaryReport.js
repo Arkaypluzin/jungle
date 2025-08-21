@@ -187,7 +187,7 @@ export default function SummaryReport({
             &times;
           </button>
           <p className="text-red-700 text-center">
-            Erreur: Impossible d'afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
+            Erreur: Impossible d&apsos;afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
           </p>
         </div>
       </div>

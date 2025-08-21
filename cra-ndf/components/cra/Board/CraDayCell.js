@@ -69,15 +69,17 @@ function CraDayCellBase({
     return null;
   }
 
-  /** Jour interactif ? (autorise clic/drag côté UI) */
+  /** ────────────────────────────────
+   * Jour interactif ?
+   * ──────────────────────────────── */
   const isDayInteractable = useCallback(() => {
     if (readOnly) return false;
     return isCraEditable || isPaidLeaveEditable;
   }, [readOnly, isCraEditable, isPaidLeaveEditable]);
 
-  /* ────────────────────────────────
+  /** ────────────────────────────────
    * Index O(1) pour types & clients
-   * ────────────────────────────────*/
+   * ──────────────────────────────── */
   const typeIndex = useMemo(() => {
     const m = new Map();
     for (const t of activityTypeDefinitions || []) m.set(String(t.id), t);
@@ -90,9 +92,9 @@ function CraDayCellBase({
     return m;
   }, [clientDefinitions]);
 
-  /* ────────────────────────────────
+  /** ────────────────────────────────
    * Enrichissement + tri + total
-   * ────────────────────────────────*/
+   * ──────────────────────────────── */
   const { enhancedActivities, totalLabel } = useMemo(() => {
     const list = (activitiesForDay || []).map((activity) => {
       const typeDef = typeIndex.get(String(activity.type_activite));
@@ -131,14 +133,13 @@ function CraDayCellBase({
       return 0;
     });
 
-    const total = list.reduce(
-      (s, act) => s + (parseFloat(act.temps_passe) || 0),
-      0
-    );
+    const total = list.reduce((s, act) => s + (parseFloat(act.temps_passe) || 0), 0);
     return { enhancedActivities: list, totalLabel: `${total.toFixed(1)}j` };
   }, [activitiesForDay, typeIndex, clientIndex]);
 
-  // Vérifier si une activité est un jour férié
+  /** ────────────────────────────────
+   * Vérifier si jour férié
+   * ──────────────────────────────── */
   const hasPublicHolidayActivity = useMemo(() => {
     return (activitiesForDay || []).some(
       (activity) => s(activity?.type_activite) === "holiday-leave"
@@ -147,9 +148,9 @@ function CraDayCellBase({
 
   const shouldShowHolidayBadge = isPublicHolidayDay || hasPublicHolidayActivity;
 
-  /* ────────────────────────────────
-   * Classes CSS mémoïsées
-   * ────────────────────────────────*/
+  /** ────────────────────────────────
+   * Classes CSS
+   * ──────────────────────────────── */
   const cellClassName = useMemo(() => {
     const cls = [
       "relative p-2 h-32 sm:h-40 flex flex-col justify-start border rounded-lg m-0.5 transition duration-200 overflow-hidden",
@@ -197,9 +198,9 @@ function CraDayCellBase({
     isDayInteractable,
   ]);
 
-  /* ────────────────────────────────
-   * Handlers stables
-   * ────────────────────────────────*/
+  /** ────────────────────────────────
+   * Handlers
+   * ──────────────────────────────── */
   const handleCellClick = useCallback(
     (e) => {
       if (isOutsideCurrentMonth || !isDayInteractable()) return;
@@ -224,10 +225,7 @@ function CraDayCellBase({
   );
 
   const onCellDragOver = onDragOverDay;
-  const onCellDrop = useCallback(
-    (e) => onDropActivity?.(e, day),
-    [onDropActivity, day]
-  );
+  const onCellDrop = useCallback((e) => onDropActivity?.(e, day), [onDropActivity, day]);
 
   const onCellMouseDown = useCallback(
     (e) => {
@@ -250,9 +248,9 @@ function CraDayCellBase({
     [isDayInteractable, multiSelectType, handleMouseUp, day]
   );
 
-  /* ────────────────────────────────
-   * Rendu
-   * ────────────────────────────────*/
+  /** ────────────────────────────────
+   * Rendu JSX
+   * ──────────────────────────────── */
   return (
     <div
       className={cellClassName}
@@ -273,16 +271,15 @@ function CraDayCellBase({
       </span>
 
       {/* Badges */}
-      {(isNonWorkingDay || hasPublicHolidayActivity) &&
-        !isOutsideCurrentMonth && (
-          <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
-            {shouldShowHolidayBadge && isWeekendDay
-              ? "Férié & W-E"
-              : shouldShowHolidayBadge
-              ? "Férié"
-              : "Week-end"}
-          </span>
-        )}
+      {(isNonWorkingDay || hasPublicHolidayActivity) && !isOutsideCurrentMonth && (
+        <span className="text-xs text-red-600 font-medium absolute top-1 right-1 px-1 py-0.5 bg-red-100 rounded">
+          {shouldShowHolidayBadge && isWeekendDay
+            ? "Férié & W-E"
+            : shouldShowHolidayBadge
+            ? "Férié"
+            : "Week-end"}
+        </span>
+      )}
 
       {/* Total du jour */}
       {enhancedActivities.length > 0 && (
@@ -318,7 +315,7 @@ function CraDayCellBase({
 
 /* ────────────────────────────────
  * Comparateur personnalisé
- * ────────────────────────────────*/
+ * ──────────────────────────────── */
 const areEqual = (prev, next) => {
   if (+prev.day !== +next.day) return false;
   if (prev.formattedDate !== next.formattedDate) return false;
@@ -361,8 +358,7 @@ const areEqual = (prev, next) => {
       String(A.client_id ?? "") !== String(B.client_id ?? "") ||
       (A.temps_passe ?? null) !== (B.temps_passe ?? null) ||
       (A.status ?? "draft") !== (B.status ?? "draft") ||
-      (A.override_non_working_day ?? false) !==
-        (B.override_non_working_day ?? false)
+      (A.override_non_working_day ?? false) !== (B.override_non_working_day ?? false)
     ) {
       return false;
     }

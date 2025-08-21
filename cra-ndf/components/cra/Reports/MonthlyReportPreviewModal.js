@@ -47,6 +47,19 @@ export default function MonthlyReportPreviewModal({
   // Déterminer si les boutons Valider/Rejeter doivent être affichés
   const canActOnReport = isAdminOrManager && reportStatus === "pending_review";
 
+  // Classe pour le statut
+  const statusClasses = {
+    validated: "bg-green-100 text-green-800",
+    pending_review: "bg-blue-100 text-blue-800",
+    rejected: "bg-red-100 text-red-800",
+  };
+
+  const statusLabels = {
+    validated: "Validé",
+    pending_review: "En attente de révision",
+    rejected: "Rejeté",
+  };
+
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto p-6 sm:p-8 relative">
@@ -65,24 +78,11 @@ export default function MonthlyReportPreviewModal({
 
         <div className="mb-6 text-center">
           <span
-            className={`px-3 py-1 rounded-full text-sm font-semibold
-            ${reportStatus === "validated" ? "bg-green-100 text-green-800" : ""}
-            ${
-              reportStatus === "pending_review"
-                ? "bg-blue-100 text-blue-800"
-                : ""
-            }
-            ${reportStatus === "rejected" ? "bg-red-100 text-red-800" : ""}
-          `}
+            className={`px-3 py-1 rounded-full text-sm font-semibold ${
+              statusClasses[reportStatus] || ""
+            }`}
           >
-            Statut:{" "}
-            {reportStatus === "validated"
-              ? "Validé"
-              : reportStatus === "pending_review"
-              ? "En attente de révision"
-              : reportStatus === "rejected"
-              ? "Rejeté"
-              : "Inconnu"}
+            Statut: {statusLabels[reportStatus] || "Inconnu"}
           </span>
           {reportStatus === "rejected" && rejectionReason && (
             <p className="text-red-600 text-sm mt-2">
