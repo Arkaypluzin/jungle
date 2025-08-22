@@ -347,10 +347,10 @@ export default function NdfDetailTable({
                       : (getTTCLineRounded(detail.montant, detail.tva).toFixed(2) + "€")}
                   </td>
                   <td className="py-3 px-3 text-center">
-                    {detail.img_url ? (
-                      <a href={detail.img_url} target="_blank" rel="noopener noreferrer" className="inline-block">
+                    {detail.img_url || detail.img_base64 ? (
+                      <a href={detail.img_url || detail.img_base64} target="_blank" rel="noopener noreferrer" className="inline-block">
                         <img
-                          src={detail.img_url}
+                          src={detail.img_url || detail.img_base64}
                           alt="Justificatif"
                           className="max-w-[80px] max-h-[60px] object-contain rounded-lg shadow border border-blue-100 hover:shadow-md transition-shadow"
                         />
