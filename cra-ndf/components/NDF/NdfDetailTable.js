@@ -55,7 +55,7 @@ function formatTvaPdf(detail) {
           ? ` > +${parseFloat(tvaObj.valeur_tva).toFixed(2)}€`
           : "")
     )
-    .join('\n');
+    .join("\n");
 }
 // ---------------------------
 
@@ -132,7 +132,7 @@ export default function NdfDetailTable({
     }, 0);
   }, [filteredDetails]);
 
-  // --- EXPORT PDF ---
+  // --- EXPORT PDF (table + 1 justificatif/base64 par page) ---
   const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: "landscape" });
     let titleText = "Note de frais";
@@ -173,7 +173,8 @@ export default function NdfDetailTable({
         `${parseFloat(detail.montant).toFixed(2)}€`,
         formatTvaPdf(detail),
         `${getTTCLineRounded(detail.montant, detail.tva).toFixed(2)}€`,
-        detail.img_url ? "Oui" : "Non",
+        // Indication texte, les images viendront après, 1/page
+        (detail.img_base64 || detail.img_url) ? "Oui" : "Non",
       ]),
       startY: 40,
       margin: { left: 10, right: 10 },
@@ -209,7 +210,7 @@ export default function NdfDetailTable({
         6: { halign: "center", cellWidth: 30 },
         7: { halign: "center", cellWidth: 30 },
         8: { halign: "center", fontStyle: "bold", cellWidth: 30 },
-        9: { halign: "center", cellWidth: 25 },
+        9: { halign: "center", cellWidth: 20 },
       },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) addHeaderAndFooter(data.pageNumber);
@@ -234,7 +235,7 @@ export default function NdfDetailTable({
           { content: "" },
         ],
         [
-          { content: `Nombre total de lignes : ${filteredDetails.length}`, colSpan: 9, styles: { halign: "center", fontSize: 10, fontStyle: "italic" } },
+          { content: `Nombre total de lignes : ${filteredDetails.length}`, colSpan: 9, styles: { halign: "center", fontSize: 10, fontStyle: "italic" } },
         ],
       ],
       theme: "plain",
@@ -242,6 +243,72 @@ export default function NdfDetailTable({
       margin: { left: 10, right: 10 },
       styles: { fontSize: 10, cellPadding: 3, textColor: [0, 0, 0] },
     });
+
+    // ================
+    // PAGES IMAGES (1 justificatif/page en paysage, centré, taille d’origine)
+    // ================
+    const imageDetails = filteredDetails.filter(d => d.img_base64 || d.img_url);
+
+    for (let i = 0; i < imageDetails.length; i++) {
+      const d = imageDetails[i];
+      const src = d.img_base64 || d.img_url;
+      if (!src) continue;
+
+      // Nouvelle page en paysage (A4)
+      doc.addPage("a4", "landscape");
+
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 10;
+
+      // Titre/caption
+      doc.setFontSize(12);
+      doc.setTextColor(40);
+      const caption = [
+        d.date_str ? `Date : ${d.date_str}` : null,
+        d.nature ? `Nature : ${d.nature}` : null,
+        d.description ? `Desc. : ${d.description}` : null,
+        getClientName(d.client_id) ? `Client : ${getClientName(d.client_id)}` : null,
+        getProjetName(d.projet_id) ? `Projet : ${getProjetName(d.projet_id)}` : null,
+      ].filter(Boolean).join("  •  ");
+      if (caption) doc.text(caption, margin, margin);
+
+      const imgTop = caption ? margin + 8 : margin;
+
+      // Charger l'image pour récupérer ses dimensions réelles
+      const img = new Image();
+      img.src = src;
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+
+      if (img.width && img.height) {
+        // Taille d’origine
+        const imgW = img.width * 0.75 * 0.2645; // pixels -> mm approx
+        const imgH = img.height * 0.75 * 0.2645;
+
+        // Centrage dans la page
+        const x = (pageW - imgW) / 2;
+        const y = imgTop + (pageH - imgTop - imgH) / 2;
+
+        try {
+          doc.addImage(src, "JPEG", x, y, imgW, imgH);
+        } catch {
+          try {
+            doc.addImage(src, "PNG", x, y, imgW, imgH);
+          } catch {
+            doc.setTextColor(200, 0, 0);
+            doc.text("Impossible d'insérer l'image.", margin, imgTop + 20);
+            doc.setTextColor(0);
+          }
+        }
+      } else {
+        doc.setTextColor(200, 0, 0);
+        doc.text("Image non valide.", margin, imgTop + 20);
+        doc.setTextColor(0);
+      }
+    }
 
     doc.save(
       `note-de-frais_${month || ""}_${year || ""}_${name ? name.replace(/\s+/g, "_") : ""}.pdf`
@@ -268,7 +335,7 @@ export default function NdfDetailTable({
             title={
               ndfStatut === "Provisoire"
                 ? "Impossible d'exporter une note de frais au statut Provisoire."
-                : "Exporter le tableau en PDF"
+                : "Exporter tableau + justificatifs"
             }
             className={`inline-flex items-center px-5 py-2 rounded-lg font-semibold transition-colors duration-200 shadow-md
               ${ndfStatut === "Provisoire"
@@ -308,77 +375,88 @@ export default function NdfDetailTable({
                 </td>
               </tr>
             ) : (
-              filteredDetails.map((detail) => (
-                <tr key={detail.uuid} className="hover:bg-blue-50 transition-colors">
-                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">{detail.date_str}</td>
-                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">{detail.nature}</td>
-                  <td className="py-3 px-3 text-sm text-gray-800 max-w-xs truncate">{detail.description}</td>
-                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                    {getClientName(detail.client_id) || <span className="italic text-gray-300">-</span>}
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                    {getProjetName(detail.projet_id) || <span className="italic text-gray-300">-</span>}
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                    {detail.moyen_paiement || <span className="italic text-gray-300">-</span>}
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">{parseFloat(detail.montant).toFixed(2)}€</td>
-                  <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
-                    {Array.isArray(detail.tva) ? (
-                      <div>
-                        {detail.tva.map((tvaObj, idx) => (
-                          <div key={idx} className="flex items-center gap-1">
-                            <span className="font-semibold">{tvaObj.taux}%</span>
-                            <span className="text-gray-500">
-                              {tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
-                                ? <>⇒ +{parseFloat(tvaObj.valeur_tva).toFixed(2)}€</>
-                                : null}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <span>{detail.tva}</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
-                    {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
-                      ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
-                      : (getTTCLineRounded(detail.montant, detail.tva).toFixed(2) + "€")}
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    {detail.img_url || detail.img_base64 ? (
-                      <a href={detail.img_url || detail.img_base64} target="_blank" rel="noopener noreferrer" className="inline-block">
-                        <img
-                          src={detail.img_url || detail.img_base64}
-                          alt="Justificatif"
-                          className="max-w-[80px] max-h-[60px] object-contain rounded-lg shadow border border-blue-100 hover:shadow-md transition-shadow"
-                        />
-                      </a>
-                    ) : (
-                      <span className="text-gray-300 italic text-xs">Aucun</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    {ndfStatut === "Provisoire" ? (
-                      <div className="flex justify-center gap-1">
-                        <EditNdfDetailModal
-                          detail={detail}
-                          onEdited={refresh}
-                          parentNdfMonth={month}
-                          parentNdfYear={year}
-                        />
-                        <DeleteNdfDetailButton
-                          detailId={detail.uuid}
-                          onDeleted={refresh}
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-xs italic">Non modifiable</span>
-                    )}
-                  </td>
-                </tr>
-              ))
+              filteredDetails.map((detail) => {
+                const imgSrc = detail.img_base64 || detail.img_url || null;
+                return (
+                  <tr key={detail.uuid} className="hover:bg-blue-50 transition-colors">
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">{detail.date_str}</td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800">{detail.nature}</td>
+                    <td className="py-3 px-3 text-sm text-gray-800 max-w-xs truncate">{detail.description}</td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {getClientName(detail.client_id) || <span className="italic text-gray-300">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {getProjetName(detail.projet_id) || <span className="italic text-gray-300">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {detail.moyen_paiement || <span className="italic text-gray-300">-</span>}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm text-gray-800">{parseFloat(detail.montant).toFixed(2)}€</td>
+                    <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-800 text-center">
+                      {Array.isArray(detail.tva) ? (
+                        <div>
+                          {detail.tva.map((tvaObj, idx) => (
+                            <div key={idx} className="flex items-center gap-1">
+                              <span className="font-semibold">{tvaObj.taux}%</span>
+                              <span className="text-gray-500">
+                                {tvaObj.valeur_tva !== undefined && !isNaN(tvaObj.valeur_tva)
+                                  ? <>⇒ +{parseFloat(tvaObj.valeur_tva).toFixed(2)}€</>
+                                  : null}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span>{detail.tva}</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap text-center text-sm font-bold text-gray-900">
+                      {(detail.valeur_ttc !== undefined && detail.valeur_ttc !== null && !isNaN(detail.valeur_ttc))
+                        ? parseFloat(detail.valeur_ttc).toFixed(2) + "€"
+                        : (getTTCLineRounded(detail.montant, detail.tva).toFixed(2) + "€")}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      {imgSrc ? (
+                        detail.img_url ? (
+                          <a href={detail.img_url} target="_blank" rel="noopener noreferrer" className="inline-block">
+                            <img
+                              src={imgSrc}
+                              alt="Justificatif"
+                              className="max-w-[80px] max-h-[60px] object-contain rounded-lg shadow border border-blue-100 hover:shadow-md transition-shadow"
+                            />
+                          </a>
+                        ) : (
+                          <img
+                            src={imgSrc}
+                            alt="Justificatif"
+                            className="max-w-[80px] max-h-[60px] object-contain rounded-lg shadow border border-blue-100"
+                          />
+                        )
+                      ) : (
+                        <span className="text-gray-300 italic text-xs">Aucun</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      {ndfStatut === "Provisoire" ? (
+                        <div className="flex justify-center gap-1">
+                          <EditNdfDetailModal
+                            detail={detail}
+                            onEdited={refresh}
+                            parentNdfMonth={month}
+                            parentNdfYear={year}
+                          />
+                          <DeleteNdfDetailButton
+                            detailId={detail.uuid}
+                            onDeleted={refresh}
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs italic">Non modifiable</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
           <tfoot className="bg-blue-50 border-t-2 border-blue-100">
