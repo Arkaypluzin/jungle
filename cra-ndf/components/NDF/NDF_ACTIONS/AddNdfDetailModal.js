@@ -15,6 +15,38 @@ const MONTHS_MAP = {
   Juillet: 6, Août: 7, Septembre: 8, Octobre: 9, Novembre: 10, Décembre: 11,
 };
 
+// --- Helpers Canvas/Base64 ---
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
+/**
+ * Dessine l'image dans un canvas avec une taille max, puis retourne un dataURL.
+ * @param {HTMLImageElement} img
+ * @param {number} maxW
+ * @param {number} maxH
+ * @param {string} mime  "image/jpeg" | "image/png"
+ * @param {number} quality 0..1 (jpeg)
+ */
+function canvasExport(img, maxW = 1400, maxH = 1400, mime = "image/jpeg", quality = 0.85) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const ratio = Math.min(maxW / w, maxH / h, 1);
+  const outW = Math.round(w * ratio);
+  const outH = Math.round(h * ratio);
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, outW, outH);
+  return canvas.toDataURL(mime, quality);
+}
+
 function getDefaultForm(minDate, maxDate) {
   const todayStr = new Date().toISOString().split("T")[0];
   let dateStr = todayStr;
@@ -32,6 +64,7 @@ function getDefaultForm(minDate, maxDate) {
     autreTaux: "",
     multiTaux: [{ taux: "", montant: "" }],
     imgFile: null,
+    imgBase64: "", // <= NEW
     selectedClient: "",
     selectedProjet: "",
     moyenPaiement: MOYENS_PAIEMENT[0],
@@ -56,7 +89,7 @@ export default function AddNdfDetailModal({
   const [newProjetName, setNewProjetName] = useState("");
   const [addProjetLoading, setAddProjetLoading] = useState(false);
   const [addProjetError, setAddProjetError] = useState("");
-  const [targetDetailIdx, setTargetDetailIdx] = useState(null); // ligne de dépense à mettre à jour après création
+  const [targetDetailIdx, setTargetDetailIdx] = useState(null); // ligne à mettre à jour après création
 
   // Bornes min/max
   const monthIndex = parentNdfMonth ? MONTHS_MAP[parentNdfMonth] : null;
@@ -127,24 +160,34 @@ export default function AddNdfDetailModal({
       i === idx ? { ...d, inviter: d.inviter.filter((_, j) => j !== inviteIdx) } : d
     ));
   }
-  function handleFileChange(idx, file) {
-    setDetails(prev => prev.map((d, i) => i === idx ? { ...d, imgFile: file } : d));
+
+  // NEW: lisser l’image dans un canvas et stocker en base64
+  async function handleFileToCanvasBase64(idx, file) {
+    if (!file) {
+      setDetails(prev => prev.map((d, i) => i === idx ? { ...d, imgFile: null, imgBase64: "" } : d));
+      return;
+    }
+    try {
+      const dataURL = await readFileAsDataURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const outDataURL = canvasExport(img, 1400, 1400, "image/jpeg", 0.85);
+        setDetails(prev => prev.map((d, i) => i === idx ? { ...d, imgFile: file, imgBase64: outDataURL } : d));
+      };
+      img.onerror = () => {
+        setError("Impossible de lire l'image fournie.");
+      };
+      img.src = dataURL;
+    } catch {
+      setError("Erreur lors de la lecture de l'image.");
+    }
   }
+
   function addForm() {
     if (details.length < 5) setDetails([...details, getDefaultForm(minDate, maxDate)]);
   }
   function removeForm(idx) {
     if (details.length > 1) setDetails(details.filter((_, i) => i !== idx));
-  }
-
-  // Upload image individuelle
-  async function uploadImage(imgFile) {
-    if (!imgFile) return null;
-    const formData = new FormData();
-    formData.append("file", imgFile);
-    const res = await fetch("/api/upload", { method: "POST", body: formData });
-    if (!res.ok) throw new Error((await res.json()).error || "Erreur lors de l'upload.");
-    return (await res.json()).url;
   }
 
   // Calculs auto
@@ -199,6 +242,7 @@ export default function AddNdfDetailModal({
     setError("");
     try {
       if (ndfStatut !== "Provisoire") throw new Error("Impossible d’ajouter une dépense sur une note de frais non provisoire.");
+
       for (const d of details) {
         // Contrôle strict date
         if (d.dateStr) {
@@ -239,13 +283,8 @@ export default function AddNdfDetailModal({
         }
       }
 
-      // Upload images
-      const imgs = await Promise.all(
-        details.map(async (d) => (d.imgFile ? await uploadImage(d.imgFile) : null))
-      );
-
-      // Préparation data pour API
-      const rowsToSend = details.map((d, idx) => {
+      // Préparation data pour API — pas d'upload fichier, on envoie le base64
+      const rowsToSend = details.map((d) => {
         const auto = autoFillDetail(d);
         let tvaValue = d.tva;
         let montantValue = d.tva === "multi-taux" ? parseFloat(auto.totalHTMulti) : parseFloat(auto.montant);
@@ -263,7 +302,8 @@ export default function AddNdfDetailModal({
           tva: tvaValue,
           montant: montantValue,
           valeur_ttc: d.valeurTTC ? parseFloat(d.valeurTTC) : null,
-          img_url: imgs[idx],
+          img_url: null, // compat / pas d'upload fichier
+          img_base64: d.imgBase64 || null, // NEW
           client_id: d.selectedClient,
           projet_id: d.selectedProjet,
           moyen_paiement: d.moyenPaiement,
@@ -289,7 +329,7 @@ export default function AddNdfDetailModal({
       resetAll();
       window.location.reload();
     } catch (err) {
-      setError(err.message || err);
+      setError(err.message || String(err));
     } finally {
       setLoading(false);
     }
@@ -641,7 +681,6 @@ export default function AddNdfDetailModal({
                       <div>
                         <div className="flex items-end justify-between gap-2">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Projet :</label>
-                          {/* Bouton Ajouter un projet (ouvre une petite modale) */}
                           <button
                             type="button"
                             className="px-3 py-1 text-sm bg-green-600 text-white rounded-md shadow hover:bg-green-700"
@@ -662,14 +701,40 @@ export default function AddNdfDetailModal({
                         </select>
                       </div>
                     </div>
+
+                    {/* Justificatif : capture fichier -> canvas -> base64 */}
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Justificatif :</label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="block w-full text-sm text-gray-500"
-                        onChange={e => handleFileChange(idx, e.target.files[0])}
-                      />
+                      <div className="flex flex-col gap-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="block w-full text-sm text-gray-700"
+                          onChange={e => handleFileToCanvasBase64(idx, e.target.files?.[0])}
+                        />
+                        {d.imgBase64 ? (
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={d.imgBase64}
+                              alt="Aperçu justificatif"
+                              className="max-w-[140px] max-h-[100px] object-contain rounded-md border"
+                            />
+                            <button
+                              type="button"
+                              className="px-3 py-1 text-sm bg-gray-100 border rounded-md hover:bg-gray-200"
+                              onClick={() => handleFieldChange(idx, "imgBase64", "")}
+                            >
+                              Retirer
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">Aucune image sélectionnée.</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        L’image est compressée côté navigateur et encodée en Base64 (stockée en base de données).
+                      </p>
                     </div>
                   </div>
                 );

@@ -69,6 +69,7 @@ export async function POST(req) {
             montant: detail.montant,
             valeur_ttc: detail.valeur_ttc,
             img_url: detail.img_url || null,
+            img_base64: detail.img_base64 || null,
             client_id: detail.client_id,
             projet_id: detail.projet_id,
             moyen_paiement: detail.moyen_paiement,
