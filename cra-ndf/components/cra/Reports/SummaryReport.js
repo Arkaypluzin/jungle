@@ -236,7 +236,6 @@ export default function SummaryReport({
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            // CORRECTION ICI : Ajout de l'ID utilisateur
             userId: session.user.id, 
             image: dataURL
           }),
@@ -682,13 +681,15 @@ export default function SummaryReport({
 
   useEffect(() => {
     const loadSignatureFromApi = async () => {
-      setIsSignatureLoading(true);
-
       if (status !== 'authenticated' || !session?.user?.id || !signatureCanvasRef.current) {
         setIsSignatureLoading(false);
         return;
       }
       
+      setIsSignatureLoading(true);
+      const ctx = signatureCanvasRef.current.getContext('2d');
+      ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+
       try {
         const response = await fetch(`/api/signature?userId=${session.user.id}`);
         if (response.ok) {
@@ -699,7 +700,6 @@ export default function SummaryReport({
           if (signatureImage) {
             const img = new Image();
             img.onload = () => {
-              const ctx = signatureCanvasRef.current.getContext('2d');
               ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
               ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
             };
@@ -722,6 +722,7 @@ export default function SummaryReport({
     if (isOpen) {
       loadSignatureFromApi();
     } else {
+      // Réinitialiser la signature à la fermeture du modal
       setSignatureData(null);
       setIsSignatureLoading(true);
       setHasDownloaded(false);
@@ -986,4 +987,4 @@ export default function SummaryReport({
       </div>
     </div>
   );
-}
+} 
