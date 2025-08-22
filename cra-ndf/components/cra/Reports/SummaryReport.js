@@ -1,9 +1,11 @@
+// SummaryReport.js
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, isValid, parseISO, isWeekend, eachDayOfInterval, isSameMonth, startOfMonth, endOfMonth } from "date-fns";
 import { fr } from "date-fns/locale";
 import jsPDF from "jspdf";
+import { useSession } from "next-auth/react";
 
 export default function SummaryReport({
   isOpen,
@@ -20,7 +22,7 @@ export default function SummaryReport({
   paidLeaveReport,
   publicHolidays,
 }) {
-  // --- 1. DÉCLAREZ TOUS VOS HOOKS EN PREMIER ---
+  const { data: session, status } = useSession();
   const reportRef = useRef();
   const signatureCanvasRef = useRef(null);
   const signatureCtxRef = useRef(null);
@@ -63,7 +65,6 @@ export default function SummaryReport({
   }, [clientDefinitions]);
 
   const totals = useMemo(() => {
-    // ... votre logique de calcul des totaux, inchangée
     if (!isValid(month)) {
       return {
         totalWorkingDays: 0,
@@ -76,7 +77,6 @@ export default function SummaryReport({
       };
     }
     
-    // ... le reste de votre logique de calcul ici
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
     const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -153,7 +153,6 @@ export default function SummaryReport({
   } = totals;
 
   const allDaysWithActivities = useMemo(() => {
-    // ... votre logique de calcul des jours d'activités, inchangée
     if (!isValid(month)) return [];
 
     const monthStart = startOfMonth(month);
@@ -202,13 +201,12 @@ export default function SummaryReport({
   }, [activityTypeDefinitions]);
 
   const clearSignature = useCallback(async () => {
-    // ... votre logique de suppression de signature, inchangée
-    if (signatureCanvasRef.current) {
+    if (signatureCanvasRef.current && session?.user?.id) {
       const ctx = signatureCanvasRef.current.getContext('2d');
       ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
       setSignatureData(null);
       try {
-        const response = await fetch(`/api/signature?userId=${userFirstName}`, {
+        const response = await fetch(`/api/signature`, {
           method: 'DELETE',
         });
         if (response.ok) {
@@ -222,12 +220,13 @@ export default function SummaryReport({
         console.error("Error deleting signature:", error);
         showMessage("Erreur lors de l'effacement de la signature: " + error.message, "error");
       }
+    } else {
+      showMessage("Impossible d'effacer la signature. Connexion requise.", "error");
     }
-  }, [userFirstName, showMessage]);
+  }, [session, showMessage]);
 
   const saveSignature = useCallback(async () => {
-    // ... votre logique d'enregistrement de signature, inchangée
-    if (signatureCanvasRef.current) {
+    if (signatureCanvasRef.current && session?.user?.id) {
       const dataURL = signatureCanvasRef.current.toDataURL('image/png');
       setSignatureData(dataURL);
       try {
@@ -236,7 +235,7 @@ export default function SummaryReport({
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ userId: userFirstName, image: dataURL }),
+          body: JSON.stringify({ image: dataURL }),
         });
         if (response.ok) {
           showMessage("Signature enregistrée avec succès !", "success");
@@ -249,11 +248,12 @@ export default function SummaryReport({
         console.error("Error saving signature:", error);
         showMessage("Erreur lors de l'enregistrement de la signature: " + error.message, "error");
       }
+    } else {
+      showMessage("Impossible d'enregistrer la signature. Connexion requise.", "error");
     }
-  }, [userFirstName, showMessage]);
+  }, [session, showMessage]);
 
   const handleDownloadPdf = useCallback(async () => {
-    // ... votre logique de téléchargement PDF, inchangée
     if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
       showMessage("Impossible de générer le PDF: Données essentielles manquantes ou invalides.", "error");
       return;
@@ -560,7 +560,6 @@ export default function SummaryReport({
     }
   }, [activities, activityTypeDefinitions, clientDefinitions, month, monthName, userFirstName, showMessage, getClientName, getActivityTypeName, isPublicHoliday, craReportStatus, craReport, paidLeaveReportStatus, paidLeaveReport, totalWorkingDays, totalActivitiesTime, totalWorkingDaysActivitiesTime, totalPaidLeaveDaysInMonth, nonWorkingDaysWorked, totalOvertimeHours, timeDifference, allDaysWithActivities, signatureData, publicHolidays]);
 
-  // useEffect pour le log des props, doit rester en haut
   useEffect(() => {
     if (isOpen) {
       console.log("[SummaryReport] Component is open. Props received:", {
@@ -583,7 +582,6 @@ export default function SummaryReport({
     paidLeaveReport, userFirstName, totals
   ]);
 
-  // useEffect pour la logique de signature, doit rester en haut
   useEffect(() => {
     const canvas = signatureCanvasRef.current;
     if (!canvas) return;
@@ -616,7 +614,7 @@ export default function SummaryReport({
     };
 
     const startDrawing = (e) => {
-      if (isSignatureLoading) return;
+      if (isSignatureLoading || isDrawingRef.current) return;
       isDrawingRef.current = true;
       setIsDrawing(true);
       const { x, y } = getCoords(e);
@@ -677,44 +675,25 @@ export default function SummaryReport({
   useEffect(() => {
     const loadSignatureFromApi = async () => {
       setIsSignatureLoading(true);
+
+      if (status !== 'authenticated' || !session?.user?.id) {
+        setIsSignatureLoading(false);
+        return;
+      }
+      
       try {
-        const response = await fetch(`/api/signature?userId=${userFirstName}`);
+        const response = await fetch(`/api/signature?userId=${session.user.id}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.image) {
-            setSignatureData(data.image);
-            if (signatureCanvasRef.current) {
-              const ctx = signatureCanvasRef.current.getContext('2d');
-              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-              const img = new Image();
-              img.onload = () => {
-                ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-              };
-              img.src = data.image;
-            }
-          } else {
-            setSignatureData(null);
-            if (signatureCanvasRef.current) {
-              const ctx = signatureCanvasRef.current.getContext('2d');
-              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-            }
-          }
+          setSignatureData(data.image || null);
         } else {
           console.error("Failed to load signature from API:", response.status, response.statusText);
           setSignatureData(null);
-          if (signatureCanvasRef.current) {
-            const ctx = signatureCanvasRef.current.getContext('2d');
-            ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-          }
         }
       } catch (error) {
         console.error("Error fetching signature:", error);
         showMessage("Erreur lors du chargement de la signature: " + error.message, "error");
         setSignatureData(null);
-        if (signatureCanvasRef.current) {
-          const ctx = signatureCanvasRef.current.getContext('2d');
-          ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-        }
       } finally {
         setIsSignatureLoading(false);
       }
@@ -724,23 +703,15 @@ export default function SummaryReport({
       loadSignatureFromApi();
     } else {
       setSignatureData(null);
-      if (signatureCanvasRef.current) {
-        const ctx = signatureCanvasRef.current.getContext('2d');
-        ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
-      }
       setIsSignatureLoading(true);
       setHasDownloaded(false);
     }
-  }, [isOpen, userFirstName, showMessage]);
+  }, [isOpen, session, status, showMessage]);
 
-  // --- 2. RETOURNEZ NULL SI LA MODALE EST FERMÉE ---
-  // Cette condition est la seule qui peut être avant le JSX
   if (!isOpen) {
     return null;
   }
 
-  // --- 3. GESTION DE LA DONNÉE MANQUANTE ---
-  // Doit aussi être placé avant le JSX
   if (!isValid(month) || !activities || !clientDefinitions || !activityTypeDefinitions || !publicHolidays) {
     console.error("[SummaryReport] Essential data missing or invalid for report rendering.", { month, activities, clientDefinitions, activityTypeDefinitions, publicHolidays });
     return (
@@ -760,7 +731,6 @@ export default function SummaryReport({
     );
   }
 
-  // --- 4. LE JSX DU COMPOSANT ---
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-4">
       <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl relative overflow-y-auto max-h-[90vh]">
@@ -931,10 +901,21 @@ export default function SummaryReport({
                 <p className="text-gray-500">Chargement de la signature...</p>
               </div>
             )}
+            {/* Début du code modifié */}
+            {signatureData && (
+              <img
+                src={signatureData}
+                alt="Signature de l'utilisateur"
+                className="w-full h-full object-contain"
+                style={{ display: isDrawing ? 'none' : 'block' }}
+              />
+            )}
             <canvas
               ref={signatureCanvasRef}
-              className="w-full h-full"
+              className="w-full h-full absolute top-0 left-0"
+              style={{ display: signatureData && !isDrawing ? 'none' : 'block' }}
             ></canvas>
+            {/* Fin du code modifié */}
             {signatureData && !isDrawing && !isSignatureLoading && (
               <div className="absolute bottom-2 right-2 text-xs text-gray-500">
                 Signature chargée. Dessinez pour effacer.
