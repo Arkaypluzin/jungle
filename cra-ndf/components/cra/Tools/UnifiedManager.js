@@ -291,7 +291,7 @@ export default function UnifiedManager({
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          Types d&apsos;Activité
+          Types Activité
         </button>
       </div>
 

@@ -304,7 +304,7 @@ export default function SummaryReport({
       yPos += defaultLineHeight;
       pdf.text(`Total jours ouvrés dans le mois : ${totalWorkingDays} jours`, margin + 5, yPos);
       yPos += defaultLineHeight;
-      pdf.text(`Total jours d'activités sur jours ouvrés : ${totalWorkingDaysActivitiesTime.toFixed(1)} jours`, margin + 5, yPos);
+      pdf.text(`Total jours activités sur jours ouvrés : ${totalWorkingDaysActivitiesTime.toFixed(1)} jours`, margin + 5, yPos);
       yPos += defaultLineHeight;
       pdf.text(`Total jours de congés payés : ${totalPaidLeaveDaysInMonth.toFixed(1)} jours`, margin + 5, yPos);
       yPos += defaultLineHeight;
@@ -753,7 +753,7 @@ export default function SummaryReport({
             &times;
           </button>
           <p className="text-red-700 text-center">
-            Erreur: Impossible d&apsos;afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
+            Erreur: Impossible d afficher le rapport mensuel car des données essentielles sont manquantes ou invalides.
           </p>
         </div>
       </div>
@@ -772,7 +772,7 @@ export default function SummaryReport({
         </button>
 
         <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">
-          Rapport Mensuel d&apsos;Activités
+          Rapport Mensuel des Activités
         </h2>
         <p className="text-gray-600 text-center mb-6">
           Rapport pour {userFirstName} - {monthName}
@@ -791,7 +791,7 @@ export default function SummaryReport({
               {totalWorkingDays} jours
             </p>
             <p>
-              <span className="font-medium">Total jours d&apsos;activités sur jours ouvrés :</span>{" "}
+              <span className="font-medium">Total jours des activités sur jours ouvrés :</span>{" "}
               {totalWorkingDaysActivitiesTime.toFixed(1)} jours
             </p>
             <p>
