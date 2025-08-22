@@ -206,7 +206,7 @@ export default function SummaryReport({
       ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
       setSignatureData(null);
       try {
-        const response = await fetch(`/api/signature`, {
+        const response = await fetch(`/api/signature?userId=${session.user.id}`, {
           method: 'DELETE',
         });
         if (response.ok) {
@@ -235,7 +235,11 @@ export default function SummaryReport({
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ image: dataURL }),
+          body: JSON.stringify({
+            // CORRECTION ICI : Ajout de l'ID utilisateur
+            userId: session.user.id, 
+            image: dataURL
+          }),
         });
         if (response.ok) {
           showMessage("Signature enregistrée avec succès !", "success");
@@ -586,9 +590,11 @@ export default function SummaryReport({
     const canvas = signatureCanvasRef.current;
     if (!canvas) return;
 
+    // Reset drawing state
     isDrawingRef.current = false;
     setIsDrawing(false);
 
+    // Set canvas dimensions
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
 
@@ -596,6 +602,7 @@ export default function SummaryReport({
     signatureCtxRef.current = ctx;
     if (!ctx) return;
 
+    // Set drawing properties
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#000000';
@@ -634,6 +641,7 @@ export default function SummaryReport({
     };
 
     const stopDrawing = () => {
+      if (!isDrawingRef.current) return;
       isDrawingRef.current = false;
       setIsDrawing(false);
       if (signatureCtxRef.current) signatureCtxRef.current.closePath();
@@ -676,7 +684,7 @@ export default function SummaryReport({
     const loadSignatureFromApi = async () => {
       setIsSignatureLoading(true);
 
-      if (status !== 'authenticated' || !session?.user?.id) {
+      if (status !== 'authenticated' || !session?.user?.id || !signatureCanvasRef.current) {
         setIsSignatureLoading(false);
         return;
       }
@@ -685,7 +693,19 @@ export default function SummaryReport({
         const response = await fetch(`/api/signature?userId=${session.user.id}`);
         if (response.ok) {
           const data = await response.json();
-          setSignatureData(data.image || null);
+          const signatureImage = data.image || null;
+          setSignatureData(signatureImage);
+
+          if (signatureImage) {
+            const img = new Image();
+            img.onload = () => {
+              const ctx = signatureCanvasRef.current.getContext('2d');
+              ctx.clearRect(0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+              ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+            };
+            img.src = signatureImage;
+          }
+          
         } else {
           console.error("Failed to load signature from API:", response.status, response.statusText);
           setSignatureData(null);
@@ -901,21 +921,10 @@ export default function SummaryReport({
                 <p className="text-gray-500">Chargement de la signature...</p>
               </div>
             )}
-            {/* Début du code modifié */}
-            {signatureData && (
-              <img
-                src={signatureData}
-                alt="Signature de l'utilisateur"
-                className="w-full h-full object-contain"
-                style={{ display: isDrawing ? 'none' : 'block' }}
-              />
-            )}
             <canvas
               ref={signatureCanvasRef}
-              className="w-full h-full absolute top-0 left-0"
-              style={{ display: signatureData && !isDrawing ? 'none' : 'block' }}
+              className="w-full h-full"
             ></canvas>
-            {/* Fin du code modifié */}
             {signatureData && !isDrawing && !isSignatureLoading && (
               <div className="absolute bottom-2 right-2 text-xs text-gray-500">
                 Signature chargée. Dessinez pour effacer.
@@ -935,7 +944,9 @@ export default function SummaryReport({
             </button>
             <button
               onClick={saveSignature}
-              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors duration-200 text-sm"
+              // Désactiver le bouton si aucune signature n'est présente sur le canvas
+              disabled={!signatureData}
+              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Enregistrer
             </button>
